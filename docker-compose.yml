@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+    networks:
+      - meeting-network
+
+  api:
+    build: ./backend/api
+    ports:
+      - "8000:8000"
+    networks:
+      - meeting-network
+
+
+networks:
+  meeting-network:
+    driver: bridge

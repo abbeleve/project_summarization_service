@@ -56,3 +56,4 @@
 ```bash
 git clone https://github.com/your-username/meeting-insight.git
 cd meeting-insight
+docker compose up --build
