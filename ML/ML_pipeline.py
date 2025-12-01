@@ -42,22 +42,55 @@ class AudioRecognition():
     #self.OPENAI_API_KEY = os.getenv(openai_api_key_envname) #getting api key from env
     self.hf_api_key_envname = hf_api_key_envname
     self.openai_api_key_envname = openai_api_key_envname
-    self.GIGACHAT_SYSTEM_PROMPT = """\
-      Ты — точный и нейтральный ассистент по обработке речи. Твоя задача — создать **строго фактологическое краткое содержание** предоставленного текста.
+    self.SYSTEM_SUMMARIZATION_PROMPT = """\
+Ты — точный и нейтральный ассистент по обработке речи. Твоя задача — создать **строго фактологическое краткое содержание** предоставленного текста.
 
-      **Правила:**
-      1. Используй **только информацию из текста**. Ничего не выдумывай, не интерпретируй, не добавляй.
-      2. Не приписывай мотивы, эмоции, цели или выводы, если они не выражены явно.
-      3. Сохраняй нейтральный тон. Избегай оценочных суждений.
-      4. Если в тексте несколько спикеров — укажи ключевые темы и позиции каждого (если они различаются).
-      5. Сфокусируйся на **существенных фактах, решениях, заявлениях, событиях**.
-      6. Не используй маркированные списки, если не указано иное. Пиши связным текстом.
-      7. Если текст не содержит полезной информации — напиши: "Текст не содержит существенной информации для краткого содержания."
+**Правила:**
+1. Используй **только информацию из текста**. Ничего не выдумывай, не интерпретируй, не добавляй.
+2. Не приписывай мотивы, эмоции, цели или выводы, если они не выражены явно.
+3. Сохраняй нейтральный тон. Избегай оценочных суждений.
+4. Если в тексте несколько спикеров — укажи ключевые темы и позиции каждого (если они различаются).
+5. Сфокусируйся на **существенных фактах, решениях, заявлениях, событиях**.
+6. Не используй маркированные списки, если не указано иное. Пиши связным текстом.
+7. Если текст не содержит полезной информации — напиши: "Текст не содержит существенной информации для краткого содержания."
 
-      Создай краткое содержание объёмом не более 200–300 слов.
-      """ #prompt for gigachat (can be used for any different LLM)
+Создай краткое содержание объёмом не более 200–300 слов.
+""" #prompt for summarization
+    self.SUMMARIZATION_PROMPT = "Создай краткое содержание следующего текста в соответствии с правилами выше:"
+    self.SYSTEM_KEYPOINTS_PROMPT = """\
+Ты — точный и нейтральный ассистент по анализу деловых и профессиональных обсуждений.  
+Твоя задача — выделить **ключевые решения, события, согласованные действия и поворотные моменты**, которые произошли в ходе обсуждения.
 
-    #self.pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=self.HF_API_KEY).to(torch.device("cuda"))
+**Правила:**
+1. **Фокусируйся только на том, что было решено, согласовано, назначено или произошло.**  
+   Игнорируй общие рассуждения, повторы, приветствия и вводные фразы.
+2. **Чётко указывай:**
+   - Кто принял решение (если указано),
+   - Что именно решено/согласовано,
+   - Сроки, дедлайны или временные рамки (если есть),
+   - Ответственные лица (если упомянуты).
+3. **Не интерпретируй**, не добавляй мотивы, эмоции или последствия, которых нет в тексте.
+4. Если в тексте **нет решений, событий или согласованных действий** — напиши:  
+   "В обсуждении не было принято никаких решений или согласованных действий."
+5. Сохраняй **нейтральный, деловой тон**. Пиши связным текстом без маркированных списков.
+6. Объём — не более 200–300 слов.
+"""
+    self.KEYPOINTS_PROMPT = "Создай список по решениям и рассуждениям проведенным в следующем тексте в соответствие с правилами в системном промпте"
+    self.SYSTEM_QUESTIONS_PROMPT = """\
+Ты — точный и нейтральный ассистент по обработке текста.  
+Твоя задача — отвечать **строго на основе предоставленного текста** на заданный вопрос.
+
+**Правила:**
+1. Отвечай **только если информация содержится в тексте**.
+2. **Не выдумывай**, не интерпретируй, не добавляй знания извне.
+3. Если в тексте **нет информации**, необходимой для ответа на вопрос, — ответь:  
+   "В предоставленном тексте недостаточно информации для ответа на этот вопрос."
+4. Сохраняй **нейтральный тон**, избегай оценочных суждений и предположений.
+5. Если вопрос требует уточнения, но текст всё равно не даёт однозначного ответа — используй фразу из п. 3.
+6. Ответ должен быть **кратким, точным и основанным исключительно на тексте**.
+"""
+    self.QUESTIONS_PROMPT = "Ответь на вопросы пользователя согласно правилам из системного пропмта по следующему тексту:"
+    # self.pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=self.HF_API_KEY).to(torch.device("cuda"))
     # if not(os.path.isfile("diarize_worker.py")):
     #   raise ValueError("Can't find diarize_worker.py file. Please import from github")
     # print('gigaam started')
@@ -272,7 +305,58 @@ class AudioRecognition():
                             model: str = "openai/gpt-oss-20b",
                             base_url: str = "https://openrouter.ai/api/v1",
                             temperature: float = 0.01,
-                            max_tokens: int = 3000):
+                            max_tokens: int = 3000,
+                            task_choice: str = 'summarization'):
+    """
+    Makes API call to openai services, summarizes given text
+    Args:
+        text(str): text from transcribition
+        file_path(str): path to file with transcribed text
+        model (str): Model name to use for summarization
+        base_url (str, optional): Custom base URL for OpenAI-compatible endpoints (e.g., for local LLMs)
+    Returns:
+        summarization_results(str): summarization results
+    """
+    if file_path is None and text is None:
+      raise ValueError("Please specify file_path or paste text")
+
+    if file_path and text:
+      warnings.warn("When text and file_path are specified in functions args, text from args(file_path) will overwrite args(text)")
+
+    if file_path:
+      with open(file_path, mode='r') as f:
+        text = f.read()
+
+    task_opinions_map = {'summarization': (self.SYSTEM_SUMMARIZATION_PROMPT, self.SUMMARIZATION_PROMPT), 'keypoints': (self.SYSTEM_KEYPOINTS_PROMPT, self.KEYPOINTS_PROMPT), 'questions': (self.SYSTEM_QUESTIONS_PROMPT, self.QUESTIONS_PROMPT)}
+    if task_choice not in task_opinions_map.keys:
+       raise ValueError(f"that task is not in: {task_opinions_map.keys}")
+
+    open_api_key = os.getenv(self.openai_api_key_envname)
+    client = OpenAI(api_key=open_api_key, base_url=base_url)
+  
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": task_opinions_map[task_choice][0]},
+                {"role": "user", "content": f"{task_opinions_map[task_choice][1]}\n\n{text}"}
+            ],
+            temperature=temperature,
+            max_tokens = max_tokens
+        )
+        summary = response.choices[0].message.content.strip()
+        return summary
+
+    except Exception as e:
+        raise RuntimeError(f"Error during OpenAI-compatible summarization: {e}")
+
+  def questions_with_openai(self, text: str = None,
+                            file_path: str = None,
+                            model: str = "openai/gpt-oss-20b",
+                            base_url: str = "https://openrouter.ai/api/v1",
+                            temperature: float = 0.01,
+                            max_tokens: int = 3000,
+                            question: str = None):
     """
     Makes API call to openai services, summarizes given text
     Args:
@@ -295,14 +379,13 @@ class AudioRecognition():
 
     open_api_key = os.getenv(self.openai_api_key_envname)
     client = OpenAI(api_key=open_api_key, base_url=base_url)
-    system_prompt = self.GIGACHAT_SYSTEM_PROMPT
-
+  
     try:
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Создай краткое содержание следующего текста в соответствии с правилами выше:\n\n{text}"}
+                {"role": "system", "content": self.SYSTEM_QUESTIONS_PROMPT},
+                {"role": "user", "content": f"{self.QUESTIONS_PROMPT}\n\n{text}\n\nА вот вопрос от пользователя: {question}"}
             ],
             temperature=temperature,
             max_tokens = max_tokens
@@ -312,7 +395,6 @@ class AudioRecognition():
 
     except Exception as e:
         raise RuntimeError(f"Error during OpenAI-compatible summarization: {e}")
-
 # HF_API_KEY = "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" # @param {"type":"string","placeholder":"HF_API_KEY"}
 # # OPENAI_API_KEY = "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" # @param {"type":"string","placeholder":"OPENAI_API_KEY"} groq key
 # OPENAI_API_KEY = "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" # @param {"type":"string","placeholder":"OPENAI_API_KEY"}

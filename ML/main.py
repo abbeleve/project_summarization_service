@@ -95,3 +95,32 @@ async def summarize(
 
     except Exception as e:
         raise HTTPException(500, f"Summarization failed: {str(e)}")
+    
+@app.post("/question")
+async def question(
+    text: str = Form(None),
+    question: str = Form(None),
+    llm_model: str = Form("openai/gpt-oss-20b"),
+    base_url: str = Form("https://openrouter.ai/api/v1")
+):
+    if not recognizer:
+        raise HTTPException(500, "Model not initialized")
+    
+    if not text:
+        raise HTTPException(400, "'text' must be provided")
+    
+    allowed_models = {"openai/gpt-oss-20b"}
+    if llm_model not in allowed_models:
+        raise HTTPException(400, f"Unsupported llm_backend. Use: {allowed_models}")
+    
+    input_text = text
+        
+    if not input_text or not input_text.strip():
+        raise HTTPException(400, "Input text is empty")
+    
+    try:
+        summary = recognizer.questions_with_openai(text=input_text, question=question, model=llm_model, base_url=base_url)
+        return {"summary": summary}
+
+    except Exception as e:
+        raise HTTPException(500, f"Summarization failed: {str(e)}")

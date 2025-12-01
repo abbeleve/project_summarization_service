@@ -28,17 +28,33 @@ services:
       - meeting-network
 
   postgres:
-    image: postgres:latest
+    image: postgres:17
     container_name: postgres_container
     environment:
       POSTGRES_USER: postgres_user
       POSTGRES_PASSWORD: postgres_password
       POSTGRES_DB: postgres
-      PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5430:5432"
     volumes:
-      - ./backend/db/pgdata:/var/lib/postgresql/data/pgdata
+      - ./backend/db/pgdata:/var/lib/postgresql/data
+    networks:
+      - meeting-network
+    
+  audio-ml:
+    build:
+      context: ./ML
+      dockerfile: Dockerfile
+      args:
+        HF_API_KEY: ${HF_API_KEY}
+    ports:
+      - "8053:8053"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_API_KEY=${HF_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    runtime: nvidia
+    restart: unless-stopped
     networks:
       - meeting-network
 
