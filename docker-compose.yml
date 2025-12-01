@@ -16,9 +16,31 @@ services:
     build: ./backend/api
     ports:
       - "8000:8000"
+    environment:
+      - DB_NAME=postgres
+      - DB_USER=postgres_user
+      - DB_PASSWORD=postgres_password
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    depends_on:
+      - postgres
     networks:
       - meeting-network
 
+  postgres:
+    image: postgres:latest
+    container_name: postgres_container
+    environment:
+      POSTGRES_USER: postgres_user
+      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_DB: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5430:5432"
+    volumes:
+      - ./backend/db/pgdata:/var/lib/postgresql/data/pgdata
+    networks:
+      - meeting-network
 
 networks:
   meeting-network:

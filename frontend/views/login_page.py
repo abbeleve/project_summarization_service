@@ -22,10 +22,7 @@ def show_login_form():
         
         if submitted:
             if login(username, password):
-                st.success("Успешный вход!")
                 navigate("home")
-            else:
-                st.error("Неверный логин или пароль")
 
 def show_demo_credentials():
     with st.expander("🧪 Тестовые учетные записи"):
