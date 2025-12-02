@@ -4,6 +4,8 @@ __pycache__/
 *$py.class
 
 backend/db/
+backend/app/__pycache__
+backend/app/.env
 
 # C extensions
 *.so
