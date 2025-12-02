@@ -2,23 +2,52 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 import bcrypt
+import time
+import logging
+
+# Настройка логирования
+logger = logging.getLogger(__name__)
 
 
 class DataBaseManager:
-    def __init__(self, user, password, host, port, dbname):
-        self.connection =  psycopg2.connect(user=user,
-                                  password=password,
-                                  host=host,
-                                  port=port,
-                                  database=dbname)
-        self.cursor = self.connection.cursor()
+    def __init__(self, user, password, host, port, dbname, max_retries=10, retry_delay=5):
+        """Инициализация с повторными попытками подключения"""
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        
+        for attempt in range(self.max_retries):
+            try:
+                self.connection = psycopg2.connect(
+                    user=user,
+                    password=password,
+                    host=host,
+                    port=port,
+                    database=dbname,
+                    connect_timeout=10
+                )
+                self.cursor = self.connection.cursor()
+                logger.info(f"✅ Успешное подключение к БД {host}:{port}")
+                return
+            except psycopg2.OperationalError as e:
+                if attempt < self.max_retries - 1:
+                    logger.warning(f"⚠️ Попытка {attempt + 1}/{self.max_retries}: "
+                                  f"Не удалось подключиться к БД: {e}. Повтор через {self.retry_delay} сек...")
+                    time.sleep(self.retry_delay)
+                else:
+                    logger.error(f"❌ Не удалось подключиться к БД после {self.max_retries} попыток: {e}")
+                    raise
 
     def execute_query(self, query, params=None):
-        self.cursor.execute(query, params)
-        if query.strip().upper().startswith('SELECT'):
-            return self.cursor.fetchall()
-        else:
-            self.connection.commit()
+        try:
+            self.cursor.execute(query, params)
+            if query.strip().upper().startswith('SELECT'):
+                return self.cursor.fetchall()
+            else:
+                self.connection.commit()
+        except Exception as e:
+            logger.error(f"❌ Ошибка выполнения запроса: {e}")
+            self.connection.rollback()
+            raise
 
     def disconnect_db(self):
         self.cursor.close()
@@ -240,20 +269,27 @@ class DataBaseManager:
         return self.execute_query(query, (summary_id,))
 
 # Получение параметров подключения из переменных окружения
+load_dotenv()
+
 db_config = {
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'host': os.getenv('DB_HOST'),
-    'port': os.getenv('DB_PORT'),
-    'dbname': os.getenv('DB_NAME')
+    'user': os.getenv('DB_USER', 'postgres'),
+    'password': os.getenv('DB_PASSWORD', 'password'),
+    'host': os.getenv('DB_HOST', 'postgres'),
+    'port': os.getenv('DB_PORT', '5432'),
+    'dbname': os.getenv('DB_NAME', 'meeting_analyzer'),
+    'max_retries': int(os.getenv('DB_MAX_RETRIES', '10')),
+    'retry_delay': int(os.getenv('DB_RETRY_DELAY', '5'))
 }
 
 def init_db():
-    """Инициализация базы данных (создание таблиц)"""
-    db = DataBaseManager(**db_config)
+    """Инициализация базы данных (создание таблиц) с повторными попытками"""
+    logger.info("🔄 Инициализация базы данных...")
+    db = None
     try:
+        db = DataBaseManager(**db_config)
         db.create_tables()
 
+        # Создаем тестового пользователя, если нет пользователей
         users = db.select_staff()
         if not users:
             db.insert_staff(
@@ -262,14 +298,17 @@ def init_db():
                 patronymic="Иванович",
                 email="test@example.com",
                 login="test",
-                password="test"  # Хэшируется автоматически
+                password="test"
             )
-            print("✅ Created test user")
-        print("✅ Database tables created successfully")
+            logger.info("✅ Создан тестовый пользователь: test/test")
+        
+        logger.info("✅ Таблицы базы данных созданы успешно")
     except Exception as e:
-        print(f"❌ Error creating tables: {e}")
+        logger.error(f"❌ Ошибка инициализации БД: {e}")
+        raise
     finally:
-        db.disconnect_db()
+        if db:
+            db.disconnect_db()
 
 def get_db():
     """Генератор для зависимостей FastAPI"""

@@ -9,10 +9,18 @@ from datetime import datetime, timedelta
 import secrets
 import json
 import os
+import httpx
+import tempfile
+import logging
+
 from .models.models import User, Token, TokenData
 from .database import get_db
 from .database import init_db
 from .database import DataBaseManager
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Meeting Analyzer API", version="1.0.0")
 
@@ -61,7 +69,7 @@ async def get_current_user(
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
-        user_id: int = payload.get("user_id")  # Добавляем user_id
+        user_id: int = payload.get("user_id")
         if username is None or user_id is None:
             raise credentials_exception
         token_data = TokenData(username=username, user_id=user_id)
@@ -81,6 +89,9 @@ async def get_current_active_user(current_user: TokenData = Depends(get_current_
 # пока разделения на роли в бд нет
 def require_admin(current_user: TokenData = Depends(get_current_active_user)):
     return current_user
+
+
+
 
 # Эндпоинты аутентификации
 @app.post("/auth/login", response_model=Token)
@@ -136,84 +147,165 @@ async def read_users_me(
     
     user_info = user_data[0]
     return {
-        "user_id": user_info[0],  # ID
+        "user_id": user_info[0],
         "username": current_user.username,
-        "full_name": f"{user_info[1]} {user_info[2]} {user_info[3] or ''}".strip(),  # ФИО
+        "full_name": f"{user_info[1]} {user_info[2]} {user_info[3] or ''}".strip(),
         "email": user_info[4]
     }
 
-# Эндпоинты для пользователей
+
 @app.post("/process")
 async def process_audio(
     file: UploadFile = File(...),
+    transcribe_model: Optional[str] = None,
+    diarization_model: Optional[str] = None,
+    diarize_lib: Optional[str] = None,
+    transcribe_lib: Optional[str] = None,
+    llm_model: Optional[str] = None,
     current_user: TokenData = Depends(get_current_active_user),
     db: DataBaseManager = Depends(get_db)
 ):
     try:
-        # Читаем файл
-        file_content = await file.read()
-        file_size = len(file_content)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_file_path = tmp_file.name
         
-        # Здесь будет логика обработки аудио
-        # Пока используем заглушку
-        
-        # Сохраняем транскрипцию в базу данных
-        original_text = "Оригинальный текст транскрипции..."
-        clean_text = "Очищенный текст транскрипции..."
-        
-        # Вставляем транскрипцию
-        db.insert_transcripts(original_text, clean_text)
-        
-        # Получаем ID созданной транскрипции (последняя вставленная запись)
-        transcripts = db.select_transcripts()
-        transcript_id = transcripts[-1][0] if transcripts else None
-        
-        # Сохраняем части транскрипции
-        transcription_parts = [
-            {
-                "speaker": "SPEAKER_01",
-                "start": 0.0,
-                "end": 5.2,
-                "text": "Добрый день, коллеги. Давайте начнем наше совещание."
-            },
-            {
-                "speaker": "SPEAKER_02", 
-                "start": 5.3,
-                "end": 12.1,
-                "text": "Согласен. Первый вопрос по текущему статусу проекта."
+        try:
+            # Подготовка данных для отправки
+            files = {
+                'file': (file.filename, open(tmp_file_path, 'rb'), file.content_type)
             }
-        ]
-        
-        for part in transcription_parts:
-            db.insert_parts_transcription(
-                employee_id=current_user.user_id,
-                transcript_id=transcript_id,
-                text=part["text"],
-                start_time=int(part["start"] * 1000),  # Конвертируем в миллисекунды
-                end_time=int(part["end"] * 1000)
-            )
-        
-        # Сохраняем суммаризацию
-        summary_text = "Суммаризированный текст совещания: Обсудили основные вопросы проекта, приняли решение о следующих шагах и назначили ответственных за выполнение задач."
-        db.insert_summaries(transcript_id, summary_text)
-        
-        result = {
-            "status": "success",
-            "filename": file.filename,
-            "file_size": file_size,
-            "processed_by": current_user.username,
-            "user_id": current_user.user_id,
-            "transcript_id": transcript_id,
-            "summary": summary_text,
-            "transcription": transcription_parts,
-            "speakers_count": 2,
-            "meeting_duration": "25.7 секунд"
-        }
-        
-        return JSONResponse(content=result)
-        
+            
+            data = {
+                'transcribe_model': transcribe_model or "v3_ctc",
+                'diarization_model': diarization_model or "pyannote/speaker-diarization-community-1",
+                'diarize_lib': diarize_lib or "pyannote",
+                'transcribe_lib': transcribe_lib or "gigasm"
+            }
+            
+            # Отправка запроса к внешнему сервису транскрибации
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                response = await client.post(
+                    "http://audio-ml:8053/transcribe",
+                    files=files,
+                    data=data
+                )
+            
+            if response.status_code != 200:
+                try:
+                    error_detail = response.json().get("detail", response.text)
+                except:
+                    error_detail = response.text
+                
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Transcription service error: {error_detail}"
+                )
+            
+            result = response.json()
+            
+            # Получаем транскрипцию
+            original_text = result.get("text", "")
+            clean_text = result.get("cleaned_text", original_text)
+            
+            # Вставляем транскрипцию в базу
+            db.insert_transcripts(original_text, clean_text)
+            
+            # Получаем ID созданной транскрипции
+            transcripts = db.select_transcripts()
+            transcript_id = transcripts[-1][0] if transcripts else None
+            
+            # Сохраняем части транскрипции
+            segments = result.get("segments", [])
+            
+            for segment in segments:
+                speaker = segment.get("speaker", "UNKNOWN")
+                text = segment.get("text", "")
+                start = segment.get("start", 0.0)
+                end = segment.get("end", 0.0)
+                
+                db.insert_parts_transcription(
+                    employee_id=current_user.user_id,
+                    transcript_id=transcript_id,
+                    text=f"{speaker}: {text}",
+                    start_time=int(start * 1000),
+                    end_time=int(end * 1000)
+                )
+            
+            summary = ""
+            if clean_text:
+                try:
+                    # Подготавливаем данные для суммаризации
+                    summarize_data = {
+                        "text": clean_text,
+                        "llm_model": llm_model or "openai/gpt-oss-20b",
+                        "base_url": ""
+                    }
+                    
+                    # Отправляем запрос на суммаризацию
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        summarize_response = await client.post(
+                            "http://audio-ml:8053/summarize",
+                            data=summarize_data
+                        )
+                    
+                    if summarize_response.status_code == 200:
+                        summary_result = summarize_response.json()
+                        summary = summary_result.get("summary", "")
+                    else:
+                        print(f"Summarization service error: {summarize_response.status_code}")
+                        summary = ""
+                        
+                except Exception as e:
+                    print(f"Error during summarization: {str(e)}")
+                    summary = ""
+            
+            # Сохраняем суммаризацию в базу
+            if summary:
+                db.insert_summaries(transcript_id, summary)
+            
+            # Формируем ответ
+            return {
+                "status": "success",
+                "transcript_id": transcript_id,
+                "original_text": original_text,
+                "clean_text": clean_text,
+                "segments": segments,
+                "summary": summary,
+                "speakers": result.get("speakers", []),
+                "duration": result.get("duration", 0),
+                "language": result.get("language", "ru"),
+                "processing_time": result.get("processing_time", 0),
+                "used_models": {
+                    "transcribe_model": transcribe_model,
+                    "diarization_model": diarization_model,
+                    "transcribe_lib": transcribe_lib,
+                    "diarize_lib": diarize_lib
+                }
+            }
+            
+        finally:
+            # Удаляем временный файл
+            if os.path.exists(tmp_file_path):
+                os.unlink(tmp_file_path)
+                
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail="Transcription service timeout. Try again with a smaller file or different model."
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Transcription service unavailable: {str(e)}"
+        )
     except Exception as e:
-        raise HTTPException(500, f"Processing error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Transcription error: {str(e)}"
+        )
+
 
 @app.get("/transcripts")
 async def get_user_transcripts(
@@ -309,20 +401,44 @@ async def get_all_users(
 
 @app.on_event("startup")
 async def startup_event():
-    """Инициализация базы данных при запуске приложения"""
-    try:
-        init_db()
-        print("✅ Database tables initialized successfully")
-    except Exception as e:
-        print(f"❌ Database initialization error: {e}")
+    """Инициализация базы данных при запуске приложения с повторными попытками"""
+    max_retries = 5
+    retry_delay = 10
+    
+    for attempt in range(max_retries):
+        try:
+            init_db()
+            logger.info("✅ Таблицы базы данных инициализированы успешно")
+            return
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"⚠️ Попытка {attempt + 1}/{max_retries}: "
+                              f"Не удалось инициализировать БД: {e}. Повтор через {retry_delay} сек...")
+                time.sleep(retry_delay)
+            else:
+                logger.error(f"❌ Не удалось инициализировать БД после {max_retries} попыток: {e}")
+                # Не падаем, а продолжаем работу - БД может быть доступна позже
 
 @app.get("/health")
-async def health_check(db: DataBaseManager = Depends(get_db)):
+async def health_check():
+    """Проверка здоровья приложения"""
     try:
+        # Пробуем подключиться к БД
+        db = DataBaseManager(
+            user=os.getenv('DB_USER', 'postgres'),
+            password=os.getenv('DB_PASSWORD', 'password'),
+            host=os.getenv('DB_HOST', 'postgres'),
+            port=os.getenv('DB_PORT', '5432'),
+            dbname=os.getenv('DB_NAME', 'meeting_analyzer'),
+            max_retries=1,
+            retry_delay=1
+        )
         db.execute_query("SELECT 1")
+        db.disconnect_db()
         db_status = "healthy"
     except Exception as e:
         db_status = f"unhealthy: {str(e)}"
+        logger.warning(f"⚠️ База данных недоступна: {e}")
     
     return {
         "status": "healthy",
@@ -330,6 +446,7 @@ async def health_check(db: DataBaseManager = Depends(get_db)):
         "database": db_status,
         "timestamp": datetime.now().isoformat()
     }
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -41,22 +41,22 @@ services:
     networks:
       - meeting-network
     
-  audio-ml:
-    build:
-      context: ./ML
-      dockerfile: Dockerfile
-      args:
-        HF_API_KEY: ${HF_API_KEY}
-    ports:
-      - "8053:8053"
-    environment:
-      - PYTHONUNBUFFERED=1
-      - HF_API_KEY=${HF_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    runtime: nvidia
-    restart: unless-stopped
-    networks:
-      - meeting-network
+  # audio-ml:
+  #   build:
+  #     context: ./ML
+  #     dockerfile: Dockerfile
+  #     args:
+  #       HF_API_KEY: ${HF_API_KEY}
+  #   ports:
+  #     - "8053:8053"
+  #   environment:
+  #     - PYTHONUNBUFFERED=1
+  #     - HF_API_KEY=${HF_API_KEY}
+  #     - OPENAI_API_KEY=${OPENAI_API_KEY}
+  #   runtime: nvidia
+  #   restart: unless-stopped
+  #   networks:
+  #     - meeting-network
 
 networks:
   meeting-network:
