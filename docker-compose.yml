@@ -43,7 +43,7 @@ services:
     
   audio-ml:
     build:
-      context: ./ML
+      context: ./ML/diarization_summarization_service
       dockerfile: Dockerfile
       args:
         HF_API_KEY: ${HF_API_KEY}
@@ -55,6 +55,15 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     runtime: nvidia
     restart: unless-stopped
+    networks:
+      - meeting-network
+
+  denoiser:
+    build:
+      context: ./ML/noise_suppression_service
+      dockerfile: Dockerfile
+    ports:
+      - "8052:8052"
     networks:
       - meeting-network
 

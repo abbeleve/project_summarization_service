@@ -30,6 +30,7 @@ from openai import OpenAI
 import gigaam
 from time import time
 from pyannote.audio.core.task import Specifications
+from noise_suppression_request import request_for_noise_suppression
 
 class AudioRecognition():
 
@@ -249,14 +250,17 @@ class AudioRecognition():
             )
       wav_input_audio_path = self.convert_to_wav(input_audio_path, wav_output_path)
 
+    #using noise_suppression
+    clean_wav_input_audio_path = request_for_noise_suppression(wav_input_audio_path)
     #diarization model choose
     if diarization_lib == "pyannote":
-      diarization_results = self.diarize_pyannote(wav_input_audio_path, diarize_model=diarization_model)
+      diarization_results = self.diarize_pyannote(clean_wav_input_audio_path, diarize_model=diarization_model)
     #transcription model choose
     if transcribe_lib == "gigaam":
-      transcription_results = self.transcribe_gigaam(diarization_results, wav_input_audio_path, output_save_script_file_path, transcription_model=transcribe_model)
+      transcription_results = self.transcribe_gigaam(diarization_results, clean_wav_input_audio_path, output_save_script_file_path, transcription_model=transcribe_model)
 
     return transcription_results
+
 
   def speaker_identification(self, audio_chunk, threshold):
     """
