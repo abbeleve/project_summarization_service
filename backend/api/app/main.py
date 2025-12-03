@@ -181,7 +181,7 @@ async def process_audio(
                 'transcribe_model': transcribe_model or "v3_ctc",
                 'diarization_model': diarization_model or "pyannote/speaker-diarization-community-1",
                 'diarize_lib': diarize_lib or "pyannote",
-                'transcribe_lib': transcribe_lib or "gigasm"
+                'transcribe_lib': transcribe_lib or "gigaam"
             }
             
             # Отправка запроса к внешнему сервису транскрибации
@@ -204,7 +204,7 @@ async def process_audio(
                 )
             
             result = response.json()
-            
+            print(result)
             # Получаем транскрипцию
             original_text = result.get("text", "")
             clean_text = result.get("cleaned_text", original_text)

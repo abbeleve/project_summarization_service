@@ -40,7 +40,15 @@ services:
       - ./backend/db/pgdata:/var/lib/postgresql/data
     networks:
       - meeting-network
-    
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+
   # audio-ml:
   #   build:
   #     context: ./ML
