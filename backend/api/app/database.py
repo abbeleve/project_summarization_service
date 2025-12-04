@@ -1,319 +1,533 @@
-import os
-import psycopg2
-from dotenv import load_dotenv
+from uuid import UUID, uuid4
+from typing import Optional, List, Dict, Any
+from contextlib import contextmanager
+from sqlalchemy import create_engine, String, Text, ForeignKey, CheckConstraint
+from sqlalchemy.dialects.postgresql import UUID as UUIDType
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 import bcrypt
-import time
-import logging
+import os
+from dotenv import load_dotenv
 
-# Настройка логирования
-logger = logging.getLogger(__name__)
+load_dotenv()
+
+class Base(DeclarativeBase):
+    __abstract__ = True
+
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        index=True,
+        nullable=False
+    )
+
+class Staff(Base):
+    __tablename__ = 'Staff'
+    surname: Mapped[str] = mapped_column(String(25), nullable=False)
+    name: Mapped[str] = mapped_column(String(20), nullable=False)
+    patronymic: Mapped[Optional[str]] = mapped_column(String(25))
+    email: Mapped[str] = mapped_column(String(70), unique=True)
+    login: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    password: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    parts_transcriptions: Mapped[List["PartsTranscription"]] = relationship(
+        "PartsTranscription",
+        back_populates="employee",
+        cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint("email ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'"),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'surname': self.surname,
+            'name': self.name,
+            'patronymic': self.patronymic,
+            'email': self.email,
+            'login': self.login
+        }
+
+
+class Transcript(Base):
+    __tablename__ = 'Transcripts'
+    original_text: Mapped[str] = mapped_column(Text, nullable=False)
+    clean_text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    parts_transcriptions: Mapped[List["PartsTranscription"]] = relationship(
+        "PartsTranscription",
+        back_populates="transcript",
+        cascade="all, delete-orphan"
+    )
+    summaries: Mapped[List["Summary"]] = relationship(
+        "Summary",
+        back_populates="transcript",
+        cascade="all, delete-orphan"
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'original_text': self.original_text,
+            'clean_text': self.clean_text
+        }
+
+
+class PartsTranscription(Base):
+    __tablename__ = 'PartsTranscription'
+    employee_id: Mapped[Optional[UUID]] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Staff.id', ondelete='SET NULL'),
+        nullable=True
+    )
+    transcript_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Transcripts.id', ondelete='CASCADE'),
+        nullable=False
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    start_time: Mapped[int] = mapped_column(nullable=False)
+    end_time: Mapped[int] = mapped_column(nullable=False)
+
+    employee: Mapped[Optional["Staff"]] = relationship(
+        "Staff",
+        back_populates="parts_transcriptions"
+    )
+    transcript: Mapped["Transcript"] = relationship(
+        "Transcript",
+        back_populates="parts_transcriptions"
+    )
+
+    __table_args__ = (
+        CheckConstraint("end_time > start_time"),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'employee_id': str(self.employee_id) if self.employee_id else None,
+            'transcript_id': str(self.transcript_id),
+            'text': self.text,
+            'start_time': self.start_time,
+            'end_time': self.end_time,
+        }
+
+
+class Summary(Base):
+    __tablename__ = 'Summaries'
+    transcript_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Transcripts.id', ondelete='CASCADE'),
+        nullable=False
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    transcript: Mapped["Transcript"] = relationship(
+        "Transcript",
+        back_populates="summaries"
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'transcript_id': str(self.transcript_id),
+            'text': self.text
+        }
 
 
 class DataBaseManager:
-    def __init__(self, user, password, host, port, dbname, max_retries=10, retry_delay=5):
-        """Инициализация с повторными попытками подключения"""
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
-        
-        for attempt in range(self.max_retries):
-            try:
-                self.connection = psycopg2.connect(
-                    user=user,
-                    password=password,
-                    host=host,
-                    port=port,
-                    database=dbname,
-                    connect_timeout=10
-                )
-                self.cursor = self.connection.cursor()
-                logger.info(f"✅ Успешное подключение к БД {host}:{port}")
-                return
-            except psycopg2.OperationalError as e:
-                if attempt < self.max_retries - 1:
-                    logger.warning(f"⚠️ Попытка {attempt + 1}/{self.max_retries}: "
-                                  f"Не удалось подключиться к БД: {e}. Повтор через {self.retry_delay} сек...")
-                    time.sleep(self.retry_delay)
-                else:
-                    logger.error(f"❌ Не удалось подключиться к БД после {self.max_retries} попыток: {e}")
-                    raise
+    def __init__(self, user=os.getenv("DB_USER"), password=os.getenv("DB_PASSWORD"), host=os.getenv("DB_HOST"), port=os.getenv("DB_PORT"), dbname=os.getenv("DB_NAME")):
+        if not all([user, password, host, port, dbname]):
+            raise ValueError("Не все параметры подключения к БД предоставлены")
 
-    def execute_query(self, query, params=None):
-        try:
-            self.cursor.execute(query, params)
-            if query.strip().upper().startswith('SELECT'):
-                return self.cursor.fetchall()
-            else:
-                self.connection.commit()
-        except Exception as e:
-            logger.error(f"❌ Ошибка выполнения запроса: {e}")
-            self.connection.rollback()
-            raise
-
-    def disconnect_db(self):
-        self.cursor.close()
-        self.connection.close()
+        connection_string = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+        self.engine = create_engine(connection_string, echo=False)
+        self.Session = sessionmaker(bind=self.engine)
+        self.create_tables()
 
     def create_tables(self):
-        query = '''
-        CREATE TABLE IF NOT EXISTS Staff (
-            ID SERIAL PRIMARY KEY,
-            Surname VARCHAR(25) NOT NULL,
-            Name VARCHAR(20) NOT NULL,
-            Patronymic VARCHAR(25),
-            Email VARCHAR(70) UNIQUE CHECK (Email ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
-            Login VARCHAR(30) UNIQUE NOT NULL,
-            Password VARCHAR(100) NOT NULL
-        );
+        try:
+            Base.metadata.create_all(self.engine)
+            return True
+        except SQLAlchemyError as e:
+            print(f"Ошибка при создании таблиц: {e}")
+            return False
 
-        CREATE TABLE IF NOT EXISTS Transcripts (
-            ID SERIAL PRIMARY KEY,
-            OriginalText TEXT NOT NULL,
-            CleanText TEXT NOT NULL
-        );
+    def drop_all_tables(self):
+        try:
+            Base.metadata.drop_all(self.engine)
+            return True
+        except SQLAlchemyError as e:
+            print(f"Ошибка при удалении таблиц: {e}")
+            return False
 
-        CREATE TABLE IF NOT EXISTS PartsTranscription (
-            ID SERIAL PRIMARY KEY,
-            EmployeeID INTEGER NULL REFERENCES Staff(ID) ON DELETE SET NULL,
-            TranscriptID INTEGER REFERENCES Transcripts(ID) ON DELETE CASCADE,
-            Text TEXT NOT NULL,
-            StartTime INTEGER NOT NULL,
-            EndTime INTEGER NOT NULL CHECK(EndTime > StartTime)
-        );
-
-        CREATE TABLE IF NOT EXISTS Summaries (
-            ID SERIAL PRIMARY KEY,
-            TranscriptID INTEGER REFERENCES Transcripts(ID) ON DELETE CASCADE,
-            Text TEXT NOT NULL
-        )
-        '''
-        return self.execute_query(query)
+    @contextmanager
+    def session_scope(self):
+        session = self.Session()
+        try:
+            yield session
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
 
     @staticmethod
-    def hash_password(password):
+    def hash_password(password: str) -> str:
         salt = bcrypt.gensalt()
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
         return hashed_password.decode('utf-8')
 
     @staticmethod
-    def verify_password(password, hashed_password):
+    def verify_password(password: str, hashed_password: str) -> bool:
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
-    def authentication(self, login, password):
-        query = "SELECT ID, Password FROM Staff WHERE Login = %s"
-        result = self.execute_query(query, (login,))
+    def insert_staff(self, surname: str, name: str, patronymic: Optional[str],
+                     email: str, login: str, password: str) -> Optional[UUID]:
+        with self.session_scope() as session:
+            try:
+                hashed_password = self.hash_password(password)
+                staff = Staff(
+                    surname=surname,
+                    name=name,
+                    patronymic=patronymic,
+                    email=email,
+                    login=login,
+                    password=hashed_password
+                )
+                session.add(staff)
+                session.flush()
+                return staff.id
+            except SQLAlchemyError as e:
+                print(f"Ошибка при создании сотрудника: {e}")
+                return None
 
-        if not result:
-            return None
+    def select_staff_by_id(self, staff_id: UUID) -> Optional[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                staff = session.get(Staff, staff_id)
+                return staff.to_dict() if staff else None
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении сотрудника: {e}")
+                return None
 
-        employee_id, hashed_password = result[0]
+    def select_staff(self) -> List[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                staff_list = session.query(Staff).all()
+                return [staff.to_dict() for staff in staff_list]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении списка сотрудников: {e}")
+                return []
 
-        if self.verify_password(password, hashed_password):
-            return employee_id
-        else:
-            return None
+    def update_staff(self, staff_id: UUID, **kwargs) -> bool:
+        with self.session_scope() as session:
+            try:
+                staff = session.get(Staff, staff_id)
+                if not staff:
+                    return False
 
-    def update_staff_password(self, employee_id, new_password):
-        hashed_password = self.hash_password(new_password)
-        query = "UPDATE Staff SET Password = %s WHERE ID = %s"
-        return self.execute_query(query, (hashed_password, employee_id))
+                for key, value in kwargs.items():
+                    if hasattr(staff, key) and key not in ['id', 'password']:
+                        setattr(staff, key, value)
 
-    def drop_table(self, name_table):
-        query = f"DROP TABLE IF EXISTS {name_table} CASCADE"
-        return self.execute_query(query)
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при обновлении сотрудника: {e}")
+                return False
 
-    def select_staff(self):
-        query = "SELECT ID, Surname, Name, Patronymic, Email, Login FROM Staff"
-        return self.execute_query(query)
+    def update_staff_password(self, staff_id: UUID, new_password: str) -> bool:
+        with self.session_scope() as session:
+            try:
+                staff = session.get(Staff, staff_id)
+                if not staff:
+                    return False
 
-    def select_staff_by_id(self, employee_id):
-        query = "SELECT ID, Surname, Name, Patronymic, Email, Login FROM Staff WHERE ID = %s"
-        return self.execute_query(query, (employee_id,))
+                staff.password = self.hash_password(new_password)
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при обновлении пароля: {e}")
+                return False
 
-    def select_staff_by_surname(self, surname):
-        query = "SELECT ID, Surname, Name, Patronymic, Email, Login FROM Staff WHERE Surname = %s"
-        return self.execute_query(query, (surname,))
+    def delete_staff(self, staff_id: UUID) -> bool:
+        with self.session_scope() as session:
+            try:
+                staff = session.get(Staff, staff_id)
+                if not staff:
+                    return False
 
-    def select_staff_by_name(self, name):
-        query = "SELECT ID, Surname, Name, Patronymic, Email, Login FROM Staff WHERE Name = %s"
-        return self.execute_query(query, (name,))
+                session.delete(staff)
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при удалении сотрудника: {e}")
+                return False
 
-    def select_staff_by_login(self, login):
-        query = "SELECT ID, Surname, Name, Patronymic, Email, Login FROM Staff WHERE Login = %s"
-        return self.execute_query(query, (login,))
+    def authentication(self, login: str, password: str) -> Optional[UUID]:
+        with self.session_scope() as session:
+            try:
+                staff = session.query(Staff).filter(Staff.login == login).first()
+                if staff and self.verify_password(password, staff.password):
+                    return staff.id
+                return None
+            except SQLAlchemyError as e:
+                print(f"Ошибка при аутентификации: {e}")
+                return None
 
-    def select_staff_by_email(self, email):
-        query = "SELECT ID, Surname, Name, Patronymic, Email, Login FROM Staff WHERE Email = %s"
-        return self.execute_query(query, (email,))
+    def select_staff_by_various_parameters(self, **filters) -> List[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                query = session.query(Staff)
+                if 'surname' in filters:
+                    query = query.filter(Staff.surname.ilike(f"%{filters['surname']}%"))
+                if 'name' in filters:
+                    query = query.filter(Staff.name.ilike(f"%{filters['name']}%"))
+                if 'login' in filters:
+                    query = query.filter(Staff.login.ilike(f"%{filters['login']}%"))
+                if 'email' in filters:
+                    query = query.filter(Staff.email.ilike(f"%{filters['email']}%"))
+                staff_list = query.all()
+                return [staff.to_dict() for staff in staff_list]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при поиске сотрудников: {e}")
+                return []
 
-    def insert_staff(self, surname, name, patronymic, email, login, password):
-        hashed_password = self.hash_password(password)
-        query = """
-        INSERT INTO Staff (Surname, Name, Patronymic, Email, Login, Password)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """
-        return self.execute_query(query, (surname, name, patronymic, email, login, hashed_password))
 
-    def update_staff(self, employee_id, surname, name, patronymic, email, login):
-        query = """
-        UPDATE Staff
-        SET Surname = %s,
-            Name = %s,
-            Patronymic = %s,
-            Email = %s,
-            Login = %s
-        WHERE ID = %s
-        """
-        return self.execute_query(query, (surname, name, patronymic, email, login, employee_id))
+    def insert_transcripts(self, original_text: str, clean_text: str) -> Optional[UUID]:
+        with self.session_scope() as session:
+            try:
+                transcript = Transcript(
+                    original_text=original_text,
+                    clean_text=clean_text
+                )
+                session.add(transcript)
+                session.flush()
+                return transcript.id
+            except SQLAlchemyError as e:
+                print(f"Ошибка при создании транскрипции: {e}")
+                return None
 
-    def delete_staff(self, employee_id):
-        query = "DELETE FROM Staff WHERE ID = %s"
-        return self.execute_query(query, (employee_id,))
+    def select_transcripts_by_id(self, transcript_id: UUID) -> Optional[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                transcript = session.get(Transcript, transcript_id)
+                return transcript.to_dict() if transcript else None
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении транскрипции: {e}")
+                return None
 
-    def select_transcripts(self):
-        query = "SELECT * FROM Transcripts"
-        return self.execute_query(query)
+    def select_transcripts(self) -> List[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                query = session.query(Transcript)
+                transcripts = query.all()
+                return [t.to_dict() for t in transcripts]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении списка транскрипций: {e}")
+                return []
 
-    def select_transcripts_by_id(self, transcript_id):
-        query = "SELECT * FROM Transcripts WHERE ID = %s"
-        return self.execute_query(query, (transcript_id,))
+    def update_transcripts(self, transcript_id: UUID, **kwargs) -> bool:
+        with self.session_scope() as session:
+            try:
+                transcript = session.get(Transcript, transcript_id)
+                if not transcript:
+                    return False
 
-    def insert_transcripts(self, original_text, clean_text):
-        query = """
-        INSERT INTO Transcripts (OriginalText, CleanText)
-        VALUES (%s, %s)
-        """
-        return self.execute_query(query, (original_text, clean_text))
+                for key, value in kwargs.items():
+                    if hasattr(transcript, key) and key not in ['id']:
+                        setattr(transcript, key, value)
 
-    def update_transcripts(self, transcript_id, original_text, clean_text):
-        query = """
-        UPDATE Transcripts
-        SET OriginalText = %s,
-            CleanText = %s
-        WHERE ID = %s
-        """
-        return self.execute_query(query, (original_text, clean_text, transcript_id))
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при обновлении транскрипции: {e}")
+                return False
 
-    def delete_transcripts(self,transcript_id):
-        query = "DELETE FROM Transcripts WHERE ID = %s"
-        return self.execute_query(query, (transcript_id,))
+    def delete_transcripts(self, transcript_id: UUID) -> bool:
+        with self.session_scope() as session:
+            try:
+                transcript = session.get(Transcript, transcript_id)
+                if not transcript:
+                    return False
 
-    def select_parts_transcription(self):
-        query = "SELECT * FROM PartsTranscription"
-        return self.execute_query(query)
+                session.delete(transcript)
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при удалении транскрипции: {e}")
+                return False
 
-    def select_parts_transcription_by_id(self, part_id):
-        query = "SELECT * FROM PartsTranscription WHERE ID = %s"
-        return self.execute_query(query, (part_id,))
 
-    def select_parts_transcription_by_employee_id(self, employee_id):
-        query = "SELECT * FROM PartsTranscription WHERE EmployeeID = %s"
-        return self.execute_query(query, (employee_id,))
+    def insert_parts_transcription(self, employee_id: Optional[UUID], transcript_id: UUID, text: str,
+                                  start_time: int, end_time: int) -> Optional[UUID]:
+        with self.session_scope() as session:
+            try:
+                transcript = session.get(Transcript, transcript_id)
+                if not transcript:
+                    return None
 
-    def select_parts_transcription_by_transcript_id(self, transcript_id):
-        query = "SELECT * FROM PartsTranscription WHERE TranscriptID = %s"
-        return self.execute_query(query, (transcript_id,))
+                if employee_id:
+                    staff = session.get(Staff, employee_id)
+                    if not staff:
+                        return None
 
-    def insert_parts_transcription(self, employee_id, transcript_id, text, start_time, end_time):
-        query = """
-        INSERT INTO PartsTranscription (EmployeeID, TranscriptID, Text, StartTime, EndTime)
-        VALUES (%s, %s, %s, %s, %s)
-        """
-        return self.execute_query(query, (employee_id, transcript_id, text, start_time, end_time))
+                part = PartsTranscription(
+                    employee_id=employee_id,
+                    transcript_id=transcript_id,
+                    text=text,
+                    start_time=start_time,
+                    end_time=end_time
+                )
+                session.add(part)
+                session.flush()
+                return part.id
+            except SQLAlchemyError as e:
+                print(f"Ошибка при создании части транскрипции: {e}")
+                return None
 
-    def update_parts_transcription(self, part_id, employee_id, transcript_id, text, start_time, end_time):
-        query = """
-        UPDATE PartsTranscription
-        SET EmployeeID = %s,
-            TranscriptID = %s,
-            Text = %s,
-            StartTime = %s,
-            EndTime = %s
-        WHERE ID = %s
-        """
-        return self.execute_query(query, (employee_id, transcript_id, text, start_time, end_time, part_id))
+    def select_parts_transcription_by_id(self, part_id: UUID) -> Optional[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                part_transcript = session.get(PartsTranscription, part_id)
+                return part_transcript.to_dict() if part_transcript else None
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении частей транскрипции: {e}")
+                return None
 
-    def delete_parts_transcription(self, part_id):
-        query = "DELETE FROM PartsTranscription WHERE ID = %s"
-        return self.execute_query(query, (part_id,))
+    def select_parts_transcription(self) -> List[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                query = session.query(PartsTranscription)
+                parts_transcripts = query.all()
+                return [p_t.to_dict() for p_t in parts_transcripts]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении частей транскрипции: {e}")
+                return []
 
-    def select_summaries(self):
-        query = "SELECT * FROM Summaries"
-        return self.execute_query(query)
+    def select_parts_transcription_by_transcript_id(self, transcript_id: UUID) -> List[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                parts = session.query(PartsTranscription).filter(
+                    PartsTranscription.transcript_id == transcript_id
+                ).order_by(PartsTranscription.start_time).all()
 
-    def select_summaries_by_id(self, summary_id):
-        query = "SELECT * FROM Summaries WHERE ID = %s"
-        return self.execute_query(query, (summary_id,))
+                return [part.to_dict() for part in parts]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении частей транскрипции: {e}")
+                return []
 
-    def select_summaries_by_transcript_id(self, transcript_id):
-        query = "SELECT * FROM Summaries WHERE TranscriptID = %s"
-        return self.execute_query(query, (transcript_id,))
+    def select_parts_transcription_by_employee_id(self, employee_id: UUID) -> List[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                parts = session.query(PartsTranscription).filter(PartsTranscription.employee_id == employee_id).all()
+                return [part.to_dict() for part in parts]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении частей транскрипции сотрудника: {e}")
+                return []
 
-    def insert_summaries(self, transcript_id, text):
-        query = """
-        INSERT INTO Summaries (TranscriptID, Text)
-        VALUES (%s, %s)
-        """
-        return self.execute_query(query, (transcript_id, text))
+    def update_parts_transcription(self, part_id: UUID, **kwargs) -> bool:
+        with self.session_scope() as session:
+            try:
+                part = session.get(PartsTranscription, part_id)
+                if not part:
+                    return False
 
-    def update_summaries(self, summary_id, transcript_id, text):
-        query = """
-        UPDATE Summaries
-        SET TranscriptID = %s,
-            Text = %s
-        WHERE ID = %s
-        """
-        return self.execute_query(query, (transcript_id, text, summary_id))
+                for key, value in kwargs.items():
+                    if hasattr(part, key) and key not in ['id']:
+                        setattr(part, key, value)
 
-    def delete_summaries(self, summary_id):
-        query = "DELETE FROM Summaries WHERE ID = %s"
-        return self.execute_query(query, (summary_id,))
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при обновлении части транскрипции: {e}")
+                return False
 
-# Получение параметров подключения из переменных окружения
-load_dotenv()
+    def delete_parts_transcription(self, part_id: UUID) -> bool:
+        with self.session_scope() as session:
+            try:
+                part = session.get(PartsTranscription, part_id)
+                if not part:
+                    return False
 
-db_config = {
-    'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', 'password'),
-    'host': os.getenv('DB_HOST', 'postgres'),
-    'port': os.getenv('DB_PORT', '5432'),
-    'dbname': os.getenv('DB_NAME', 'meeting_analyzer'),
-    'max_retries': int(os.getenv('DB_MAX_RETRIES', '10')),
-    'retry_delay': int(os.getenv('DB_RETRY_DELAY', '5'))
-}
+                session.delete(part)
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при удалении части транскрипции: {e}")
+                return False
 
-def init_db():
-    """Инициализация базы данных (создание таблиц) с повторными попытками"""
-    logger.info("🔄 Инициализация базы данных...")
-    db = None
-    try:
-        db = DataBaseManager(**db_config)
-        db.create_tables()
 
-        # Создаем тестового пользователя, если нет пользователей
-        users = db.select_staff()
-        if not users:
-            db.insert_staff(
-                surname="Иванов",
-                name="Иван",
-                patronymic="Иванович",
-                email="test@example.com",
-                login="test",
-                password="test"
-            )
-            logger.info("✅ Создан тестовый пользователь: test/test")
-        
-        logger.info("✅ Таблицы базы данных созданы успешно")
-    except Exception as e:
-        logger.error(f"❌ Ошибка инициализации БД: {e}")
-        raise
-    finally:
-        if db:
-            db.disconnect_db()
+    def insert_summaries(self, transcript_id: UUID, text: str) -> Optional[UUID]:
+        with self.session_scope() as session:
+            try:
+                transcript = session.get(Transcript, transcript_id)
+                if not transcript:
+                    return None
 
-def get_db():
-    """Генератор для зависимостей FastAPI"""
-    db = DataBaseManager(**db_config)
-    try:
-        yield db
-    finally:
-        db.disconnect_db()
+                summary = Summary(
+                    transcript_id=transcript_id,
+                    text=text
+                )
+                session.add(summary)
+                session.flush()
+                return summary.id
+            except SQLAlchemyError as e:
+                print(f"Ошибка при создании резюме: {e}")
+                return None
+
+    def select_summaries_by_id(self, summary_id: UUID) -> Optional[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                summary = session.get(Summary, summary_id)
+                return summary.to_dict() if summary else None
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении частей транскрипции: {e}")
+                return None
+
+    def select_summaries(self) -> List[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                query = session.query(Summary)
+                summaries = query.all()
+                return [s.to_dict() for s in summaries]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении частей транскрипции: {e}")
+                return []
+
+    def select_summaries_by_transcript_id(self, transcript_id: UUID) -> Optional[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                summary = session.query(Summary).filter(
+                    Summary.transcript_id == transcript_id
+                ).first()
+
+                return summary.to_dict() if summary else None
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении резюме: {e}")
+                return None
+
+    def update_summaries(self, summary_id: UUID, transcript_id: UUID, text: str) -> bool:
+        with self.session_scope() as session:
+            try:
+                summary = session.get(Summary, summary_id)
+                if not summary:
+                    return False
+
+                summary.transcript_id = transcript_id
+                summary.text = text
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при обновлении резюме: {e}")
+                return False
+
+    def delete_summaries(self, summary_id: UUID) -> bool:
+        with self.session_scope() as session:
+            try:
+                summary = session.get(Summary, summary_id)
+                if not summary:
+                    return False
+
+                session.delete(summary)
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при удалении резюме: {e}")
+                return False
