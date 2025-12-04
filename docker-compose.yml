@@ -1,32 +1,6 @@
 version: '3.8'
 
 services:
-  frontend:
-    build: ./frontend
-    ports:
-      - "8501:8501"
-    environment:
-      - API_URL=http://api:8000
-    depends_on:
-      - api
-    networks:
-      - meeting-network
-
-  api:
-    build: ./backend/api
-    ports:
-      - "8000:8000"
-    environment:
-      - DB_NAME=postgres
-      - DB_USER=postgres_user
-      - DB_PASSWORD=postgres_password
-      - DB_HOST=postgres
-      - DB_PORT=5432
-    depends_on:
-      - postgres
-    networks:
-      - meeting-network
-
   postgres:
     image: postgres:17
     container_name: postgres_container
@@ -40,15 +14,53 @@ services:
       - ./backend/db/pgdata:/var/lib/postgresql/data
     networks:
       - meeting-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres_user -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
 
-  adminer:
-    image: adminer
-    restart: always
+  api:
+    build: ./backend/api
     ports:
-      - "8080:8080"
+      - "8000:8000"
+    environment:
+      DB_NAME: postgres
+      DB_USER: postgres_user
+      DB_PASSWORD: postgres_password
+      DB_HOST: postgres
+      DB_PORT: 5432
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    networks:
+      - meeting-network
+    restart: on-failure
+    command: >
+      sh -c "echo '⏳ Ожидание полной готовности PostgreSQL...' &&
+             sleep 10 &&
+             echo '🚀 Запуск API...' &&
+             python -m app.main"
 
+  frontend:
+    build: ./frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+    networks:
+      - meeting-network
+    restart: on-failure
+    command: >
+      sh -c "echo '⏳ Ожидание запуска API...' &&
+             sleep 15 &&
+             echo '🚀 Запуск Streamlit...' &&
+             streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
+    
   # audio-ml:
   #   build:
   #     context: ./ML

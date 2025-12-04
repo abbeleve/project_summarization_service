@@ -8,14 +8,15 @@ import jwt
 from datetime import datetime, timedelta
 import secrets
 import json
+import time
 import os
 import httpx
 import tempfile
 import logging
+from uuid import UUID, uuid4
 
-from .models.models import User, Token, TokenData
-from .database import get_db
-from .database import init_db
+from .models.models import User, Token, TokenData, LoginRequest, TokenResponse
+from .gen_fake_data import gen_fake_data
 from .database import DataBaseManager
 
 # Настройка логирования
@@ -46,6 +47,16 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 security = HTTPBearer()
 
+# Функция для получения БД
+def get_db():
+    """Зависимость для получения экземпляра БД"""
+    db = DataBaseManager()
+    try:
+        yield db
+    finally:
+        # SQLAlchemy сам управляет соединениями через сессии
+        pass
+
 # Функции для работы с JWT
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -69,16 +80,17 @@ async def get_current_user(
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
-        user_id: int = payload.get("user_id")
+        user_id: str = payload.get("user_id")
         if username is None or user_id is None:
             raise credentials_exception
+
         token_data = TokenData(username=username, user_id=user_id)
     except jwt.PyJWTError:
         raise credentials_exception
     
     # Проверяем существование пользователя в БД
-    user_data = db.select_staff_by_login(username)
-    if not user_data:
+    users = db.select_staff_by_various_parameters(login=username)
+    if not users or len(users) == 0:
         raise credentials_exception
     
     return token_data
@@ -113,25 +125,24 @@ async def login(user: User, db: DataBaseManager = Depends(get_db)):
             detail="Данные пользователя не найдены"
         )
     
-    user_info = user_data[0]  # Первая запись
-    full_name = f"{user_info[1]} {user_info[2]}"  # Фамилия + Имя
+    full_name = f"{user_data['surname']} {user_data['name']}"
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={
             "sub": user.username, 
-            "user_id": employee_id,
+            "user_id": str(employee_id),
             "full_name": full_name
         },
         expires_delta=access_token_expires
     )
     
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user_id": employee_id,
-        "full_name": full_name
-    }
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user_id=str(employee_id),  # UUID как строка
+        full_name=full_name
+    )
 
 @app.get("/auth/me")
 async def read_users_me(
@@ -204,20 +215,16 @@ async def process_audio(
                 )
             
             result = response.json()
-            print(result)
+            
             # Получаем транскрипцию
             original_text = result.get("text", "")
             clean_text = result.get("cleaned_text", original_text)
             
             # Вставляем транскрипцию в базу
-            db.insert_transcripts(original_text, clean_text)
+            transcript_id = db.insert_transcripts(original_text, clean_text)
             
-            # Получаем ID созданной транскрипции
-            transcripts = db.select_transcripts()
-            transcript_id = transcripts[-1][0] if transcripts else None
-            
-            # Сохраняем части транскрипции
-            segments = result.get("segments", [])
+            if not transcript_id:
+                raise HTTPException(500, "Failed to save transcript to database")
             
             for segment in segments:
                 speaker = segment.get("speaker", "UNKNOWN")
@@ -232,13 +239,13 @@ async def process_audio(
                     start_time=int(start * 1000),
                     end_time=int(end * 1000)
                 )
-            
+
             summary = ""
-            if clean_text:
+            if segments:
                 try:
                     # Подготавливаем данные для суммаризации
                     summarize_data = {
-                        "text": clean_text,
+                        "text": segments,
                         "llm_model": llm_model or "openai/gpt-oss-20b",
                         "base_url": ""
                     }
@@ -264,30 +271,50 @@ async def process_audio(
             # Сохраняем суммаризацию в базу
             if summary:
                 db.insert_summaries(transcript_id, summary)
+
+            print(db.select_transcripts_by_id("521890b8-b81f-464f-8c2d-e94dfe2f7e25"))
+
+            speakers = []
+            for segment in segments:
+                speaker = segment.get("speaker", "UNKNOWN")
+                if speaker not in speakers:
+                    speakers.append(speaker)
             
+            duration = 0.0
+            for segment in segments:
+                end_time = segment.get("end", 0.0)
+                if end_time > duration:
+                    duration = end_time
+
+            parts = db.select_parts_transcription_by_transcript_id(transcript_id)
+        
             # Формируем ответ
             return {
                 "status": "success",
-                "transcript_id": transcript_id,
+                "transcript_id": str(transcript_id),
                 "original_text": original_text,
                 "clean_text": clean_text,
                 "segments": segments,
                 "summary": summary,
-                "speakers": result.get("speakers", []),
-                "duration": result.get("duration", 0),
-                "language": result.get("language", "ru"),
-                "processing_time": result.get("processing_time", 0),
+                "speakers": speakers,
+                "duration": duration,
+                "parts": parts,
                 "used_models": {
-                    "transcribe_model": transcribe_model,
-                    "diarization_model": diarization_model,
-                    "transcribe_lib": transcribe_lib,
-                    "diarize_lib": diarize_lib
+                    "transcribe_model": transcribe_model or "v3_ctc",
+                    "diarization_model": diarization_model or "pyannote/speaker-diarization-community-1",
+                    "transcribe_lib": transcribe_lib or "gigaam",
+                    "diarize_lib": diarize_lib or "pyannote"
                 }
             }
             
         finally:
-            # Удаляем временный файл
+            # Закрываем файл и удаляем временный файл
             if os.path.exists(tmp_file_path):
+                try:
+                    if 'files' in locals() and files.get('file'):
+                        files['file'][1].close()
+                except:
+                    pass
                 os.unlink(tmp_file_path)
                 
     except httpx.TimeoutException:
@@ -319,63 +346,77 @@ async def get_user_transcripts(
         
         # Группируем по transcript_id
         transcripts_map = {}
-        for part in user_parts:
-            transcript_id = part[2]  # TranscriptID
-            if transcript_id not in transcripts_map:
-                # Получаем основную информацию о транскрипции
-                transcript_data = db.select_transcripts_by_id(transcript_id)
-                if transcript_data:
-                    transcripts_map[transcript_id] = {
-                        "transcript_id": transcript_id,
-                        "original_text": transcript_data[0][1],
-                        "clean_text": transcript_data[0][2],
-                        "parts": []
-                    }
-            
-            transcripts_map[transcript_id]["parts"].append({
-                "part_id": part[0],
-                "text": part[3],
-                "start_time": part[4],
-                "end_time": part[5]
-            })
         
+        for part in user_parts:
+            transcript_id_str = part['transcript_id']
+            
+            if transcript_id_str not in transcripts_map:
+                # Получаем основную информацию о транскрипции
+                try:
+                    transcript_uuid = UUID(transcript_id_str)
+                except ValueError:
+                    continue
+                    
+                transcript_data = db.select_transcripts_by_id(transcript_uuid)
+                if not transcript_data:
+                    continue
+                    
+                # Получаем суммаризацию
+                summary_data = db.select_summaries_by_transcript_id(transcript_uuid)
+                
+                transcripts_map[transcript_id_str] = {
+                    "transcript_id": transcript_id_str,
+                    "original_text": transcript_data.get('original_text', ''),
+                    "clean_text": transcript_data.get('clean_text', ''),
+                    "summary": summary_data.get('text') if summary_data else None,
+                    "parts": []  # Инициализируем пустой список
+                }
+            
+            # Добавляем часть в список
+            transcripts_map[transcript_id_str]["parts"].append(part)
+        
+        # Преобразуем в список
         return list(transcripts_map.values())
         
     except Exception as e:
+        logger.error(f"Error fetching user transcripts: {str(e)}")
         raise HTTPException(500, f"Error fetching transcripts: {str(e)}")
 
 @app.get("/transcripts/{transcript_id}")
 async def get_transcript(
-    transcript_id: int,
+    transcript_id: str,
     current_user: TokenData = Depends(get_current_active_user),
     db: DataBaseManager = Depends(get_db)
 ):
     """Получить конкретную транскрипцию"""
     try:
-        transcript_data = db.select_transcripts_by_id(transcript_id)
+
+        try:
+            transcript_uuid = UUID(transcript_id)
+        except ValueError:
+            raise HTTPException(400, "Некорректный формат ID транскрипции")
+        
+        transcript_data = db.select_transcripts_by_id(transcript_uuid)
+
         if not transcript_data:
             raise HTTPException(404, "Транскрипция не найдена")
         
-        parts = db.select_parts_transcription_by_transcript_id(transcript_id)
-        summary_data = db.select_summaries_by_transcript_id(transcript_id)
+        parts = db.select_parts_transcription_by_transcript_id(transcript_uuid)
+        
+        summary_data = db.select_summaries_by_transcript_id(transcript_uuid)
         
         return {
             "transcript_id": transcript_id,
-            "original_text": transcript_data[0][1],
-            "clean_text": transcript_data[0][2],
-            "parts": [
-                {
-                    "part_id": part[0],
-                    "employee_id": part[1],
-                    "text": part[3],
-                    "start_time": part[4],
-                    "end_time": part[5]
-                } for part in parts
-            ],
-            "summary": summary_data[0][2] if summary_data else None
+            "original_text": transcript_data.get('original_text', ''),
+            "clean_text": transcript_data.get('clean_text', ''),
+            "parts": parts,
+            "summary": summary_data.get('text') if summary_data else None
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Error fetching transcript: {str(e)}")
         raise HTTPException(500, f"Error fetching transcript: {str(e)}")
 
 @app.get("/admin/users")
@@ -402,46 +443,73 @@ async def get_all_users(
 @app.on_event("startup")
 async def startup_event():
     """Инициализация базы данных при запуске приложения с повторными попытками"""
-    max_retries = 5
+    max_retries = 10
     retry_delay = 10
     
     for attempt in range(max_retries):
         try:
-            init_db()
-            logger.info("✅ Таблицы базы данных инициализированы успешно")
+            print(f"🔄 Попытка инициализации БД {attempt + 1}/{max_retries}...")
+            db = DataBaseManager()
+            
+            # Создаем тестового пользователя, если нет пользователей
+            users = db.select_staff()
+            print(f"📊 Найдено пользователей в БД: {len(users)}")
+            
+            if not users:
+                print("👤 Создаем тестового пользователя...")
+                try:
+                    db.insert_staff(
+                        surname="Иванов",
+                        name="Иван",
+                        patronymic="Иванович",
+                        email="test@example.com",
+                        login="test",
+                        password="test"
+                    )
+                    print("✅ Создан тестовый пользователь: test/test")
+                    
+                    # Генерируем тестовые данные только если БД была пустой
+                    try:
+                        gen_fake_data(db)
+                        print("✅ Тестовые данные сгенерированы")
+                    except Exception as e:
+                        print(f"⚠️ Не удалось сгенерировать тестовые данные: {e}")
+                        
+                except Exception as e:
+                    # Ошибка уникальности - пользователь уже существует
+                    if "duplicate key" in str(e).lower() or "unique" in str(e).lower():
+                        print("ℹ️ Тестовый пользователь уже существует")
+                    else:
+                        print(f"⚠️ Ошибка при создании пользователя: {e}")
+            else:
+                print("ℹ️ В базе уже есть пользователи, пропускаем создание тестовых")
+
+            print("✅ База данных инициализирована успешно")
+            
             return
+            
         except Exception as e:
             if attempt < max_retries - 1:
-                logger.warning(f"⚠️ Попытка {attempt + 1}/{max_retries}: "
-                              f"Не удалось инициализировать БД: {e}. Повтор через {retry_delay} сек...")
+                print(f"⚠️ Попытка {attempt + 1}/{max_retries}: "
+                      f"Не удалось инициализировать БД: {e}. Повтор через {retry_delay} сек...")
                 time.sleep(retry_delay)
             else:
-                logger.error(f"❌ Не удалось инициализировать БД после {max_retries} попыток: {e}")
+                print(f"❌ Не удалось инициализировать БД после {max_retries} попыток: {e}")
                 # Не падаем, а продолжаем работу - БД может быть доступна позже
 
 @app.get("/health")
 async def health_check():
     """Проверка здоровья приложения"""
     try:
-        # Пробуем подключиться к БД
-        db = DataBaseManager(
-            user=os.getenv('DB_USER', 'postgres'),
-            password=os.getenv('DB_PASSWORD', 'password'),
-            host=os.getenv('DB_HOST', 'postgres'),
-            port=os.getenv('DB_PORT', '5432'),
-            dbname=os.getenv('DB_NAME', 'meeting_analyzer'),
-            max_retries=1,
-            retry_delay=1
-        )
-        db.execute_query("SELECT 1")
-        db.disconnect_db()
+        db = DataBaseManager()
+        users = db.select_staff()
         db_status = "healthy"
     except Exception as e:
         db_status = f"unhealthy: {str(e)}"
         logger.warning(f"⚠️ База данных недоступна: {e}")
     
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "healthy" else "degraded",
         "service": "meeting-analyzer-api",
         "database": db_status,
         "timestamp": datetime.now().isoformat()

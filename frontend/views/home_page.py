@@ -3,7 +3,14 @@ import time
 from components.sidebar import show_user_sidebar, show_admin_sidebar
 from utils.api_client import APIClient
 from utils.navigation import navigate
-from config.settings import SUPPORTED_FORMATS
+from config.settings import (
+    SUPPORTED_FORMATS, 
+    TRANSCRIBE_MODELS,
+    TRANSCRIBE_LIBS,
+    DIARIZATION_MODELS,
+    DIARIZE_LIBS,
+    LLM_MODELS
+)
 
 def show_home_page():
     if st.session_state.user_role == "admin":
@@ -28,19 +35,72 @@ def show_upload_section():
     )
 
     if uploaded_file:
-        col1, col2 = st.columns([2, 2])
-        with col1:
-            st.success(f"Файл: {uploaded_file.name}")
-            st.info(f"Размер: {uploaded_file.size:,} байт")
-        with col2:
-            st.write("")
-            st.write("")
 
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.success(f"📄 Файл: {uploaded_file.name}")
+            
+        with col2:
+            st.info(f"📊 Размер: {uploaded_file.size:,} байт")
+        
+
+        with st.expander("⚙️ Настройки моделей", expanded=True):
+
+            col_model1, col_model2 = st.columns(2)
+            
+            with col_model1:
+                # Выбор модели транскрибации
+                transcribe_model = st.selectbox(
+                    "Модель транскрибации",
+                    TRANSCRIBE_MODELS,
+                    index=0,  # v3_ctc по умолчанию
+                    help="Выберите модель для преобразования речи в текст"
+                )
+                
+                # Выбор библиотеки транскрибации
+                transcribe_lib = st.selectbox(
+                    "Библиотека транскрибации",
+                    TRANSCRIBE_LIBS,
+                    index=0,  # gigaam по умолчанию
+                    help="Выберите библиотеку для транскрибации"
+                )
+                
+                # Выбор модели для суммаризации
+                llm_model = st.selectbox(
+                    "Модель суммаризации",
+                    LLM_MODELS,
+                    index=0,  # openai/gpt-oss-20b по умолчанию
+                    help="Выберите модель для суммаризации текста"
+                )
+            
+            with col_model2:
+                # Выбор модели диаризации
+                diarization_model = st.selectbox(
+                    "Модель диаризации",
+                    DIARIZATION_MODELS,
+                    index=0,  # pyannote/speaker-diarization-community-1 по умолчанию
+                    help="Выберите модель для определения спикеров"
+                )
+                
+                # Выбор библиотеки диаризации
+                diarize_lib = st.selectbox(
+                    "Библиотека диаризации",
+                    DIARIZE_LIBS,
+                    index=0,  # pyannote по умолчанию
+                    help="Выберите библиотеку для диаризации"
+                )
+        
         if st.button("🎯 Анализировать", type="primary", use_container_width=True):
             with st.spinner("🔍 Начинаем анализ..."):
                 st.session_state.pending_analysis = {
                     "file": uploaded_file,
-                    "filename": uploaded_file.name
+                    "filename": uploaded_file.name,
+                    "transcribe_model": transcribe_model,
+                    "diarization_model": diarization_model,
+                    "diarize_lib": diarize_lib,
+                    "transcribe_lib": transcribe_lib,
+                    "llm_model": llm_model
                 }
                 st.rerun()
 
@@ -56,7 +116,6 @@ def show_history_section():
 
     if not transcripts:
         st.info("📝 У вас пока нет транскрипций")
-        st.button("Создать первую транскрипцию", use_container_width=True)
         return
 
     for transcript in transcripts:
@@ -120,9 +179,26 @@ def process_pending_analysis():
     
     pending = st.session_state.pending_analysis
     uploaded_file = pending["file"]
+    
+    # Показываем выбранные настройки
+    st.info(f"""
+    ⚙️ **Настройки анализа:**
+    - Модель транскрибации: `{pending.get('transcribe_model', 'v3_ctc')}`
+    - Библиотека транскрибации: `{pending.get('transcribe_lib', 'gigaam')}`
+    - Модель диаризации: `{pending.get('diarization_model', 'pyannote/speaker-diarization-community-1')}`
+    - Библиотека диаризации: `{pending.get('diarize_lib', 'pyannote')}`
+    - Модель суммаризации: `{pending.get('llm_model', 'openai/gpt-oss-20b')}`
+    """)
 
     with st.spinner("🔍 Анализируем аудиозапись..."):
-        result = APIClient.process_audio(uploaded_file)
+        result = APIClient.process_audio(
+            uploaded_file,
+            transcribe_model=pending.get('transcribe_model'),
+            diarization_model=pending.get('diarization_model'),
+            diarize_lib=pending.get('diarize_lib'),
+            transcribe_lib=pending.get('transcribe_lib'),
+            llm_model=pending.get('llm_model')
+        )
 
         if result:
             # Сохраняем результат в session_state
