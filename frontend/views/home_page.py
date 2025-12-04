@@ -179,9 +179,26 @@ def process_pending_analysis():
     
     pending = st.session_state.pending_analysis
     uploaded_file = pending["file"]
+    
+    # Показываем выбранные настройки
+    st.info(f"""
+    ⚙️ **Настройки анализа:**
+    - Модель транскрибации: `{pending.get('transcribe_model', 'v3_ctc')}`
+    - Библиотека транскрибации: `{pending.get('transcribe_lib', 'gigaam')}`
+    - Модель диаризации: `{pending.get('diarization_model', 'pyannote/speaker-diarization-community-1')}`
+    - Библиотека диаризации: `{pending.get('diarize_lib', 'pyannote')}`
+    - Модель суммаризации: `{pending.get('llm_model', 'openai/gpt-oss-20b')}`
+    """)
 
     with st.spinner("🔍 Анализируем аудиозапись..."):
-        result = APIClient.process_audio(uploaded_file)
+        result = APIClient.process_audio(
+            uploaded_file,
+            transcribe_model=pending.get('transcribe_model'),
+            diarization_model=pending.get('diarization_model'),
+            diarize_lib=pending.get('diarize_lib'),
+            transcribe_lib=pending.get('transcribe_lib'),
+            llm_model=pending.get('llm_model')
+        )
 
         if result:
             # Сохраняем результат в session_state

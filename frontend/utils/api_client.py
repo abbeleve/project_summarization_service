@@ -7,15 +7,36 @@ class APIClient:
     """Клиент для работы с API"""
     
     @staticmethod
-    def process_audio(file) -> dict:
+    def process_audio(
+        file, 
+        transcribe_model=None,
+        diarization_model=None,
+        diarize_lib=None,
+        transcribe_lib=None,
+        llm_model=None
+    ) -> dict:
         """Отправить аудио на обработку"""
         try:
             files = {"file": (file.name, file.getvalue(), file.type)}
             headers = get_auth_headers()
             
+            # Подготавливаем данные формы
+            data = {}
+            if transcribe_model:
+                data['transcribe_model'] = transcribe_model
+            if diarization_model:
+                data['diarization_model'] = diarization_model
+            if diarize_lib:
+                data['diarize_lib'] = diarize_lib
+            if transcribe_lib:
+                data['transcribe_lib'] = transcribe_lib
+            if llm_model:
+                data['llm_model'] = llm_model
+            
             response = requests.post(
                 f"{API_URL}/process", 
                 files=files,
+                data=data,  # Передаем данные формы
                 headers=headers,
                 timeout=300  # Увеличен таймаут для больших файлов
             )
