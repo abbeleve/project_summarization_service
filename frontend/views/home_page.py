@@ -1,5 +1,6 @@
 import streamlit as st
 import time
+from datetime import datetime
 from components.sidebar import show_user_sidebar, show_admin_sidebar
 from utils.api_client import APIClient
 from utils.navigation import navigate
@@ -35,7 +36,6 @@ def show_upload_section():
     )
 
     if uploaded_file:
-
         col1, col2 = st.columns([1, 1])
         
         with col1:
@@ -44,50 +44,43 @@ def show_upload_section():
         with col2:
             st.info(f"📊 Размер: {uploaded_file.size:,} байт")
         
-
         with st.expander("⚙️ Настройки моделей", expanded=True):
-
             col_model1, col_model2 = st.columns(2)
             
             with col_model1:
-                # Выбор модели транскрибации
                 transcribe_model = st.selectbox(
                     "Модель транскрибации",
                     TRANSCRIBE_MODELS,
-                    index=0,  # v3_ctc по умолчанию
+                    index=0,
                     help="Выберите модель для преобразования речи в текст"
                 )
                 
-                # Выбор библиотеки транскрибации
                 transcribe_lib = st.selectbox(
                     "Библиотека транскрибации",
                     TRANSCRIBE_LIBS,
-                    index=0,  # gigaam по умолчанию
+                    index=0,
                     help="Выберите библиотеку для транскрибации"
                 )
                 
-                # Выбор модели для суммаризации
                 llm_model = st.selectbox(
                     "Модель суммаризации",
                     LLM_MODELS,
-                    index=0,  # openai/gpt-oss-20b по умолчанию
+                    index=0,
                     help="Выберите модель для суммаризации текста"
                 )
             
             with col_model2:
-                # Выбор модели диаризации
                 diarization_model = st.selectbox(
                     "Модель диаризации",
                     DIARIZATION_MODELS,
-                    index=0,  # pyannote/speaker-diarization-community-1 по умолчанию
+                    index=0,
                     help="Выберите модель для определения спикеров"
                 )
                 
-                # Выбор библиотеки диаризации
                 diarize_lib = st.selectbox(
                     "Библиотека диаризации",
                     DIARIZE_LIBS,
-                    index=0,  # pyannote по умолчанию
+                    index=0,
                     help="Выберите библиотеку для диаризации"
                 )
         
@@ -107,7 +100,6 @@ def show_upload_section():
 def show_history_section():
     st.subheader("📋 История транскрипций")
 
-    # Проверяем доступность API
     if not APIClient.check_health():
         st.error("🚨 Сервер анализа недоступен")
         return
@@ -118,16 +110,54 @@ def show_history_section():
         st.info("📝 У вас пока нет транскрипций")
         return
 
-    for transcript in transcripts:
+    # Сортируем транскрипции по дате создания (сверху новые)
+    transcripts_sorted = sorted(
+        transcripts,
+        key=lambda x: parse_created_at(x.get("created_at", "")),
+        reverse=True  # Сверху новые
+    )
+
+    for transcript in transcripts_sorted:
         show_transcript_card(transcript)
+
+def parse_created_at(created_at_str: str) -> datetime:
+    """Парсит строку с датой в datetime"""
+    try:
+        if created_at_str:
+            # Пробуем разные форматы
+            try:
+                return datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+            except:
+                # Если не ISO формат, пробуем другие
+                for fmt in ["%Y-%m-%d %H:%M:%S.%f%z", "%Y-%m-%d %H:%M:%S%z", "%Y-%m-%d %H:%M:%S"]:
+                    try:
+                        return datetime.strptime(created_at_str, fmt)
+                    except:
+                        continue
+    except:
+        pass
+    return datetime.min  # Если не удалось распарсить, возвращаем минимальную дату
 
 def show_transcript_card(transcript: dict):
     """Отобразить карточку транскрипции"""
+    transcript_id = transcript.get('transcript_id', 'N/A')
+    
     with st.container():
         col1, col2 = st.columns([3, 1])
         
         with col1:
-            st.write(f"**Транскрипция #{transcript.get('transcript_id', 'N/A')}**")
+            # Заголовок с ID
+            st.write(f"**Транскрипция #{transcript_id}**")
+            
+            # Отображаем дату создания, если есть
+            created_at = transcript.get("created_at")
+            if created_at:
+                try:
+                    dt = parse_created_at(created_at)
+                    date_str = dt.strftime("%d.%m.%Y %H:%M")
+                    st.caption(f"📅 Создано: {date_str}")
+                except:
+                    pass
             
             # Подсчитываем статистику
             parts = transcript.get("parts", [])
@@ -143,12 +173,62 @@ def show_transcript_card(transcript: dict):
                 st.write(preview)
         
         with col2:
-            st.write("")
-            if st.button("📊 Подробнее", key=f"view_{transcript.get('transcript_id')}", 
-                        use_container_width=True):
-                navigate("analysis", id=transcript.get("transcript_id"))
-
+            # Вертикальное расположение кнопок
+            button_col1, button_col2 = st.columns([1, 1])
+            
+            with button_col1:
+                if st.button("📊", 
+                           key=f"view_{transcript_id}",
+                           help="Подробнее",
+                           use_container_width=True):
+                    navigate("analysis", id=transcript_id)
+            
+            with button_col2:
+                if st.button("🗑️",
+                           key=f"delete_{transcript_id}",
+                           help="Удалить",
+                           type="secondary",
+                           use_container_width=True):
+                    # Показываем подтверждение удаления
+                    st.session_state.pending_delete = transcript_id
+                    st.rerun()
+        
+        # Проверяем, нужно ли показывать диалог удаления
+        if st.session_state.get("pending_delete") == transcript_id:
+            show_delete_confirmation(transcript_id)
+        
         st.markdown("---")
+
+def show_delete_confirmation(transcript_id: str):
+    """Показать диалог подтверждения удаления"""
+    with st.container():
+        st.warning("⚠️ Вы уверены, что хотите удалить эту транскрипцию?")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("✅ Да, удалить", 
+                        key=f"confirm_delete_{transcript_id}",
+                        type="primary",
+                        use_container_width=True):
+                success = APIClient.delete_transcript(transcript_id)
+                if success:
+                    st.success("✅ Транскрипция удалена")
+                    if "pending_delete" in st.session_state:
+                        del st.session_state.pending_delete
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("❌ Не удалось удалить транскрипцию")
+        
+        with col2:
+            if st.button("❌ Отмена",
+                        key=f"cancel_delete_{transcript_id}",
+                        use_container_width=True):
+                # Отменяем удаление
+                if "pending_delete" in st.session_state:
+                    del st.session_state.pending_delete
+                st.rerun()
 
 def count_unique_speakers_card(parts: list) -> int:
     speakers = set()
@@ -180,7 +260,6 @@ def process_pending_analysis():
     pending = st.session_state.pending_analysis
     uploaded_file = pending["file"]
     
-    # Показываем выбранные настройки
     st.info(f"""
     ⚙️ **Настройки анализа:**
     - Модель транскрибации: `{pending.get('transcribe_model', 'v3_ctc')}`
@@ -201,14 +280,12 @@ def process_pending_analysis():
         )
 
         if result:
-            # Сохраняем результат в session_state
             st.session_state.current_analysis = {
                 "id": result.get("transcript_id", "new"),
                 "data": result,
                 "filename": pending["filename"],
                 "is_new": True
             }
-
             st.session_state.pending_analysis = None
             navigate("analysis", id=result.get("transcript_id", "new"))
         else:

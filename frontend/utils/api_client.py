@@ -146,3 +146,39 @@ class APIClient:
                 
         except requests.exceptions.RequestException:
             return []
+
+    @staticmethod
+    def delete_transcript(transcript_id: str) -> bool:
+        """Удалить транскрипцию по ID"""
+        try:
+            print(f"🔄 APIClient: удаление транскрипции {transcript_id}")
+            
+            headers = get_auth_headers()
+            
+            url = f"{API_URL}/transcripts/{transcript_id}"
+            
+            response = requests.delete(
+                url,
+                headers=headers
+            )
+            
+            
+            if response.status_code == 200:
+                print(f"✅ Успешное удаление транскрипции {transcript_id}")
+                return True
+            else:
+                print(f"❌ Ошибка удаления: {response.status_code}")
+                
+                # Добавим обработку ошибок авторизации
+                if response.status_code == 401:
+                    st.error("❌ Ошибка авторизации при удалении")
+                    logout()
+                    st.rerun()
+                
+                return False
+                
+        except Exception as e:
+            print(f"❌ Исключение при удалении: {e}")
+            import traceback
+            traceback.print_exc()
+            return False

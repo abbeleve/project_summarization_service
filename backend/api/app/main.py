@@ -377,8 +377,9 @@ async def get_user_transcripts(
                 transcripts_map[transcript_id_str] = {
                     "transcript_id": transcript_id_str,
                     "original_text": transcript_data.get('original_text', ''),
+                    "created_at": transcript_data.get('created_at'),
                     "summary": summary_data.get('text') if summary_data else None,
-                    "parts": []  # Инициализируем пустой список
+                    "parts": []
                 }
             
             # Добавляем часть в список
@@ -426,6 +427,34 @@ async def get_transcript(
     except Exception as e:
         logger.error(f"Error fetching transcript: {str(e)}")
         raise HTTPException(500, f"Error fetching transcript: {str(e)}")
+
+@app.delete("/transcripts/{transcript_id}")
+async def delete_transcript(
+    transcript_id: str,
+    current_user: TokenData = Depends(get_current_active_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Удалить транскрипцию"""
+    try:
+        # Преобразуем строку в UUID
+        try:
+            transcript_uuid = UUID(transcript_id)
+        except ValueError:
+            raise HTTPException(400, "Некорректный формат ID транскрипции")
+        
+        success = db.delete_transcripts(transcript_uuid)
+           
+        if success:
+            return {"status": "success", "message": "Транскрипция удалена"}
+        else:
+            raise HTTPException(404, "Транскрипция не найдена")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Ошибка при удалении: {str(e)}")
+        logger.error(f"Error deleting transcript: {str(e)}")
+        raise HTTPException(500, f"Ошибка при удалении транскрипции: {str(e)}")
 
 @app.get("/admin/users")
 async def get_all_users(
