@@ -31,6 +31,7 @@ import gigaam
 from time import time
 from pyannote.audio.core.task import Specifications
 from noise_suppression_request import request_for_noise_suppression
+from whisper_request import transcribe_with_whisper_service
 
 class AudioRecognition():
 
@@ -43,6 +44,7 @@ class AudioRecognition():
     #self.OPENAI_API_KEY = os.getenv(openai_api_key_envname) #getting api key from env
     self.hf_api_key_envname = hf_api_key_envname
     self.openai_api_key_envname = openai_api_key_envname
+    self.whisper_model_path = "./models/faster-whisper-large-v3"
     self.SYSTEM_SUMMARIZATION_PROMPT = """\
 Ты — точный и нейтральный ассистент по обработке речи. Твоя задача — создать **строго фактологическое краткое содержание** предоставленного текста.
 
@@ -167,7 +169,7 @@ class AudioRecognition():
 
     #running transcription
 
-  def transcribe_gigaam(self, diarization_results, input_audio_path: str, output_save_script_file_path: str = None, transcription_model: str = 'v3_ctc'):
+  def transcribe_gigaam(self, diarization_results, input_audio_path: str, transcription_model: str = 'v3_ctc'):
     if not os.path.isfile(input_audio_path):
         raise FileNotFoundError(f"Audio file not found: {input_audio_path}")
     if os.path.getsize(input_audio_path) == 0:
@@ -179,7 +181,7 @@ class AudioRecognition():
         device='cuda'
     )
 
-    print("Начало транскрибации с помощью whisper")
+    print("Начало транскрибации с помощью gigaam")
     for index, timings in tqdm(enumerate(diarization_results)):
       audio_chunk = waveform[:, int(timings['start'] * self.SAMPLE_RATE): int(timings['stop'] * self.SAMPLE_RATE)]
       resulted_transcription = ''
@@ -195,21 +197,31 @@ class AudioRecognition():
         resulted_transcription += transcription
       diarization_results[index]["Text"] = resulted_transcription
 
-    if output_save_script_file_path:
-      with open(output_save_script_file_path, mode="w", encoding="utf-8") as f:
-        lines = [
-          f'{x["Speaker"]}: {x["Text"]}' # , start={x["start"]:.1f}s, stop={x["stop"]:.1f}s I do not specify start and stop timing, bc it will fill context for llm with unused information (i think)
-          for x in diarization_results
-        ]
-        f.write("\n".join(lines))
-    print(f"Saved results to {output_save_script_file_path}")
-
     return diarization_results
 
-  def transcribe_whisper(self):
-    pass
+  def transcribe_whisper(self, diarization_results, input_audio_path: str):
+    # if not os.path.isfile(input_audio_path):
+    #     raise FileNotFoundError(f"Audio file not found: {input_audio_path}")
+    # if os.path.getsize(input_audio_path) == 0:
+    #     raise ValueError(f"Audio file is empty: {input_audio_path}")
+    # audio_waveform = decode_audio(input_audio_path)
 
-  def run_diarization_transcription_pipeline(self, input_audio_path: str, output_save_script_file_path: str = None, diarization_lib: str = "pyannote", transcribe_lib: str = "gigaam", diarization_model: str = "pyannote/speaker-diarization-community-1", transcribe_model: str = "v3_ctc"):
+    # model = WhisperModel(self.whisper_model_path, device='cuda')
+
+    # print("Начало транскрибации whisper")
+    # for index, timings in tqdm(enumerate(diarization_results)):
+    #   audio_chunk = audio_waveform[int(timings['start'] * self.SAMPLE_RATE): int(timings['stop'] * self.SAMPLE_RATE)]
+    #   segments, info = model.transcribe(audio_chunk, beam_size=5, language='ru')
+    #   # segments, info = self.model.transcribe(audio_chunk, beam_size=5, language='ru')
+    #   transcribed_text = ""
+    #   for segment in segments:
+    #     transcribed_text += segment.text
+    #   diarization_results[index]["Text"] = transcribed_text
+    # print(diarization_results)
+    diarization_results = transcribe_with_whisper_service(diarization_results, input_audio_path)
+    return diarization_results
+
+  def run_diarization_transcription_pipeline(self, input_audio_path: str, diarization_lib: str = "pyannote", transcribe_lib: str = "gigaam", diarization_model: str = "pyannote/speaker-diarization-community-1", transcribe_model: str = "v3_ctc"):
     """
     Convert WAV file to human speech:
     Speaker: SPEAKER_00, Text: Ну и разные географические зоны.
@@ -257,8 +269,10 @@ class AudioRecognition():
       diarization_results = self.diarize_pyannote(clean_wav_input_audio_path, diarize_model=diarization_model)
     #transcription model choose
     if transcribe_lib == "gigaam":
-      transcription_results = self.transcribe_gigaam(diarization_results, clean_wav_input_audio_path, output_save_script_file_path, transcription_model=transcribe_model)
-
+      transcription_results = self.transcribe_gigaam(diarization_results, clean_wav_input_audio_path, transcription_model=transcribe_model)
+    elif transcribe_lib == "whisper":
+      print(diarization_results)
+      transcription_results = self.transcribe_whisper(diarization_results, clean_wav_input_audio_path)
     return transcription_results
 
 

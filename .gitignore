@@ -6,6 +6,7 @@ __pycache__/
 backend/db/
 backend/app/__pycache__
 backend/app/.env
+ML/whisper_transcription_service/models/
 
 # C extensions
 *.so

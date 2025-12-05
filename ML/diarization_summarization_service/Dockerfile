@@ -23,9 +23,11 @@ RUN git clone https://github.com/salute-developers/GigaAM.git /app/GigaAM && \
     pip install -e /app/GigaAM
 
 WORKDIR /app
+
 COPY ML_pipeline.py .
 COPY main.py .
 COPY noise_suppression_request.py .
+COPY whisper_request.py .
 
 EXPOSE 8053
 
