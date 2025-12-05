@@ -57,7 +57,7 @@ async def transcribe(
             diarization_model=diarization_model,
             transcribe_model=transcribe_model
         )
-
+        print(result)
         return {"transcript": result}
 
     except Exception as e:
@@ -90,6 +90,8 @@ async def summarize(
         raise HTTPException(400, "Input text is empty")
     
     try:
+        print('here?')
+        print(llm_model, base_url)
         summary = recognizer.summarize_with_openai(text=input_text, model=llm_model, base_url=base_url)
         return {"summary": summary}
 

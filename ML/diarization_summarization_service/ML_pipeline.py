@@ -249,9 +249,9 @@ class AudioRecognition():
                 file_name_root + ".wav"
             )
       wav_input_audio_path = self.convert_to_wav(input_audio_path, wav_output_path)
-
+    clean_wav_input_audio_path = wav_input_audio_path
     #using noise_suppression
-    clean_wav_input_audio_path = request_for_noise_suppression(wav_input_audio_path)
+    # clean_wav_input_audio_path = request_for_noise_suppression(wav_input_audio_path)
     #diarization model choose
     if diarization_lib == "pyannote":
       diarization_results = self.diarize_pyannote(clean_wav_input_audio_path, diarize_model=diarization_model)
@@ -330,10 +330,10 @@ class AudioRecognition():
     if file_path:
       with open(file_path, mode='r') as f:
         text = f.read()
-
+    print(text)
     task_opinions_map = {'summarization': (self.SYSTEM_SUMMARIZATION_PROMPT, self.SUMMARIZATION_PROMPT), 'keypoints': (self.SYSTEM_KEYPOINTS_PROMPT, self.KEYPOINTS_PROMPT), 'questions': (self.SYSTEM_QUESTIONS_PROMPT, self.QUESTIONS_PROMPT)}
-    if task_choice not in task_opinions_map.keys:
-       raise ValueError(f"that task is not in: {task_opinions_map.keys}")
+    if task_choice not in task_opinions_map.keys():
+       raise ValueError(f"that task is not in: {task_opinions_map.keys()}")
 
     open_api_key = os.getenv(self.openai_api_key_envname)
     client = OpenAI(api_key=open_api_key, base_url=base_url)

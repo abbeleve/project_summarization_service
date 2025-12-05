@@ -14,13 +14,6 @@ services:
       - ./backend/db/pgdata:/var/lib/postgresql/data
     networks:
       - meeting-network
-    
-  audio-ml:
-    build:
-      context: ./ML/diarization_summarization_service
-      dockerfile: Dockerfile
-      args:
-        HF_API_KEY: ${HF_API_KEY}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres_user -d postgres"]
       interval: 5s
@@ -67,23 +60,33 @@ services:
              sleep 15 &&
              echo '🚀 Запуск Streamlit...' &&
              streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
-    
-  # audio-ml:
-  #   build:
-  #     context: ./ML
-  #     dockerfile: Dockerfile
-  #     args:
-  #       HF_API_KEY: ${HF_API_KEY}
-  #   ports:
-  #     - "8053:8053"
-  #   environment:
-  #     - PYTHONUNBUFFERED=1
-  #     - HF_API_KEY=${HF_API_KEY}
-  #     - OPENAI_API_KEY=${OPENAI_API_KEY}
-  #   runtime: nvidia
-  #   restart: unless-stopped
-  #   networks:
-  #     - meeting-network
+  
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - meeting-network
+
+  audio-ml:
+    build:
+      context: ./ML/diarization_summarization_service
+      dockerfile: Dockerfile
+      args:
+        HF_API_KEY: ${HF_API_KEY}
+    ports:
+      - "8053:8053"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_API_KEY=${HF_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    runtime: nvidia
+    restart: unless-stopped
+    networks:
+      - meeting-network
 
   denoiser:
     build:

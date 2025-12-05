@@ -196,7 +196,7 @@ async def process_audio(
             }
             
             # Отправка запроса к внешнему сервису транскрибации
-            async with httpx.AsyncClient(timeout=300.0) as client:
+            async with httpx.AsyncClient(timeout=1300.0) as client:
                 response = await client.post(
                     "http://audio-ml:8053/transcribe",
                     files=files,
@@ -213,12 +213,21 @@ async def process_audio(
                     status_code=response.status_code,
                     detail=f"Transcription service error: {error_detail}"
                 )
+            print(response)
+            ml_response = response.json()
             
-            result = response.json()
-            
-            # Получаем транскрипцию
-            original_text = result.get("text", "")
-            clean_text = result.get("cleaned_text", original_text)
+            segments = ml_response.get("transcript", [])
+
+            if not segments:
+                raise HTTPException(500, "ML service returned empty transcript")
+            print(segments)
+            segments_texts = []
+            for segment in segments:
+                text = segment.get("text", "")
+                if text:
+                    segments_texts.append(text)
+            original_text = " ".join(segments_texts)
+            clean_text = original_text
             
             # Вставляем транскрипцию в базу
             transcript_id = db.insert_transcripts(original_text, clean_text)
@@ -227,10 +236,11 @@ async def process_audio(
                 raise HTTPException(500, "Failed to save transcript to database")
             
             for segment in segments:
-                speaker = segment.get("speaker", "UNKNOWN")
-                text = segment.get("text", "")
+                speaker = segment.get("Speaker", "UNKNOWN")
+                text = segment.get("Text", "")
                 start = segment.get("start", 0.0)
-                end = segment.get("end", 0.0)
+                end = segment.get("stop", 0.0)
+                print(speaker, text, start, end)
                 
                 db.insert_parts_transcription(
                     employee_id=current_user.user_id,
@@ -245,7 +255,7 @@ async def process_audio(
                 try:
                     # Подготавливаем данные для суммаризации
                     summarize_data = {
-                        "text": segments,
+                        "text": json.dumps(segments),
                         "llm_model": llm_model or "openai/gpt-oss-20b",
                         "base_url": ""
                     }
@@ -260,6 +270,8 @@ async def process_audio(
                     if summarize_response.status_code == 200:
                         summary_result = summarize_response.json()
                         summary = summary_result.get("summary", "")
+                        print(summary)
+                        print('-'*50)
                     else:
                         print(f"Summarization service error: {summarize_response.status_code}")
                         summary = ""
