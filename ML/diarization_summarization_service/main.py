@@ -71,7 +71,8 @@ async def transcribe(
 async def summarize(
     text: Optional[str] = Form(None),
     llm_model: str = Form("openai/gpt-oss-20b"),
-    base_url: str = Form("https://openrouter.ai/api/v1")
+    base_url: str = Form("https://openrouter.ai/api/v1"),
+    task_choice: str = Form("summarization"),
 ):
     if not recognizer:
         raise HTTPException(500, "Model not initialized")
@@ -92,7 +93,7 @@ async def summarize(
     try:
         print('here?')
         print(llm_model, base_url)
-        summary = recognizer.summarize_with_openai(text=input_text, model=llm_model, base_url=base_url)
+        summary = recognizer.summarize_with_openai(text=input_text, model=llm_model, base_url=base_url, task_choice=task_choice)
         return {"summary": summary}
 
     except Exception as e:

@@ -328,7 +328,7 @@ class AudioRecognition():
       warnings.warn("When text and file_path are specified in functions args, text from args(file_path) will overwrite args(text)")
 
     if file_path:
-      with open(file_path, mode='r') as f:
+      with open(file_path, mode='r', encoding='utf-8') as f:
         text = f.read()
     print(text)
     task_opinions_map = {'summarization': (self.SYSTEM_SUMMARIZATION_PROMPT, self.SUMMARIZATION_PROMPT), 'keypoints': (self.SYSTEM_KEYPOINTS_PROMPT, self.KEYPOINTS_PROMPT), 'questions': (self.SYSTEM_QUESTIONS_PROMPT, self.QUESTIONS_PROMPT)}
