@@ -88,10 +88,10 @@ def convert_segments_to_display_format(segments: list) -> list:
     """Конвертировать сегменты из API в формат для отображения"""
     return [
         {
-            "speaker": segment.get("speaker", "UNKNOWN"),
+            "speaker": segment.get("Speaker", "UNKNOWN"),
             "start": segment.get("start", 0),
-            "end": segment.get("end", 0),
-            "text": segment.get("text", "")
+            "end": segment.get("stop", 0),
+            "text": segment.get("Text", "")
         }
         for segment in segments
     ]
