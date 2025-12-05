@@ -37,7 +37,6 @@ def show_new_analysis(data: dict):
         "duration": f"{result.get('duration', 0):.1f} сек",
         "processed_by": st.session_state.get("username", "user"),
         "original_text": result.get("original_text", ""),
-        "clean_text": result.get("clean_text", "")
     }
 
     col1, col2 = st.columns([3, 1])
@@ -70,7 +69,6 @@ def show_historical_analysis(transcript_id: str):
         "duration": calculate_duration(data.get("parts", [])),
         "processed_by": "Система",
         "original_text": data.get("original_text", ""),
-        "clean_text": data.get("clean_text", "")
     }
 
     col1, col2 = st.columns([3, 1])

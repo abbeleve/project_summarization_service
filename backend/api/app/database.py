@@ -1,7 +1,7 @@
 from uuid import UUID, uuid4
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
-from sqlalchemy import create_engine, String, Text, ForeignKey, CheckConstraint
+from sqlalchemy import create_engine, String, Text, ForeignKey, CheckConstraint, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID as UUIDType
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
@@ -54,8 +54,12 @@ class Staff(Base):
 
 class Transcript(Base):
     __tablename__ = 'Transcripts'
-    original_text: Mapped[str] = mapped_column(Text, nullable=False)
-    clean_text: Mapped[str] = mapped_column(Text, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
 
     parts_transcriptions: Mapped[List["PartsTranscription"]] = relationship(
         "PartsTranscription",
@@ -71,8 +75,8 @@ class Transcript(Base):
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': str(self.id),
-            'original_text': self.original_text,
-            'clean_text': self.clean_text
+            'text': self.text,
+            'created_at': self.created_at.isoformat()
         }
 
 
@@ -296,12 +300,11 @@ class DataBaseManager:
                 return []
 
 
-    def insert_transcripts(self, original_text: str, clean_text: str) -> Optional[UUID]:
+    def insert_transcripts(self, text: str) -> Optional[UUID]:
         with self.session_scope() as session:
             try:
                 transcript = Transcript(
-                    original_text=original_text,
-                    clean_text=clean_text
+                    text=text
                 )
                 session.add(transcript)
                 session.flush()

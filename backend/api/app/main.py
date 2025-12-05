@@ -227,10 +227,9 @@ async def process_audio(
                 if text:
                     segments_texts.append(text)
             original_text = " ".join(segments_texts)
-            clean_text = original_text
             
             # Вставляем транскрипцию в базу
-            transcript_id = db.insert_transcripts(original_text, clean_text)
+            transcript_id = db.insert_transcripts(original_text)
             
             if not transcript_id:
                 raise HTTPException(500, "Failed to save transcript to database")
@@ -305,7 +304,6 @@ async def process_audio(
                 "status": "success",
                 "transcript_id": str(transcript_id),
                 "original_text": original_text,
-                "clean_text": clean_text,
                 "segments": segments,
                 "summary": summary,
                 "speakers": speakers,
@@ -379,7 +377,6 @@ async def get_user_transcripts(
                 transcripts_map[transcript_id_str] = {
                     "transcript_id": transcript_id_str,
                     "original_text": transcript_data.get('original_text', ''),
-                    "clean_text": transcript_data.get('clean_text', ''),
                     "summary": summary_data.get('text') if summary_data else None,
                     "parts": []  # Инициализируем пустой список
                 }
@@ -420,7 +417,6 @@ async def get_transcript(
         return {
             "transcript_id": transcript_id,
             "original_text": transcript_data.get('original_text', ''),
-            "clean_text": transcript_data.get('clean_text', ''),
             "parts": parts,
             "summary": summary_data.get('text') if summary_data else None
         }
