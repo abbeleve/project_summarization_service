@@ -135,6 +135,7 @@ triton==3.4.0
 typer-slim==0.20.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
+faster-whisper
 tzdata==2025.2
 urllib3==2.5.0
 yarl==1.22.0

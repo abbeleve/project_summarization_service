@@ -33,7 +33,7 @@ async def transcribe(
     if ext not in ['.mp3', '.wav', '.mp4', '.ogg']:
         raise HTTPException(400, f"Unsupported file format: {ext}")
 
-    allowed_transcribe_libs = {"gigaam"}
+    allowed_transcribe_libs = {"gigaam", "whisper"}
     allowed_diarize_libs = {"pyannote"}
 
     if transcribe_lib not in allowed_transcribe_libs:
@@ -43,7 +43,6 @@ async def transcribe(
 
     temp_dir = tempfile.mkdtemp()
     input_path = os.path.join(temp_dir, f"{uuid.uuid4()}{ext}")
-    output_path = os.path.join(temp_dir, "transcript.txt")
 
     try:
         with open(input_path, "wb") as f:
@@ -51,7 +50,6 @@ async def transcribe(
 
         result = recognizer.run_diarization_transcription_pipeline(
             input_audio_path=input_path,
-            output_save_script_file_path=output_path,
             diarization_lib=diarize_lib,
             transcribe_lib=transcribe_lib,
             diarization_model=diarization_model,
@@ -71,7 +69,8 @@ async def transcribe(
 async def summarize(
     text: Optional[str] = Form(None),
     llm_model: str = Form("openai/gpt-oss-20b"),
-    base_url: str = Form("https://openrouter.ai/api/v1")
+    base_url: str = Form("https://openrouter.ai/api/v1"),
+    task_choice: str = Form("summarization"),
 ):
     if not recognizer:
         raise HTTPException(500, "Model not initialized")
@@ -92,7 +91,7 @@ async def summarize(
     try:
         print('here?')
         print(llm_model, base_url)
-        summary = recognizer.summarize_with_openai(text=input_text, model=llm_model, base_url=base_url)
+        summary = recognizer.summarize_with_openai(text=input_text, model=llm_model, base_url=base_url, task_choice=task_choice)
         return {"summary": summary}
 
     except Exception as e:
