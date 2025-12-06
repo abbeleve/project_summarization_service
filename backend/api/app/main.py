@@ -1,23 +1,23 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware import Middleware
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional, List, Dict
-import jwt
-from datetime import datetime, timedelta
-import secrets
-import json
 import time
 import os
 import httpx
 import tempfile
 import logging
 from uuid import UUID, uuid4
+from datetime import timedelta, datetime
+
 
 from .models.models import User, Token, TokenData, LoginRequest, TokenResponse
-from .gen_fake_data import gen_fake_data
-from .database import DataBaseManager
+from .db_service.gen_fake_data import gen_fake_data
+from .db_service.database import DataBaseManager
+from .auth_service.jwt import jwt_service
+from .auth_service.middleware import AuthMiddleware
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Meeting Analyzer API", version="1.0.0")
 
+# Создаем middleware список
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:8501", "http://frontend:8501"],
@@ -33,19 +34,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Конфигурация
-SECRET_KEY = secrets.token_urlsafe(32)
-print(f"Dev SECRET_KEY: {SECRET_KEY}")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+auth_middleware = AuthMiddleware(jwt_service)
 
-#Для продакшена:
-# SECRET_KEY = os.getenv("JWT_SECRET_KEY")
-
-# if not SECRET_KEY:
-#     raise ValueError("JWT_SECRET_KEY environment variable is required!")
-
-security = HTTPBearer()
+@app.middleware("http")
+async def auth_middleware_wrapper(request: Request, call_next):
+    return await auth_middleware(request, call_next)
 
 # Функция для получения БД
 def get_db():
@@ -54,115 +47,171 @@ def get_db():
     try:
         yield db
     finally:
-        # SQLAlchemy сам управляет соединениями через сессии
         pass
 
-# Функции для работы с JWT
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+# Зависимость для получения текущего пользователя из request.state
+async def get_current_user(request: Request) -> Dict:
+    """Получить текущего пользователя из request.state"""
+    if not hasattr(request.state, "user"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+    return request.state.user
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: DataBaseManager = Depends(get_db)
-):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Неверные учетные данные",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        user_id: str = payload.get("user_id")
-        if username is None or user_id is None:
-            raise credentials_exception
-
-        token_data = TokenData(username=username, user_id=user_id)
-    except jwt.PyJWTError:
-        raise credentials_exception
-    
-    # Проверяем существование пользователя в БД
-    users = db.select_staff_by_various_parameters(login=username)
-    if not users or len(users) == 0:
-        raise credentials_exception
-    
-    return token_data
-
-async def get_current_active_user(current_user: TokenData = Depends(get_current_user)):
+# Для обратной совместимости с некоторыми эндпоинтами:
+async def get_current_active_user(current_user: Dict = Depends(get_current_user)):
     return current_user
 
-# пока разделения на роли в бд нет
-def require_admin(current_user: TokenData = Depends(get_current_active_user)):
+def require_admin(current_user: Dict = Depends(get_current_user)):
+    # TODO: добавить проверку роли когда она будет в БД
     return current_user
 
-
-
+# Зависимость для админа (если понадобится)
+def require_admin(request: Request):
+    user = get_current_user(request)
+    # Здесь можно добавить проверку роли
+    return user
 
 # Эндпоинты аутентификации
-@app.post("/auth/login", response_model=Token)
-async def login(user: User, db: DataBaseManager = Depends(get_db)):
-    # Аутентификация через базу данных
-    employee_id = db.authentication(user.username, user.password)
-    
-    if not employee_id:
+@app.post("/auth/login", response_model=TokenResponse)
+async def login(
+    login_data: LoginRequest,
+    db: DataBaseManager = Depends(get_db)
+):
+    """Аутентификация пользователя"""
+    try:
+        # Аутентификация через базу данных
+        employee_id = db.authentication(login_data.username, login_data.password)
+        
+        if not employee_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Неверное имя пользователя или пароль"
+            )
+        
+        # Получаем данные пользователя
+        user_data = db.select_staff_by_id(employee_id)
+        if not user_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Данные пользователя не найдены"
+            )
+        
+        full_name = f"{user_data['surname']} {user_data['name']}"
+        
+        # Создаем access token
+        access_token = jwt_service.create_access_token(
+            data={
+                "sub": login_data.username,
+                "user_id": str(employee_id),
+                "full_name": full_name
+            }
+        )
+        
+        # Создаем refresh token (опционально)
+        refresh_token = jwt_service.create_refresh_token(
+            data={
+                "sub": login_data.username,
+                "user_id": str(employee_id)
+            }
+        )
+        
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+            user_id=str(employee_id),
+            full_name=full_name
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+@app.post("/auth/refresh")
+async def refresh_token(
+    refresh_token_data: Dict[str, str]
+):
+    """Обновить access token с помощью refresh token"""
+    try:
+        refresh_token = refresh_token_data.get("refresh_token")
+        if not refresh_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Refresh token is required"
+            )
+        
+        # Проверяем refresh token
+        payload = jwt_service.verify_token(refresh_token)
+        
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type"
+            )
+        
+        # Создаем новый access token
+        access_token = jwt_service.create_access_token(
+            data={
+                "sub": payload.get("sub"),
+                "user_id": payload.get("user_id"),
+                "full_name": payload.get("full_name", "")
+            }
+        )
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer"
+        }
+        
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверное имя пользователя или пароль"
+            detail=str(e)
         )
-    
-    # Получаем данные пользователя для токена
-    user_data = db.select_staff_by_id(employee_id)
-    if not user_data:
+    except Exception as e:
+        logger.error(f"Refresh token error: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Данные пользователя не найдены"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
         )
-    
-    full_name = f"{user_data['surname']} {user_data['name']}"
-    
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={
-            "sub": user.username, 
-            "user_id": str(employee_id),
-            "full_name": full_name
-        },
-        expires_delta=access_token_expires
-    )
-    
-    return TokenResponse(
-        access_token=access_token,
-        token_type="bearer",
-        user_id=str(employee_id),  # UUID как строка
-        full_name=full_name
-    )
 
 @app.get("/auth/me")
 async def read_users_me(
-    current_user: TokenData = Depends(get_current_active_user),
+    current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
-    user_data = db.select_staff_by_login(current_user.username)
-    if not user_data:
+    """Получить информацию о текущем пользователе"""
+    try:
+        user_data = db.select_staff_by_login(current_user["username"])
+        if not user_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Пользователь не найден"
+            )
+        
+        user_info = user_data[0]
+        return {
+            "user_id": user_info[0],
+            "username": current_user["username"],
+            "full_name": f"{user_info[1]} {user_info[2]} {user_info[3] or ''}".strip(),
+            "email": user_info[4]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get user info error: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Пользователь не найден"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
         )
-    
-    user_info = user_data[0]
-    return {
-        "user_id": user_info[0],
-        "username": current_user.username,
-        "full_name": f"{user_info[1]} {user_info[2]} {user_info[3] or ''}".strip(),
-        "email": user_info[4]
-    }
 
 
 @app.post("/process")
@@ -173,7 +222,7 @@ async def process_audio(
     diarize_lib: Optional[str] = None,
     transcribe_lib: Optional[str] = None,
     llm_model: Optional[str] = None,
-    current_user: TokenData = Depends(get_current_active_user),
+    current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
     try:
@@ -242,7 +291,7 @@ async def process_audio(
                 print(speaker, text, start, end)
                 
                 db.insert_parts_transcription(
-                    employee_id=current_user.user_id,
+                    employee_id=current_user["user_id"],
                     transcript_id=transcript_id,
                     text=f"{speaker}: {text}",
                     start_time=int(start * 1000),
@@ -257,6 +306,7 @@ async def process_audio(
                         "text": json.dumps(segments),
                         "llm_model": llm_model or "openai/gpt-oss-20b",
                         "base_url": ""
+                        "task_choice": "summarization"
                     }
                     
                     # Отправляем запрос на суммаризацию
@@ -346,7 +396,7 @@ async def process_audio(
 
 @app.get("/transcripts")
 async def get_user_transcripts(
-    current_user: TokenData = Depends(get_current_active_user),
+    current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
     """Получить все транскрипции пользователя"""
@@ -395,7 +445,7 @@ async def get_user_transcripts(
 @app.get("/transcripts/{transcript_id}")
 async def get_transcript(
     transcript_id: str,
-    current_user: TokenData = Depends(get_current_active_user),
+    current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
     """Получить конкретную транскрипцию"""
@@ -431,7 +481,7 @@ async def get_transcript(
 @app.delete("/transcripts/{transcript_id}")
 async def delete_transcript(
     transcript_id: str,
-    current_user: TokenData = Depends(get_current_active_user),
+    current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
     """Удалить транскрипцию"""
@@ -458,7 +508,7 @@ async def delete_transcript(
 
 @app.get("/admin/users")
 async def get_all_users(
-    current_user: TokenData = Depends(require_admin),
+    current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
     try:

@@ -5,12 +5,14 @@ from components.sidebar import show_user_sidebar, show_admin_sidebar
 from utils.api_client import APIClient
 from utils.navigation import navigate
 from config.settings import (
-    SUPPORTED_FORMATS, 
-    TRANSCRIBE_MODELS,
-    TRANSCRIBE_LIBS,
-    DIARIZATION_MODELS,
-    DIARIZE_LIBS,
-    LLM_MODELS
+    SUPPORTED_FORMATS,
+    TRANSCRIBE_CONFIG,
+    DIARIZATION_CONFIG,
+    LLM_MODELS,
+    get_transcribe_models_by_lib,
+    get_diarization_models_by_lib,
+    get_lib_by_transcribe_model,
+    get_lib_by_diarization_model
 )
 
 def show_home_page():
@@ -48,42 +50,66 @@ def show_upload_section():
             col_model1, col_model2 = st.columns(2)
             
             with col_model1:
-                transcribe_model = st.selectbox(
-                    "Модель транскрибации",
-                    TRANSCRIBE_MODELS,
-                    index=0,
-                    help="Выберите модель для преобразования речи в текст"
-                )
+                # Транскрибация
+                st.markdown("**Транскрибация**")
                 
+                # Выбор библиотеки транскрибации
                 transcribe_lib = st.selectbox(
-                    "Библиотека транскрибации",
-                    TRANSCRIBE_LIBS,
+                    "Библиотека",
+                    list(TRANSCRIBE_CONFIG.keys()),
                     index=0,
-                    help="Выберите библиотеку для транскрибации"
+                    help="Выберите библиотеку для транскрибации",
+                    key="transcribe_lib_select"
                 )
                 
+                # Получаем модели для выбранной библиотеки
+                transcribe_models = get_transcribe_models_by_lib(transcribe_lib)
+                
+                # Выбор модели транскрибации
+                transcribe_model = st.selectbox(
+                    "Модель",
+                    transcribe_models,
+                    index=0 if transcribe_models else 0,
+                    help="Выберите модель для преобразования речи в текст",
+                    key="transcribe_model_select"
+                )
+                
+                # LLM суммаризация (не зависит от библиотек)
+                st.markdown("**Суммаризация**")
                 llm_model = st.selectbox(
                     "Модель суммаризации",
                     LLM_MODELS,
                     index=0,
-                    help="Выберите модель для суммаризации текста"
+                    help="Выберите модель для суммаризации текста",
+                    key="llm_select"
                 )
             
             with col_model2:
-                diarization_model = st.selectbox(
-                    "Модель диаризации",
-                    DIARIZATION_MODELS,
+                # Диаризация
+                st.markdown("**Диаризация**")
+                
+                # Выбор библиотеки диаризации
+                diarize_lib = st.selectbox(
+                    "Библиотека",
+                    list(DIARIZATION_CONFIG.keys()),
                     index=0,
-                    help="Выберите модель для определения спикеров"
+                    help="Выберите библиотеку для диаризации",
+                    key="diarize_lib_select"
                 )
                 
-                diarize_lib = st.selectbox(
-                    "Библиотека диаризации",
-                    DIARIZE_LIBS,
-                    index=0,
-                    help="Выберите библиотеку для диаризации"
+                # Получаем модели для выбранной библиотеки
+                diarization_models = get_diarization_models_by_lib(diarize_lib)
+                
+                # Выбор модели диаризации
+                diarization_model = st.selectbox(
+                    "Модель",
+                    diarization_models,
+                    index=0 if diarization_models else 0,
+                    help="Выберите модель для определения спикеров",
+                    key="diarization_model_select"
                 )
         
+        # Кнопка анализа
         if st.button("🎯 Анализировать", type="primary", use_container_width=True):
             with st.spinner("🔍 Начинаем анализ..."):
                 st.session_state.pending_analysis = {

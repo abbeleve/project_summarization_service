@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 import uuid
 
@@ -9,21 +9,17 @@ class User(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
-    user_id: str
-    full_name: str
-    role: str = "user" #УБРАТЬ ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ, КОГДА В БД БУДУТ РОЛИ
 
 class TokenData(BaseModel):
-    username: str
-    user_id: str
-    role: str = "user" #УБРАТЬ ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ, КОГДА В БД БУДУТ РОЛИ
+    username: Optional[str] = None
+    user_id: Optional[str] = None
+    role: Optional[str] = "user" #УБРАТЬ ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ, КОГДА В БД БУДУТ РОЛИ
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., description="Логин пользователя")
+    password: str = Field(..., description="Пароль пользователя")
 
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str
+class TokenResponse(Token):
+    refresh_token: Optional[str] = None
     user_id: str
     full_name: str

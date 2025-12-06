@@ -24,29 +24,24 @@ def main():
         initial_sidebar_state="expanded",
     )
 
-    params = st.query_params
-
-    current_page = params.get("page", "home")
-    analysis_id = params.get("id")
+    query_params = st.query_params
+    page = query_params.get("page", "home")
 
     # Проверка авторизации
-    if not st.session_state.get("token"):
-        if current_page != "login":
-            navigate("login")
-        show_login_page()
+    if page not in ["login"] and not check_auth():
+        navigate("login")
         return
 
     # Маршрутизация
-    if current_page == "home":
-        show_home_page()
-
-    elif current_page == "analysis" and analysis_id:
-        show_analysis_page(analysis_id)
-
-    elif current_page == "login":
+    if page == "login":
         show_login_page()
-
+    elif page == "home":
+        show_home_page()
+    elif page == "analysis":
+        transcript_id = query_params.get("id")
+        show_analysis_page(transcript_id)
     else:
+        st.error(f"Страница '{page}' не найдена")
         navigate("home")
 
 if __name__ == "__main__":
