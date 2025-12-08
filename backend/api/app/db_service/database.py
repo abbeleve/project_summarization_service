@@ -1,8 +1,8 @@
 from uuid import UUID, uuid4
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
-from sqlalchemy import create_engine, String, Text, ForeignKey, CheckConstraint, DateTime, func
-from sqlalchemy.dialects.postgresql import UUID as UUIDType
+from sqlalchemy import create_engine, String, Text, ForeignKey, CheckConstraint, DateTime, func, JSON
+from sqlalchemy.dialects.postgresql import UUID as UUIDType, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
 import bcrypt
@@ -54,6 +54,7 @@ class Staff(Base):
 
 class Transcript(Base):
     __tablename__ = 'Transcripts'
+    title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[Any] = mapped_column(
         DateTime(timezone=True),
@@ -75,6 +76,7 @@ class Transcript(Base):
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': str(self.id),
+            'title': self.title,
             'text': self.text,
             'created_at': self.created_at.isoformat()
         }
@@ -128,6 +130,11 @@ class Summary(Base):
         nullable=False
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    key_points: Mapped[Optional[List[str]]] = mapped_column(
+        JSONB, 
+        nullable=True,
+        default=list
+    )
 
     transcript: Mapped["Transcript"] = relationship(
         "Transcript",
@@ -138,7 +145,8 @@ class Summary(Base):
         return {
             'id': str(self.id),
             'transcript_id': str(self.transcript_id),
-            'text': self.text
+            'text': self.text,
+            'key_points': self.key_points if self.key_points else []
         }
 
 
@@ -300,10 +308,11 @@ class DataBaseManager:
                 return []
 
 
-    def insert_transcripts(self, text: str) -> Optional[UUID]:
+    def insert_transcripts(self, text: str, title: Optional[str] = None) -> Optional[UUID]:
         with self.session_scope() as session:
             try:
                 transcript = Transcript(
+                    title=title,
                     text=text
                 )
                 session.add(transcript)
@@ -459,7 +468,7 @@ class DataBaseManager:
                 return False
 
 
-    def insert_summaries(self, transcript_id: UUID, text: str) -> Optional[UUID]:
+    def insert_summaries(self, transcript_id: UUID, text: str, key_points: Optional[List[str]] = None) -> Optional[UUID]:
         with self.session_scope() as session:
             try:
                 transcript = session.get(Transcript, transcript_id)
@@ -468,7 +477,8 @@ class DataBaseManager:
 
                 summary = Summary(
                     transcript_id=transcript_id,
-                    text=text
+                    text=text,
+                    key_points=key_points or []
                 )
                 session.add(summary)
                 session.flush()
@@ -503,12 +513,19 @@ class DataBaseManager:
                     Summary.transcript_id == transcript_id
                 ).first()
 
-                return summary.to_dict() if summary else None
+                if summary:
+                    return {
+                        'id': str(summary.id),
+                        'transcript_id': str(summary.transcript_id),
+                        'text': summary.text,
+                        'key_points': summary.key_points if summary.key_points else [] 
+                    }
+                return None
             except SQLAlchemyError as e:
                 print(f"Ошибка при получении резюме: {e}")
                 return None
 
-    def update_summaries(self, summary_id: UUID, transcript_id: UUID, text: str) -> bool:
+    def update_summaries(self, summary_id: UUID, transcript_id: UUID, text: str, key_points: Optional[List[str]] = None) -> bool:
         with self.session_scope() as session:
             try:
                 summary = session.get(Summary, summary_id)
@@ -517,6 +534,8 @@ class DataBaseManager:
 
                 summary.transcript_id = transcript_id
                 summary.text = text
+                if key_points is not None:
+                    summary.key_points = key_points
                 return True
             except SQLAlchemyError as e:
                 print(f"Ошибка при обновлении резюме: {e}")

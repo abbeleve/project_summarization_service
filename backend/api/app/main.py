@@ -291,7 +291,6 @@ async def process_audio(
                 text = segment.get("Text", "")
                 start = segment.get("start", 0.0)
                 end = segment.get("stop", 0.0)
-                print(speaker, text, start, end)
                 
                 db.insert_parts_transcription(
                     employee_id=current_user["user_id"],
@@ -322,6 +321,16 @@ async def process_audio(
                     if summarize_response.status_code == 200:
                         summary_result = summarize_response.json()
                         summary = summary_result.get("summary", "")
+                        title = summary_result.get("title")
+                        key_points = summary_result.get("key_points", [])
+
+                        if not title and original_text:
+                            title_preview = original_text[:50].strip()
+                            if len(original_text) > 50:
+                                title_preview += "..."
+                            title = title_preview
+
+
                         print(summary)
                         print('-'*50)
                     else:
