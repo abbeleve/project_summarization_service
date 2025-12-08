@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict
 import time
 import os
+import json
 import httpx
 import tempfile
 import logging
@@ -222,6 +223,7 @@ async def process_audio(
     diarize_lib: Optional[str] = None,
     transcribe_lib: Optional[str] = None,
     llm_model: Optional[str] = None,
+    noise_sup_bool: Optional[bool] = True,
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
@@ -236,12 +238,13 @@ async def process_audio(
             files = {
                 'file': (file.filename, open(tmp_file_path, 'rb'), file.content_type)
             }
-            
+
             data = {
                 'transcribe_model': transcribe_model or "v3_ctc",
                 'diarization_model': diarization_model or "pyannote/speaker-diarization-community-1",
                 'diarize_lib': diarize_lib or "pyannote",
-                'transcribe_lib': transcribe_lib or "gigaam"
+                'transcribe_lib': transcribe_lib or "gigaam",
+                'noise_sup_bool': noise_sup_bool
             }
             
             # Отправка запроса к внешнему сервису транскрибации
@@ -262,14 +265,14 @@ async def process_audio(
                     status_code=response.status_code,
                     detail=f"Transcription service error: {error_detail}"
                 )
-            print(response)
+
             ml_response = response.json()
             
             segments = ml_response.get("transcript", [])
 
             if not segments:
                 raise HTTPException(500, "ML service returned empty transcript")
-            print(segments)
+
             segments_texts = []
             for segment in segments:
                 text = segment.get("text", "")
@@ -305,7 +308,7 @@ async def process_audio(
                     summarize_data = {
                         "text": json.dumps(segments),
                         "llm_model": llm_model or "openai/gpt-oss-20b",
-                        "base_url": ""
+                        "base_url": "",
                         "task_choice": "summarization"
                     }
                     
@@ -333,8 +336,6 @@ async def process_audio(
             if summary:
                 db.insert_summaries(transcript_id, summary)
 
-            print(db.select_transcripts_by_id("521890b8-b81f-464f-8c2d-e94dfe2f7e25"))
-
             speakers = []
             for segment in segments:
                 speaker = segment.get("speaker", "UNKNOWN")
@@ -343,7 +344,7 @@ async def process_audio(
             
             duration = 0.0
             for segment in segments:
-                end_time = segment.get("end", 0.0)
+                end_time = segment.get("stop", 0.0)
                 if end_time > duration:
                     duration = end_time
 
@@ -402,7 +403,7 @@ async def get_user_transcripts(
     """Получить все транскрипции пользователя"""
     try:
         # Получаем части транскрипций, созданные пользователем
-        user_parts = db.select_parts_transcription_by_employee_id(current_user.user_id)
+        user_parts = db.select_parts_transcription_by_employee_id(current_user["user_id"])
         
         # Группируем по transcript_id
         transcripts_map = {}
