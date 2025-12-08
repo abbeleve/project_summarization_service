@@ -131,6 +131,8 @@ class APIClient:
                 data['transcribe_lib'] = transcribe_lib
             if llm_model := kwargs.get('llm_model'):
                 data['llm_model'] = llm_model
+            if noise_sup_bool := kwargs.get('noise_sup_bool'):
+                data['noise_sup_bool'] = noise_sup_bool
             
             # Используем универсальный метод для запроса
             response = APIClient._make_request(

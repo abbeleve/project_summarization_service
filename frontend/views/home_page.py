@@ -83,6 +83,13 @@ def show_upload_section():
                     help="Выберите модель для суммаризации текста",
                     key="llm_select"
                 )
+
+                # Галочка для шумодава
+                noise_sup_bool = st.toggle(
+                    "🔇 Использовать шумоподавление",
+                    value=True,
+                    help="Применить подавление шумов для улучшения качества транскрибации"
+                )
             
             with col_model2:
                 # Диаризация
@@ -119,7 +126,8 @@ def show_upload_section():
                     "diarization_model": diarization_model,
                     "diarize_lib": diarize_lib,
                     "transcribe_lib": transcribe_lib,
-                    "llm_model": llm_model
+                    "llm_model": llm_model,
+                    "noise_sup_bool": noise_sup_bool
                 }
                 st.rerun()
 
