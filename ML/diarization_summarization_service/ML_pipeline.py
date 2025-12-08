@@ -58,8 +58,26 @@ class AudioRecognition():
 7. Если текст не содержит полезной информации — напиши: "Текст не содержит существенной информации для краткого содержания."
 
 Создай краткое содержание объёмом не более 200–300 слов.
+
+После распиши список по решениям и ключевым моментам проведенным в скрипте
+
+**Правила:**
+1. **Фокусируйся только на том, что было решено, согласовано, назначено или произошло.**  
+   Игнорируй общие рассуждения, повторы, приветствия и вводные фразы.
+2. **Чётко указывай:**
+   - Кто принял решение (если указано),
+   - Что именно решено/согласовано,
+   - Сроки, дедлайны или временные рамки (если есть),
+   - Ответственные лица (если упомянуты).
+3. **Не интерпретируй**, не добавляй мотивы, эмоции или последствия, которых нет в тексте.
+4. Если в тексте **нет решений, событий или согласованных действий** — напиши:  
+   "В обсуждении не было принято никаких решений или согласованных действий."
+5. Сохраняй **нейтральный, деловой тон**. Пиши связным текстом без маркированных списков.
+6. Объём — не более 200–300 слов.
+
+То есть суммарно выходит примерно 500-600 слов
 """ #prompt for summarization
-    self.SUMMARIZATION_PROMPT = "Создай краткое содержание следующего текста в соответствии с правилами выше:"
+    self.SUMMARIZATION_PROMPT = "Создай краткое содержание следующего текста и список по решениям и ключевым моментам из текста в соответствии с правилами выше:"
     self.SYSTEM_KEYPOINTS_PROMPT = """\
 Ты — точный и нейтральный ассистент по анализу деловых и профессиональных обсуждений.  
 Твоя задача — выделить **ключевые решения, события, согласованные действия и поворотные моменты**, которые произошли в ходе обсуждения.
@@ -221,7 +239,7 @@ class AudioRecognition():
     diarization_results = transcribe_with_whisper_service(diarization_results, input_audio_path)
     return diarization_results
 
-  def run_diarization_transcription_pipeline(self, input_audio_path: str, diarization_lib: str = "pyannote", transcribe_lib: str = "gigaam", diarization_model: str = "pyannote/speaker-diarization-community-1", transcribe_model: str = "v3_ctc"):
+  def run_diarization_transcription_pipeline(self, input_audio_path: str, diarization_lib: str = "pyannote", transcribe_lib: str = "gigaam", diarization_model: str = "pyannote/speaker-diarization-community-1", transcribe_model: str = "v3_ctc", noise_sup_bool: bool = True):
     """
     Convert WAV file to human speech:
     Speaker: SPEAKER_00, Text: Ну и разные географические зоны.
@@ -261,9 +279,12 @@ class AudioRecognition():
                 file_name_root + ".wav"
             )
       wav_input_audio_path = self.convert_to_wav(input_audio_path, wav_output_path)
-    clean_wav_input_audio_path = wav_input_audio_path
     #using noise_suppression
-    # clean_wav_input_audio_path = request_for_noise_suppression(wav_input_audio_path)
+    if noise_sup_bool:
+      clean_wav_input_audio_path = request_for_noise_suppression(wav_input_audio_path)
+    else:
+      clean_wav_input_audio_path = wav_input_audio_path
+    clean_wav_input_audio_path = self.convert_to_wav(clean_wav_input_audio_path, clean_wav_input_audio_path)
     #diarization model choose
     if diarization_lib == "pyannote":
       diarization_results = self.diarize_pyannote(clean_wav_input_audio_path, diarize_model=diarization_model)
@@ -333,7 +354,11 @@ class AudioRecognition():
         model (str): Model name to use for summarization
         base_url (str, optional): Custom base URL for OpenAI-compatible endpoints (e.g., for local LLMs)
     Returns:
-        summarization_results(str): summarization results
+        {
+        "title": "...",
+        "summary": "...",
+        "key_points": ["...", "...", ...]
+        }
     """
     if file_path is None and text is None:
       raise ValueError("Please specify file_path or paste text")
@@ -344,26 +369,61 @@ class AudioRecognition():
     if file_path:
       with open(file_path, mode='r', encoding='utf-8') as f:
         text = f.read()
+    print("SUMMARIZATION" + "-"*50)
     print(text)
-    task_opinions_map = {'summarization': (self.SYSTEM_SUMMARIZATION_PROMPT, self.SUMMARIZATION_PROMPT), 'keypoints': (self.SYSTEM_KEYPOINTS_PROMPT, self.KEYPOINTS_PROMPT), 'questions': (self.SYSTEM_QUESTIONS_PROMPT, self.QUESTIONS_PROMPT)}
-    if task_choice not in task_opinions_map.keys():
-       raise ValueError(f"that task is not in: {task_opinions_map.keys()}")
+    print("SUMMARIZATION" + "-"*50)
+    
+    system_prompt = (
+        "Ты — точный и нейтральный ассистент по анализу деловых совещаний. "
+        "Твоя задача — проанализировать предоставленный текст и вернуть ТОЛЬКО валидный JSON в следующем формате:\n"
+        "{\n"
+        '  "title": "Краткое название совещания (5–7 слов, описательное, без кавычек)",\n'
+        '  "summary": "Фактологическое краткое содержание (200–300 слов). Используй только информацию из текста. Не выдумывай. Нейтральный тон. Связный текст.",\n'
+        '  "key_points": [\n'
+        '    "Ключевой момент совещания 1",\n'
+        '    "Ключевой момент совещания 2",\n'
+        '    ...\n'
+        "  ]\n"
+        "}\n\n"
+        "Правила:\n"
+        "- Все поля обязательны.\n"
+        "- В key_points включай любые решения, назначения, согласованные действия или события, даже если они описаны в обобщённой форме (например: «было решено назначить», «установлено проводить встречи», «договорились внедрить», «планируется развивать»).\n"
+        "- Обращай внимание на глаголы: «решено», «назначено», «установлено», «согласовано», «планируется», «необходимо», «будет проводиться», «поручено», «принято» — такие фразы считаются решениями.\n"
+        "- Не требуй прямой речи или имён спикеров. Достаточно упоминания действия в контексте соглашения или плана.\n"
+        "- Игнорируй только общие рассуждения без намёка на действие (например: «курс важный», «нужно подумать»).\n"
+        "- Если и только если в тексте действительно отсутствуют какие-либо решения, назначения или согласованные действия — тогда key_points должен содержать одну строку: \"В обсуждении не было принято никаких решений или согласованных действий.\"\n"
+        "- Если текст пуст или бессодержателен — summary: \"Текст не содержит существенной информации для краткого содержания.\"\n"
+        "- Никакого дополнительного текста, пояснений, форматирования. Только JSON."
+    )
 
     open_api_key = os.getenv(self.openai_api_key_envname)
     client = OpenAI(api_key=open_api_key, base_url=base_url)
-  
+
     try:
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": task_opinions_map[task_choice][0]},
-                {"role": "user", "content": f"{task_opinions_map[task_choice][1]}\n\n{text}"}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Анализируй следующий текст совещания:\n\n{text}"}
             ],
             temperature=temperature,
-            max_tokens = max_tokens
+            max_tokens = max_tokens,
+            response_format={"type": "json_object"}
         )
-        summary = response.choices[0].message.content.strip()
-        return summary
+        
+        raw = response.choices[0].message.content.strip()
+
+        try:
+            result = json.loads(raw)
+            # Валидация (опционально)
+            for key in ["title", "summary", "key_points"]:
+                if key not in result:
+                    raise ValueError(f"Отсутствует поле: {key}")
+            if not isinstance(result["key_points"], list):
+                raise ValueError("key_points должен быть списком")
+            return result
+        except json.JSONDecodeError:
+            raise RuntimeError(f"Модель вернула невалидный JSON:\n{raw}")
 
     except Exception as e:
         raise RuntimeError(f"Error during OpenAI-compatible summarization: {e}")

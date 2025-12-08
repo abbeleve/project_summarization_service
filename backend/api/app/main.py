@@ -11,6 +11,7 @@ import tempfile
 import logging
 from uuid import UUID, uuid4
 from datetime import timedelta, datetime
+import json
 
 
 from .models.models import User, Token, TokenData, LoginRequest, TokenResponse
@@ -305,22 +306,33 @@ async def process_audio(
                     summarize_data = {
                         "text": json.dumps(segments),
                         "llm_model": llm_model or "openai/gpt-oss-20b",
-                        "base_url": ""
+                        "base_url": "",
                         "task_choice": "summarization"
                     }
                     
                     # Отправляем запрос на суммаризацию
-                    async with httpx.AsyncClient(timeout=120.0) as client:
+                    async with httpx.AsyncClient(timeout=300.0) as client:
                         summarize_response = await client.post(
                             "http://audio-ml:8053/summarize",
                             data=summarize_data
                         )
                     
                     if summarize_response.status_code == 200:
+                        print('response')
+                        print(summarize_response)
                         summary_result = summarize_response.json()
-                        summary = summary_result.get("summary", "")
+                        print('result')
+                        print(summary_result)
+                        summary_json = summary_result.get("summary", "")
+                        print('json')
+                        print(summary_json)
+                        title = summary_json.get("title", "no title")
+                        summary = summary_json.get("summary", "no summary")
+                        keypoints = summary_json.get("key_points", "no_keypoints")
                         print(summary)
                         print('-'*50)
+                        print(keypoints, title)
+                        print("KEYPOINTS" + "-"*50)
                     else:
                         print(f"Summarization service error: {summarize_response.status_code}")
                         summary = ""
@@ -402,8 +414,8 @@ async def get_user_transcripts(
     """Получить все транскрипции пользователя"""
     try:
         # Получаем части транскрипций, созданные пользователем
-        user_parts = db.select_parts_transcription_by_employee_id(current_user.user_id)
-        
+        user_parts = db.select_parts_transcription_by_employee_id(current_user["user_id"])
+
         # Группируем по transcript_id
         transcripts_map = {}
         
