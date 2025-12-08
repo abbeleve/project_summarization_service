@@ -1,4 +1,3 @@
-# app/services/jwt_service.py
 import jwt
 import secrets
 import os
