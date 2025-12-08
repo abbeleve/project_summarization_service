@@ -25,6 +25,7 @@ async def transcribe(
     diarization_model: str = Form("pyannote/speaker-diarization-community-1"),
     diarize_lib: str = Form("pyannote"),
     transcribe_lib: str = Form("gigaam"),
+    noise_sup_bool: bool = Form(True),
 ):
     if not recognizer:
         raise HTTPException(500, "Model not initialized")
@@ -53,7 +54,8 @@ async def transcribe(
             diarization_lib=diarize_lib,
             transcribe_lib=transcribe_lib,
             diarization_model=diarization_model,
-            transcribe_model=transcribe_model
+            transcribe_model=transcribe_model,
+            noise_sup_bool=noise_sup_bool,
         )
         print(result)
         return {"transcript": result}

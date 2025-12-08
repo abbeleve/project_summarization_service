@@ -12,7 +12,7 @@ TRANSCRIBE_CONFIG = {
         "v3_ssl"
     ],
     "whisper": [
-        "base"
+        "large-v3"
     ]
 }
 
@@ -25,7 +25,8 @@ DIARIZATION_CONFIG = {
 
 # Модели для суммаризации (LLM)
 LLM_MODELS = [
-    "openai/gpt-oss-20b"
+    "openai/gpt-oss-20b:free",
+    "openai/gpt-oss-120b:free"
 ]
 
 # Списки для обратной совместимости

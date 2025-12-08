@@ -110,18 +110,6 @@ def display_download_option(result: dict, filename: str, transcript_id: str):
             key=f"download_json_{transcript_id}"
         )
     
-    # Текстовый формат (только транскрипция)
-    with col2:
-        text_content = result.get("clean_text", result.get("original_text", ""))
-        st.download_button(
-            label="📄 Скачать текст",
-            data=text_content,
-            file_name=f"transcript_{transcript_id}.txt",
-            mime="text/plain",
-            use_container_width=True,
-            key=f"download_txt_{transcript_id}"
-        )
-    
     # Суммаризация отдельно
     with col3:
         summary = result.get("summary", "")

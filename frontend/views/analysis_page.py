@@ -1,6 +1,6 @@
 import streamlit as st
 from components.sidebar import show_user_sidebar, show_admin_sidebar
-from components.analysis_results import display_analysis_result
+from components.analysis_results import display_analysis_result, display_download_option
 from utils.api_client import APIClient
 from utils.navigation import navigate
 
@@ -39,6 +39,13 @@ def show_new_analysis(data: dict):
         "original_text": result.get("original_text", ""),
     }
 
+    st.markdown("### ⬇️ Скачать результаты")
+    display_download_option(
+        result=display_data,
+        filename=filename,
+        transcript_id=data["id"]
+    )
+    
     col1, col2 = st.columns([3, 1])
     with col1:
         st.header("📊 Результаты анализа")
@@ -71,6 +78,12 @@ def show_historical_analysis(transcript_id: str):
         "original_text": data.get("original_text", ""),
     }
 
+    st.markdown("### ⬇️ Скачать результаты")
+    display_download_option(
+        result=display_data,
+        filename=f"transcript_{transcript_id}.txt",
+        transcript_id=transcript_id
+    )
     col1, col2 = st.columns([3, 1])
     with col1:
         st.header(f"📊 Транскрипция #{transcript_id}")
@@ -81,6 +94,8 @@ def show_historical_analysis(transcript_id: str):
 
     st.markdown("---")
     display_analysis_result(display_data, f"transcript_{transcript_id}.txt")
+
+    
 
 def convert_segments_to_display_format(segments: list) -> list:
     """Конвертировать сегменты из API в формат для отображения"""
