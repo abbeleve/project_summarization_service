@@ -73,6 +73,12 @@ class Transcript(Base):
         cascade="all, delete-orphan"
     )
 
+    chat_messages: Mapped[List["ChatMessage"]] = relationship(
+        "ChatMessage",
+        back_populates="transcript",
+        cascade="all, delete-orphan"
+    )
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': str(self.id),
@@ -81,6 +87,40 @@ class Transcript(Base):
             'created_at': self.created_at.isoformat()
         }
 
+class ChatMessage(Base):
+    __tablename__ = 'ChatMessages'
+    
+    transcript_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Transcripts.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
+    role: Mapped[str] = mapped_column(
+        String(20), 
+        nullable=False,
+        comment="user или assistant"
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    
+    transcript: Mapped["Transcript"] = relationship(
+        "Transcript",
+        back_populates="chat_messages"
+    )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'transcript_id': str(self.transcript_id),
+            'role': self.role,
+            'content': self.content,
+            'created_at': self.created_at.isoformat()
+        }
 
 class PartsTranscription(Base):
     __tablename__ = 'PartsTranscription'
@@ -553,3 +593,34 @@ class DataBaseManager:
             except SQLAlchemyError as e:
                 print(f"Ошибка при удалении резюме: {e}")
                 return False
+            
+    def insert_chat_message(self, transcript_id: UUID, role: str, content: str) -> Optional[UUID]:
+        with self.session_scope() as session:
+            try:
+                transcript = session.get(Transcript, transcript_id)
+                if not transcript:
+                    return None
+
+                message = ChatMessage(
+                    transcript_id=transcript_id,
+                    role=role,
+                    content=content
+                )
+                session.add(message)
+                session.flush()
+                return message.id
+            except SQLAlchemyError as e:
+                print(f"Ошибка при сохранении сообщения чата: {e}")
+                return None
+            
+    def select_chat_messages_by_transcript_id(self, transcript_id: UUID) -> List[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                messages = session.query(ChatMessage)\
+                    .filter(ChatMessage.transcript_id == transcript_id)\
+                    .order_by(ChatMessage.created_at)\
+                    .all()
+                return [msg.to_dict() for msg in messages]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении истории чата: {e}")
+                return []

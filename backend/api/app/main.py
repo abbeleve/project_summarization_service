@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Request, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware import Middleware
 from fastapi.responses import JSONResponse
@@ -272,45 +272,6 @@ async def process_audio(
             
             segments = ml_response.get("transcript", [])
 
-            # segments = [
-            #     {
-            #         "Speaker": "SPEAKER_01",
-            #         "start": 0.0,
-            #         "stop": 8.5,
-            #         "Text": "Добрый день, коллеги! Начинаем еженедельное совещание отдела разработки. Сегодня у нас в повестке: обсуждение текущего спринта, проблемы с интеграцией платежной системы и план на следующую неделю."
-            #     },
-            #     {
-            #         "Speaker": "SPEAKER_01",
-            #         "start": 8.5,
-            #         "stop": 12.2,
-            #         "Text": "Первым делом, отчет от команды бэкенда. Иван, расскажи, пожалуйста, о прогрессе по API."
-            #     },
-            #     {
-            #         "Speaker": "SPEAKER_02",
-            #         "start": 12.2,
-            #         "stop": 25.7,
-            #         "Text": "Спасибо. За прошедшую неделю мы завершили интеграцию с новым провайдером SMS. Основные эндпоинты работают стабильно, осталось дописать тесты. Сложность возникла с асинхронной обработкой webhook, но мы нашли решение."
-            #     },
-            #     {
-            #         "Speaker": "SPEAKER_03",
-            #         "start": 25.7,
-            #         "stop": 38.4,
-            #         "Text": "От фронтенда. Мы закончили рефакторинг компонента календаря, добавили поддержку перетаскивания событий. Также исправили баг с отображением модальных окон на мобильных устройствах. На следующей неделе планируем начать работу над дашбордом аналитики."
-            #     },
-            #     {
-            #         "Speaker": "SPEAKER_04",
-            #         "start": 38.4,
-            #         "stop": 47.9,
-            #         "Text": "По DevOps. Мы успешно мигрировали staging-окружение на новый кластер. Мониторинг показывает стабильную работу. На этой неделе займемся настройкой автоматического масштабирования."
-            #     },
-            #     {
-            #         "Speaker": "SPEAKER_01",
-            #         "start": 47.9,
-            #         "stop": 55.3,
-            #         "Text": "В целом, спринт выполнен на 85%. Основные задержки связаны с интеграцией платежей, но мы уже нашли решение и в понедельник представим прототип."
-            #     }
-            # ]
-
             if not segments:
                 raise HTTPException(500, "ML service returned empty transcript")
 
@@ -363,22 +324,7 @@ async def process_audio(
                 except Exception as e:
                     print(f"Error during summarization: {str(e)}")
                     summary = ""
-#             summary = """📊 **Итоги еженедельного совещания отдела разработки:**
 
-# ✅ **Бэкенд:** Завершена интеграция с новым SMS-провайдером, основные API работают стабильно. Осталось дописать тесты. Решена проблема асинхронной обработки webhook.
-
-# ✅ **Фронтенд:** Завершен рефакторинг календаря, добавлена поддержка drag-and-drop. Исправлены баги с модальными окнами на мобильных устройствах. План на следующую неделю: разработка дашборда аналитики.
-
-# ✅ **DevOps:** Успешно выполнена миграция staging-окружения на новый кластер. Система работает стабильно. В планах: настройка автоматического масштабирования.
-
-# 📈 **Общий прогресс спринта:** 85% выполнено.
-# 🚧 **Текущие проблемы:** Задержки с интеграцией платежной системы, но решение найдено.
-# 📅 **Следующие шаги:** В понедельник будет представлен прототип платежной интеграции."""
-
-            # key_points = ["первый", "второй"]
-
-            # title = "Тестовый анализ"
-            
             # Вставляем транскрипцию в базу
             transcript_id = db.insert_transcripts(
                 text=original_text,
@@ -470,6 +416,84 @@ async def process_audio(
             detail=f"Transcription error: {str(e)}"
         )
 
+@app.post("/ask")
+async def proxy_ask_question(
+    transcript_id: str = Form(...),
+    question: str = Form(...),
+    current_user: dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """
+    Проксирует запрос к LLM в audio-ml сервис и сохраняет историю в БД.
+    """
+    AUDIO_ML_URL = "http://audio-ml:8053"
+    # 1. Проверяем, существует ли транскрипция и принадлежит ли она пользователю
+    transcript = db.select_transcripts_by_id(transcript_id)
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Транскрипция не найдена")
+
+    # ⚠️ Если у вас есть привязка транскрипций к пользователям — добавьте проверку здесь
+    # Например: if transcript["user_id"] != current_user["id"]: ...
+
+    # 2. Получаем полный текст встречи (из parts_transcription)
+    parts = db.select_parts_transcription_by_transcript_id(transcript_id)
+    meeting_text = "\n".join(
+        part.get("text", "") for part in parts
+    )
+
+    # 3. Подготавливаем данные для отправки в audio-ml
+    payload = {
+        "question": question,
+        "text": meeting_text,
+    }
+
+    # 4. Отправляем запрос в audio-ml
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            ml_response = await client.post(
+                f"{AUDIO_ML_URL}/ask",
+                json=payload  # Отправляем как JSON
+            )
+            ml_response.raise_for_status()
+            response_data = ml_response.json()
+
+    except httpx.HTTPStatusError as e:
+        # Пробрасываем ошибку от ML-сервиса
+        detail = ml_response.json().get("detail", str(e)) if ml_response else str(e)
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка подключения к ML-сервису: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Внутренняя ошибка: {str(e)}")
+
+    # 5. Сохраняем историю в БД (ваша новая таблица ChatMessages)
+    db.insert_chat_message(transcript_id, "user", question)
+    db.insert_chat_message(transcript_id, "assistant", response_data.get("answer", ""))
+
+    # 6. Возвращаем ответ фронтенду
+    return JSONResponse(content=response_data)
+
+@app.get("/chat/{transcript_id}")
+async def get_chat_history(
+    transcript_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    # Проверка: существует ли транскрипция и доступна ли пользователю
+    transcript = db.select_transcripts_by_id(transcript_id)
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Транскрипция не найдена")
+
+    # Загружаем сообщения
+    messages = db.select_chat_messages_by_transcript_id(transcript_id)
+    
+    return {
+        "transcript_id": transcript_id,
+        "messages": [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in messages
+        ]
+    }
 
 @app.get("/transcripts")
 async def get_user_transcripts(

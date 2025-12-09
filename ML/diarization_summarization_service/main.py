@@ -2,7 +2,7 @@
 import os
 import tempfile
 import uuid
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request
 from typing import Optional
 from ML_pipeline import AudioRecognition
 
@@ -50,7 +50,7 @@ async def transcribe(
             f.write(await file.read())
 
         noise_sup_bool = noise_sup_bool.lower() in ("true", "yes", "1", "on")
-        
+
         result = recognizer.run_diarization_transcription_pipeline(
             input_audio_path=input_path,
             diarization_lib=diarize_lib,
@@ -101,31 +101,39 @@ async def summarize(
     except Exception as e:
         raise HTTPException(500, f"Summarization failed: {str(e)}")
     
-@app.post("/question")
-async def question(
-    text: str = Form(None),
-    question: str = Form(None),
-    llm_model: str = Form("openai/gpt-oss-20b"),
-    base_url: str = Form("https://openrouter.ai/api/v1")
-):
+@app.post("/ask")
+async def question(request: Request):
     if not recognizer:
         raise HTTPException(500, "Model not initialized")
-    
-    if not text:
-        raise HTTPException(400, "'text' must be provided")
-    
+
+    try:
+        body = await request.json()
+        text = body.get("text")
+        question = body.get("question")
+        llm_model = body.get("llm_model", "openai/gpt-oss-20b")
+        base_url = body.get("base_url", "https://openrouter.ai/api/v1")
+    except Exception as e:
+        raise HTTPHttpException(400, "Invalid JSON")
+
+    if not text or not text.strip():
+        raise HTTPException(400, "'text' must be provided and non-empty")
+    if not question or not question.strip():
+        raise HTTPException(400, "'question' must be provided and non-empty")
+
     allowed_models = {"openai/gpt-oss-20b"}
     if llm_model not in allowed_models:
-        raise HTTPException(400, f"Unsupported llm_backend. Use: {allowed_models}")
-    
-    input_text = text
-        
-    if not input_text or not input_text.strip():
-        raise HTTPException(400, "Input text is empty")
-    
-    try:
-        summary = recognizer.questions_with_openai(text=input_text, question=question, model=llm_model, base_url=base_url)
-        return {"summary": summary}
+        raise HTTPException(400, f"Unsupported model. Use: {allowed_models}")
 
+    # УБЕРИТЕ ЛИШНИЕ ПРОБЕЛЫ В base_url!
+    base_url = base_url.strip()
+
+    try:
+        answer = recognizer.questions_with_openai(
+            text=text,
+            question=question,
+            model=llm_model,
+            base_url=base_url
+        )
+        return {"answer": answer}  # ← лучше "answer", а не "summary"
     except Exception as e:
-        raise HTTPException(500, f"Summarization failed: {str(e)}")
+        raise HTTPException(500, f"LLM request failed: {str(e)}")

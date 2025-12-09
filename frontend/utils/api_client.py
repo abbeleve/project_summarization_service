@@ -41,6 +41,26 @@ class APIClient:
             return False
     
     @staticmethod
+    def get_chat_history(transcript_id: str) -> list:
+        """Получить историю чата по transcript_id"""
+        response = APIClient._make_request(
+            method="GET",
+            endpoint=f"/chat/{transcript_id}",
+            timeout=30
+        )
+        
+        if not response:
+            return []
+        
+        if response.status_code == 200:
+            return response.json().get("messages", [])
+        elif response.status_code == 204:
+            return []
+        else:
+            st.warning("Не удалось загрузить историю чата")
+            return []
+        
+    @staticmethod
     def _make_request(method: str, endpoint: str, **kwargs):
         """
         Универсальный метод для выполнения запросов с автоматическим обновлением токена
@@ -326,3 +346,54 @@ class APIClient:
             return {}
         else:
             return {}
+        
+    @staticmethod
+    def ask_question(transcript_id: str, question: str) -> dict:
+        """
+        Отправить вопрос по транскрипции на LLM и получить ответ.
+        """
+        if not transcript_id or not question.strip():
+            st.error("❌ ID транскрипции или вопрос не указаны")
+            return {"answer": "Ошибка: пустой запрос"}
+
+        try:
+            response = APIClient._make_request(
+                method="POST",
+                endpoint="/ask",
+                data={
+                    "transcript_id": transcript_id,
+                    "question": question.strip()
+                },
+                timeout=60
+            )
+
+            if not response:
+                return {"answer": "Не удалось получить ответ от сервера"}
+
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 404:
+                st.error("❌ Транскрипция не найдена")
+                return {"answer": "Транскрипция не найдена"}
+            elif response.status_code == 400:
+                error_detail = response.json().get("detail", "Некорректный запрос")
+                st.error(f"❌ Ошибка запроса: {error_detail}")
+                return {"answer": error_detail}
+            elif response.status_code == 401:
+                # _make_request уже обработал 401, но на всякий случай
+                st.error("❌ Требуется авторизация")
+                return {"answer": "Требуется вход в систему"}
+            elif response.status_code == 500:
+                st.error("❌ Ошибка на сервере при генерации ответа")
+                return {"answer": "Серверная ошибка"}
+            else:
+                try:
+                    error_detail = response.json().get("detail", response.text)
+                except:
+                    error_detail = response.text[:100] + "..." if len(response.text) > 100 else response.text
+                st.error(f"❌ Ошибка (код {response.status_code}): {error_detail}")
+                return {"answer": error_detail}
+
+        except Exception as e:
+            st.error(f"⚠️ Неизвестная ошибка при запросе к LLM: {str(e)}")
+            return {"answer": "Произошла ошибка"}

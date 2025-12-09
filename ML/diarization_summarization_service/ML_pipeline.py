@@ -430,7 +430,6 @@ class AudioRecognition():
         raise RuntimeError(f"Error during OpenAI-compatible summarization: {e}")
 
   def questions_with_openai(self, text: str = None,
-                            file_path: str = None,
                             model: str = "openai/gpt-oss-20b",
                             base_url: str = "https://openrouter.ai/api/v1",
                             temperature: float = 0.01,
@@ -446,16 +445,12 @@ class AudioRecognition():
     Returns:
         summarization_results(str): summarization results
     """
-    if file_path is None and text is None:
-      raise ValueError("Please specify file_path or paste text")
+    if text is None:
+      raise ValueError("Please specify text")
 
-    if file_path and text:
-      warnings.warn("When text and file_path are specified in functions args, text from args(file_path) will overwrite args(text)")
-
-    if file_path:
-      with open(file_path, mode='r') as f:
-        text = f.read()
-
+    if question is None:
+      raise ValueError("Please specify question")
+    
     open_api_key = os.getenv(self.openai_api_key_envname)
     client = OpenAI(api_key=open_api_key, base_url=base_url)
   

@@ -1,6 +1,6 @@
 import streamlit as st
 from components.sidebar import show_user_sidebar, show_admin_sidebar
-from components.analysis_results import display_analysis_result, display_download_option
+from components.analysis_results import display_analysis_result, display_download_option, display_meeting_chat
 from utils.api_client import APIClient
 from utils.navigation import navigate
 
@@ -64,8 +64,17 @@ def show_new_analysis(data: dict):
         if st.button("← Назад", use_container_width=True):
             navigate("home")
 
+
     st.markdown("---")
-    display_analysis_result(display_data, filename)
+    col_transcript, col_chat = st.columns([2, 1])  # 2/3 транскрипция, 1/3 чат
+
+    with col_transcript:
+        display_analysis_result(display_data, f"transcript_{filename}.txt")
+
+    with col_chat:
+        st.markdown("### 💬 Чат с LLM")
+        display_meeting_chat(filename)
+
 
 def show_historical_analysis(transcript_id: str):
     """Показать существующую транскрипцию из БД"""
@@ -111,9 +120,14 @@ def show_historical_analysis(transcript_id: str):
             navigate("home")
 
     st.markdown("---")
-    display_analysis_result(display_data, f"transcript_{transcript_id}.txt")
+    col_transcript, col_chat = st.columns([2, 1])  # 2/3 транскрипция, 1/3 чат
 
-    
+    with col_transcript:
+        display_analysis_result(display_data, f"transcript_{transcript_id}.txt")
+
+    with col_chat:
+        st.markdown("### 💬 Чат с LLM")
+        display_meeting_chat(transcript_id)
 
 def convert_segments_to_display_format(segments: list) -> list:
     """Конвертировать сегменты из API в формат для отображения"""

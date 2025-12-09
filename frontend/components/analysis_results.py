@@ -2,6 +2,7 @@ import streamlit as st
 import json
 from datetime import datetime
 import plotly.express as px
+from utils.api_client import APIClient
 
 def display_analysis_result(result: dict, filename: str):
     """Отобразить результаты анализа"""
@@ -126,6 +127,38 @@ def display_speaker_time_distribution(segments: list):
             height=300
         )
 
+def display_meeting_chat(transcript_id: str):
+    chat_key = f"chat_{transcript_id}"
+    
+    # 🔥 Загружаем историю из API, если ещё не загружена
+    if chat_key not in st.session_state:
+        st.session_state[chat_key] = []
+        # Загружаем из бэкенда
+        history = APIClient.get_chat_history(transcript_id)
+        if history:
+            st.session_state[chat_key] = history
+
+    chat_container = st.container(height=1000, border=True)
+
+    with chat_container:
+        for msg in st.session_state[chat_key]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+    if prompt := st.chat_input("Спросите о встрече...", key=f"chat_input_{transcript_id}"):
+        # Добавляем новый вопрос
+        st.session_state[chat_key].append({"role": "user", "content": prompt})
+        with chat_container:
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            with st.chat_message("assistant"):
+                with st.spinner("Анализирую..."):
+                    response_data = APIClient.ask_question(transcript_id, prompt)
+                    answer = response_data.get("answer", "Ошибка.")
+                
+                st.markdown(answer)
+                st.session_state[chat_key].append({"role": "assistant", "content": answer})
 def display_transcription_segments(segments: list, clean_text: str, file_key: str):
     """Отобразить сегменты транскрипции"""
     
