@@ -1,6 +1,7 @@
 import streamlit as st
 import json
 from datetime import datetime
+import plotly.express as px
 
 def display_analysis_result(result: dict, filename: str):
     """Отобразить результаты анализа"""
@@ -11,6 +12,10 @@ def display_analysis_result(result: dict, filename: str):
     else:
         st.info("Суммаризация не доступна")
     
+    st.markdown("---")
+    display_speaker_time_distribution(result.get("transcription", []))
+
+    st.markdown("---")
     st.subheader("📝 Детальная транскрипция")
     segments = result.get("transcription", [])
     
@@ -28,6 +33,7 @@ def display_analysis_result(result: dict, filename: str):
                 st.write(segment["text"])
     
     # Статистика
+    st.markdown("---")
     st.subheader("📈 Статистика")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -36,6 +42,89 @@ def display_analysis_result(result: dict, filename: str):
         st.metric("Длительность", result.get("duration", "—"))
     with col3:
         st.metric("Обработано", result.get("processed_by", "—"))
+
+def display_speaker_time_distribution(segments: list):
+    """Отобразить круговую диаграмму и таблицу долей в одной строке"""
+    
+    if not segments:
+        st.info("Нет данных о сегментах для построения диаграммы.")
+        return
+    
+    # Собираем время по спикерам
+    speaker_times = {}
+    for segment in segments:
+        speaker = segment.get("speaker", "UNKNOWN")
+        start = segment.get("start", 0.0)
+        end = segment.get("end", 0.0)
+        duration = max(0.0, end - start)
+        
+        if speaker not in speaker_times:
+            speaker_times[speaker] = 0.0
+        speaker_times[speaker] += duration
+    
+    total_duration = sum(speaker_times.values())
+    if total_duration == 0:
+        st.info("Общая длительность разговора равна 0 секунд.")
+        return
+    
+    # Подготовка данных
+    data = {
+        "Спикер": list(speaker_times.keys()),
+        "Время (сек)": list(speaker_times.values())
+    }
+    percentages = [f"{(t / total_duration * 100):.1f}%" for t in data["Время (сек)"]]
+    data["Доля (%)"] = percentages
+
+    # Выводим заголовок НАД колонками
+    st.markdown("### 🗣️ Распределение времени по спикерам")
+
+    # Создаем 2 колонки
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        # Круговая диаграмма БЕЗ заголовка, с явным указанием легенды
+        fig = px.pie(
+            data,
+            names="Спикер",
+            values="Время (сек)",
+            title=" ",
+            color_discrete_sequence=px.colors.qualitative.Set3
+        )
+        fig.update_layout(
+            template="plotly_dark",
+            font=dict(size=14),
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                title=" "
+            ),
+            margin=dict(t=10, b=20, l=20, r=20),
+            title_x=0.5
+        )
+        fig.update_traces(
+            textinfo='percent+label',
+            textfont_size=12,
+            pull=[0.05] * len(data["Спикер"])
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        # Таблица
+        st.markdown("#### 📊 Доли")
+        st.dataframe(
+            {
+                "Спикер": data["Спикер"],
+                "Время (сек)": [f"{t:.1f}" for t in data["Время (сек)"]],
+                "Доля (%)": data["Доля (%)"]
+            },
+            use_container_width=True,
+            hide_index=True,
+            height=300
+        )
 
 def display_transcription_segments(segments: list, clean_text: str, file_key: str):
     """Отобразить сегменты транскрипции"""
@@ -96,7 +185,7 @@ def display_full_transcription(original_text: str, clean_text: str, file_key: st
 def display_download_option(result: dict, filename: str, transcript_id: str):
     """Отобразить опцию скачивания"""
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
     # JSON формат (полные данные)
     with col1:
@@ -111,7 +200,7 @@ def display_download_option(result: dict, filename: str, transcript_id: str):
         )
     
     # Суммаризация отдельно
-    with col3:
+    with col2:
         summary = result.get("summary", "")
         if summary:
             st.download_button(

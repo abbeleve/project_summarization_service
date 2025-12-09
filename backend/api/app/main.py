@@ -224,7 +224,7 @@ async def process_audio(
     diarize_lib: Optional[str] = None,
     transcribe_lib: Optional[str] = None,
     llm_model: Optional[str] = None,
-    noise_sup_bool: Optional[bool] = True,
+    noise_sup_bool: str = "false",
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
@@ -240,6 +240,7 @@ async def process_audio(
                 'file': (file.filename, open(tmp_file_path, 'rb'), file.content_type)
             }
             print(noise_sup_bool, type(noise_sup_bool))
+            
             data = {
                 'transcribe_model': transcribe_model or "v3_ctc",
                 'diarization_model': diarization_model or "pyannote/speaker-diarization-community-1",
@@ -248,67 +249,67 @@ async def process_audio(
                 'noise_sup_bool': noise_sup_bool
             }
             
-            # # Отправка запроса к внешнему сервису транскрибации
-            # async with httpx.AsyncClient(timeout=1300.0) as client:
-            #     response = await client.post(
-            #         "http://audio-ml:8053/transcribe",
-            #         files=files,
-            #         data=data
-            #     )
+            # Отправка запроса к внешнему сервису транскрибации
+            async with httpx.AsyncClient(timeout=1300.0) as client:
+                response = await client.post(
+                    "http://audio-ml:8053/transcribe",
+                    files=files,
+                    data=data
+                )
             
-            # if response.status_code != 200:
-            #     try:
-            #         error_detail = response.json().get("detail", response.text)
-            #     except:
-            #         error_detail = response.text
+            if response.status_code != 200:
+                try:
+                    error_detail = response.json().get("detail", response.text)
+                except:
+                    error_detail = response.text
                 
-            #     raise HTTPException(
-            #         status_code=response.status_code,
-            #         detail=f"Transcription service error: {error_detail}"
-            #     )
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Transcription service error: {error_detail}"
+                )
 
-            # ml_response = response.json()
+            ml_response = response.json()
             
-            # segments = ml_response.get("transcript", [])
+            segments = ml_response.get("transcript", [])
 
-            segments = [
-                {
-                    "Speaker": "SPEAKER_01",
-                    "start": 0.0,
-                    "stop": 8.5,
-                    "Text": "Добрый день, коллеги! Начинаем еженедельное совещание отдела разработки. Сегодня у нас в повестке: обсуждение текущего спринта, проблемы с интеграцией платежной системы и план на следующую неделю."
-                },
-                {
-                    "Speaker": "SPEAKER_01",
-                    "start": 8.5,
-                    "stop": 12.2,
-                    "Text": "Первым делом, отчет от команды бэкенда. Иван, расскажи, пожалуйста, о прогрессе по API."
-                },
-                {
-                    "Speaker": "SPEAKER_02",
-                    "start": 12.2,
-                    "stop": 25.7,
-                    "Text": "Спасибо. За прошедшую неделю мы завершили интеграцию с новым провайдером SMS. Основные эндпоинты работают стабильно, осталось дописать тесты. Сложность возникла с асинхронной обработкой webhook, но мы нашли решение."
-                },
-                {
-                    "Speaker": "SPEAKER_03",
-                    "start": 25.7,
-                    "stop": 38.4,
-                    "Text": "От фронтенда. Мы закончили рефакторинг компонента календаря, добавили поддержку перетаскивания событий. Также исправили баг с отображением модальных окон на мобильных устройствах. На следующей неделе планируем начать работу над дашбордом аналитики."
-                },
-                {
-                    "Speaker": "SPEAKER_04",
-                    "start": 38.4,
-                    "stop": 47.9,
-                    "Text": "По DevOps. Мы успешно мигрировали staging-окружение на новый кластер. Мониторинг показывает стабильную работу. На этой неделе займемся настройкой автоматического масштабирования."
-                },
-                {
-                    "Speaker": "SPEAKER_01",
-                    "start": 47.9,
-                    "stop": 55.3,
-                    "Text": "В целом, спринт выполнен на 85%. Основные задержки связаны с интеграцией платежей, но мы уже нашли решение и в понедельник представим прототип."
-                }
-            ]
+            # segments = [
+            #     {
+            #         "Speaker": "SPEAKER_01",
+            #         "start": 0.0,
+            #         "stop": 8.5,
+            #         "Text": "Добрый день, коллеги! Начинаем еженедельное совещание отдела разработки. Сегодня у нас в повестке: обсуждение текущего спринта, проблемы с интеграцией платежной системы и план на следующую неделю."
+            #     },
+            #     {
+            #         "Speaker": "SPEAKER_01",
+            #         "start": 8.5,
+            #         "stop": 12.2,
+            #         "Text": "Первым делом, отчет от команды бэкенда. Иван, расскажи, пожалуйста, о прогрессе по API."
+            #     },
+            #     {
+            #         "Speaker": "SPEAKER_02",
+            #         "start": 12.2,
+            #         "stop": 25.7,
+            #         "Text": "Спасибо. За прошедшую неделю мы завершили интеграцию с новым провайдером SMS. Основные эндпоинты работают стабильно, осталось дописать тесты. Сложность возникла с асинхронной обработкой webhook, но мы нашли решение."
+            #     },
+            #     {
+            #         "Speaker": "SPEAKER_03",
+            #         "start": 25.7,
+            #         "stop": 38.4,
+            #         "Text": "От фронтенда. Мы закончили рефакторинг компонента календаря, добавили поддержку перетаскивания событий. Также исправили баг с отображением модальных окон на мобильных устройствах. На следующей неделе планируем начать работу над дашбордом аналитики."
+            #     },
+            #     {
+            #         "Speaker": "SPEAKER_04",
+            #         "start": 38.4,
+            #         "stop": 47.9,
+            #         "Text": "По DevOps. Мы успешно мигрировали staging-окружение на новый кластер. Мониторинг показывает стабильную работу. На этой неделе займемся настройкой автоматического масштабирования."
+            #     },
+            #     {
+            #         "Speaker": "SPEAKER_01",
+            #         "start": 47.9,
+            #         "stop": 55.3,
+            #         "Text": "В целом, спринт выполнен на 85%. Основные задержки связаны с интеграцией платежей, но мы уже нашли решение и в понедельник представим прототип."
+            #     }
+            # ]
 
             if not segments:
                 raise HTTPException(500, "ML service returned empty transcript")
@@ -322,63 +323,61 @@ async def process_audio(
             
             
 
-            # summary = ""
-            # if segments:
-            #     try:
-            #         # Подготавливаем данные для суммаризации
-            #         summarize_data = {
-            #             "text": json.dumps(segments),
-            #             "llm_model": llm_model or "openai/gpt-oss-20b",
-            #             "base_url": "",
-            #             "base_url": "",
-            #             "task_choice": "summarization"
-            #         }
+            summary = ""
+            if segments:
+                try:
+                    # Подготавливаем данные для суммаризации
+                    summarize_data = {
+                        "text": json.dumps(segments),
+                        "llm_model": llm_model or "openai/gpt-oss-20b",
+                        "task_choice": "summarization"
+                    }
                     
-            #         # Отправляем запрос на суммаризацию
-            #         async with httpx.AsyncClient(timeout=300.0) as client:
-            #             summarize_response = await client.post(
-            #                 "http://audio-ml:8053/summarize",
-            #                 data=summarize_data
-            #             )
+                    # Отправляем запрос на суммаризацию
+                    async with httpx.AsyncClient(timeout=300.0) as client:
+                        summarize_response = await client.post(
+                            "http://audio-ml:8053/summarize",
+                            data=summarize_data
+                        )
                     
-            #         if summarize_response.status_code == 200:
-            #             print('response')
-            #             print(summarize_response)
-            #             summary_result = summarize_response.json()
-            #             print('result')
-            #             print(summary_result)
-            #             summary_json = summary_result.get("summary", "")
-            #             print('json')
-            #             print(summary_json)
-            #             title = summary_json.get("title", "no title")
-            #             summary = summary_json.get("summary", "no summary")
-            #             keypoints = summary_json.get("key_points", "no_keypoints")
-            #             print(summary)
-            #             print('-'*50)
-            #             print(keypoints, title)
-            #             print("KEYPOINTS" + "-"*50)
-            #         else:
-            #             print(f"Summarization service error: {summarize_response.status_code}")
-            #             summary = ""
+                    if summarize_response.status_code == 200:
+                        print('response')
+                        print(summarize_response)
+                        summary_result = summarize_response.json()
+                        print('result')
+                        print(summary_result)
+                        summary_json = summary_result.get("summary", "")
+                        print('json')
+                        print(summary_json)
+                        title = summary_json.get("title", "no title")
+                        summary = summary_json.get("summary", "no summary")
+                        key_points = summary_json.get("key_points", "no_keypoints")
+                        print(summary)
+                        print('-'*50)
+                        print(key_points, title)
+                        print("KEYPOINTS" + "-"*50)
+                    else:
+                        print(f"Summarization service error: {summarize_response.status_code}")
+                        summary = ""
                         
-            #     except Exception as e:
-            #         print(f"Error during summarization: {str(e)}")
-            #         summary = ""
-            summary = """📊 **Итоги еженедельного совещания отдела разработки:**
+                except Exception as e:
+                    print(f"Error during summarization: {str(e)}")
+                    summary = ""
+#             summary = """📊 **Итоги еженедельного совещания отдела разработки:**
 
-✅ **Бэкенд:** Завершена интеграция с новым SMS-провайдером, основные API работают стабильно. Осталось дописать тесты. Решена проблема асинхронной обработки webhook.
+# ✅ **Бэкенд:** Завершена интеграция с новым SMS-провайдером, основные API работают стабильно. Осталось дописать тесты. Решена проблема асинхронной обработки webhook.
 
-✅ **Фронтенд:** Завершен рефакторинг календаря, добавлена поддержка drag-and-drop. Исправлены баги с модальными окнами на мобильных устройствах. План на следующую неделю: разработка дашборда аналитики.
+# ✅ **Фронтенд:** Завершен рефакторинг календаря, добавлена поддержка drag-and-drop. Исправлены баги с модальными окнами на мобильных устройствах. План на следующую неделю: разработка дашборда аналитики.
 
-✅ **DevOps:** Успешно выполнена миграция staging-окружения на новый кластер. Система работает стабильно. В планах: настройка автоматического масштабирования.
+# ✅ **DevOps:** Успешно выполнена миграция staging-окружения на новый кластер. Система работает стабильно. В планах: настройка автоматического масштабирования.
 
-📈 **Общий прогресс спринта:** 85% выполнено.
-🚧 **Текущие проблемы:** Задержки с интеграцией платежной системы, но решение найдено.
-📅 **Следующие шаги:** В понедельник будет представлен прототип платежной интеграции."""
+# 📈 **Общий прогресс спринта:** 85% выполнено.
+# 🚧 **Текущие проблемы:** Задержки с интеграцией платежной системы, но решение найдено.
+# 📅 **Следующие шаги:** В понедельник будет представлен прототип платежной интеграции."""
 
-            key_points = ["первый", "второй"]
+            # key_points = ["первый", "второй"]
 
-            title = "Тестовый анализ"
+            # title = "Тестовый анализ"
             
             # Вставляем транскрипцию в базу
             transcript_id = db.insert_transcripts(

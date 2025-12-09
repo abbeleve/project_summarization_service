@@ -25,7 +25,7 @@ async def transcribe(
     diarization_model: str = Form("pyannote/speaker-diarization-community-1"),
     diarize_lib: str = Form("pyannote"),
     transcribe_lib: str = Form("gigaam"),
-    noise_sup_bool: bool = Form(True),
+    noise_sup_bool: str = 'false',
 ):
     if not recognizer:
         raise HTTPException(500, "Model not initialized")
@@ -49,6 +49,8 @@ async def transcribe(
         with open(input_path, "wb") as f:
             f.write(await file.read())
 
+        noise_sup_bool = noise_sup_bool.lower() in ("true", "yes", "1", "on")
+        
         result = recognizer.run_diarization_transcription_pipeline(
             input_audio_path=input_path,
             diarization_lib=diarize_lib,

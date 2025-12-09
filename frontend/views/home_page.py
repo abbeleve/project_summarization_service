@@ -89,7 +89,6 @@ def show_upload_section():
                     help="Применить подавление шумов для улучшения качества транскрибации"
                 )
 
-            
             with col_model2:
                 # Диаризация
                 st.markdown("**Диаризация**")
@@ -126,7 +125,7 @@ def show_upload_section():
                     "diarize_lib": diarize_lib,
                     "transcribe_lib": transcribe_lib,
                     "llm_model": llm_model,
-                    "noise_sup_bool": noise_sup_bool
+                    "noise_sup_bool": str(noise_sup_bool).lower()
                 }
                 st.rerun()
 
