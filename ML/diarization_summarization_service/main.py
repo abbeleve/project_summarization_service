@@ -25,7 +25,7 @@ async def transcribe(
     diarization_model: str = Form("pyannote/speaker-diarization-community-1"),
     diarize_lib: str = Form("pyannote"),
     transcribe_lib: str = Form("gigaam"),
-    noise_sup_bool: str = 'false',
+    noise_sup_bool: str = Form('false'),
 ):
     if not recognizer:
         raise HTTPException(500, "Model not initialized")
@@ -71,27 +71,21 @@ async def transcribe(
 
 @app.post("/summarize")
 async def summarize(
-    text: Optional[str] = Form(None),
-    llm_model: str = Form("openai/gpt-oss-20b"),
+    text: str = Form(None),
+    llm_model: str = Form("openai/gpt-oss-20b:free"),
     base_url: str = Form("https://openrouter.ai/api/v1"),
     task_choice: str = Form("summarization"),
-):
+):  
     if not recognizer:
         raise HTTPException(500, "Model not initialized")
-    
     if not text:
         raise HTTPException(400, "'text' must be provided")
-    
-    allowed_models = {"openai/gpt-oss-20b"}
+    allowed_models = {"openai/gpt-oss-20b:free"}
     if llm_model not in allowed_models:
         raise HTTPException(400, f"Unsupported llm_backend. Use: {allowed_models}")
     
     input_text = text
     temp_file_path = None
-        
-    if not input_text or not input_text.strip():
-        raise HTTPException(400, "Input text is empty")
-    
     try:
         print('here?')
         print(llm_model, base_url)
@@ -110,21 +104,19 @@ async def question(request: Request):
         body = await request.json()
         text = body.get("text")
         question = body.get("question")
-        llm_model = body.get("llm_model", "openai/gpt-oss-20b")
+        llm_model = body.get("llm_model", "openai/gpt-oss-20b:free")
         base_url = body.get("base_url", "https://openrouter.ai/api/v1")
     except Exception as e:
         raise ValueError("Invalid JSON")
 
-    if not text or not text.strip():
+    if not text:
         raise HTTPException(400, "'text' must be provided and non-empty")
     if not question or not question.strip():
         raise HTTPException(400, "'question' must be provided and non-empty")
-
-    allowed_models = {"openai/gpt-oss-20b"}
+    allowed_models = {"openai/gpt-oss-20b:free"}
     if llm_model not in allowed_models:
         raise HTTPException(400, f"Unsupported model. Use: {allowed_models}")
 
-    # УБЕРИТЕ ЛИШНИЕ ПРОБЕЛЫ В base_url!
     base_url = base_url.strip()
 
     try:
@@ -134,6 +126,6 @@ async def question(request: Request):
             model=llm_model,
             base_url=base_url
         )
-        return {"answer": answer}  # ← лучше "answer", а не "summary"
+        return {"answer": answer}
     except Exception as e:
         raise HTTPException(500, f"LLM request failed: {str(e)}")

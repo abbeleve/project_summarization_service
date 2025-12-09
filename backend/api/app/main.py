@@ -219,12 +219,12 @@ async def read_users_me(
 @app.post("/process")
 async def process_audio(
     file: UploadFile = File(...),
-    transcribe_model: Optional[str] = None,
-    diarization_model: Optional[str] = None,
-    diarize_lib: Optional[str] = None,
-    transcribe_lib: Optional[str] = None,
-    llm_model: Optional[str] = None,
-    noise_sup_bool: str = "false",
+    transcribe_model: Optional[str] = Form(None),
+    diarization_model: Optional[str] = Form(None),
+    diarize_lib: Optional[str] = Form(None),
+    transcribe_lib: Optional[str] = Form(None),
+    llm_model: Optional[str] = Form(None),
+    noise_sup_bool: str = Form("false"),
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
@@ -241,6 +241,7 @@ async def process_audio(
             }
             print("BOOL"*50)
             print(noise_sup_bool, type(noise_sup_bool))
+            print(transcribe_model)
             
             data = {
                 'transcribe_model': transcribe_model or "v3_ctc",
@@ -278,7 +279,7 @@ async def process_audio(
 
             segments_texts = []
             for segment in segments:
-                text = segment.get("text", "")
+                text = segment.get("Text", "")
                 if text:
                     segments_texts.append(text)
             original_text = " ".join(segments_texts)
@@ -307,7 +308,7 @@ async def process_audio(
                         summary_json = summary_result.get("summary", "")
                         title = summary_json.get("title", "no title")
                         summary = summary_json.get("summary", "no summary")
-                        key_points = summary_json.get("key_points", "no_keypoints")
+                        key_points = summary_json.get("key_points", ["no_keypoints"])
                     else:
                         print(f"Summarization service error: {summarize_response.status_code}")
                         summary = ""

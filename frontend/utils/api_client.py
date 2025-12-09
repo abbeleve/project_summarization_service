@@ -179,6 +179,8 @@ class APIClient:
                 error_detail = response.json().get("detail", "Некорректный запрос")
                 st.error(f"❌ Ошибка запроса: {error_detail}")
                 return None
+            elif response.status_code == 401:
+                print("Получен 401, повторная попытка")
             elif response.status_code == 413:
                 st.error("❌ Файл слишком большой")
                 return None

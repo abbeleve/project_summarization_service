@@ -236,6 +236,7 @@ class AudioRecognition():
     #     transcribed_text += segment.text
     #   diarization_results[index]["Text"] = transcribed_text
     # print(diarization_results)
+    print('whisper transcription')
     diarization_results = transcribe_with_whisper_service(diarization_results, input_audio_path)
     return diarization_results
 
