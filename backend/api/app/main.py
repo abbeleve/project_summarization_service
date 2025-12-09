@@ -239,7 +239,9 @@ async def process_audio(
             files = {
                 'file': (file.filename, open(tmp_file_path, 'rb'), file.content_type)
             }
-
+            
+            print(noise_sup_bool)
+            
             data = {
                 'transcribe_model': transcribe_model or "v3_ctc",
                 'diarization_model': diarization_model or "pyannote/speaker-diarization-community-1",
