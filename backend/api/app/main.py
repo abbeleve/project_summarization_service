@@ -292,7 +292,7 @@ async def process_audio(
                     # Подготавливаем данные для суммаризации
                     summarize_data = {
                         "text": json.dumps(segments),
-                        "llm_model": llm_model or "openai/gpt-oss-20b",
+                        "llm_model": llm_model or "openai/gpt-oss-20b:free",
                         "task_choice": "summarization"
                     }
                     
