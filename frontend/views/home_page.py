@@ -10,9 +10,7 @@ from config.settings import (
     DIARIZATION_CONFIG,
     LLM_MODELS,
     get_transcribe_models_by_lib,
-    get_diarization_models_by_lib,
-    get_lib_by_transcribe_model,
-    get_lib_by_diarization_model
+    get_diarization_models_by_lib
 )
 
 def show_home_page():
@@ -85,11 +83,12 @@ def show_upload_section():
                 )
 
                 # Галочка для шумодава
-                noise_sup_bool = st.toggle(
+                noise_sup_bool = st.checkbox(
                     "🔇 Использовать шумоподавление",
-                    value=True,
+                    value=False,
                     help="Применить подавление шумов для улучшения качества транскрибации"
                 )
+
             
             with col_model2:
                 # Диаризация
@@ -175,13 +174,14 @@ def parse_created_at(created_at_str: str) -> datetime:
 def show_transcript_card(transcript: dict):
     """Отобразить карточку транскрипции"""
     transcript_id = transcript.get('transcript_id', 'N/A')
+    title = transcript.get('title', f'Транскрипция #{transcript_id}')
     
     with st.container():
         col1, col2 = st.columns([3, 1])
         
         with col1:
             # Заголовок с ID
-            st.write(f"**Транскрипция #{transcript_id}**")
+            st.write(f"**{title}**")
             
             # Отображаем дату создания, если есть
             created_at = transcript.get("created_at")
@@ -199,9 +199,21 @@ def show_transcript_card(transcript: dict):
             duration = calculate_duration_card(parts)
             
             st.caption(f"🗣️ {speakers_count} спикеров | ⏱️ {duration}")
+
+            summary = transcript.get("summary")
+            key_points = transcript.get("key_points", [])
             
-            # Показываем превью текста
-            if parts:
+            if key_points and len(key_points) > 0:
+                # Показываем первые 2 ключевые точки
+                preview_points = key_points[:2]
+                for i, point in enumerate(preview_points, 1):
+                    st.write(f"• {point[:80]}{'...' if len(point) > 80 else ''}")
+                if len(key_points) > 2:
+                    st.caption(f"... и ещё {len(key_points) - 2} пунктов")
+            elif summary:
+                preview = summary[:150] + "..." if len(summary) > 150 else summary
+                st.write(preview)
+            elif parts:
                 first_part = parts[0].get("text", "") if parts else ""
                 preview = first_part[:100] + "..." if len(first_part) > 100 else first_part
                 st.write(preview)
@@ -310,7 +322,8 @@ def process_pending_analysis():
             diarization_model=pending.get('diarization_model'),
             diarize_lib=pending.get('diarize_lib'),
             transcribe_lib=pending.get('transcribe_lib'),
-            llm_model=pending.get('llm_model')
+            llm_model=pending.get('llm_model'),
+            noise_sup_bool=bool(pending.get('noise_sup_bool', False))
         )
 
         if result:

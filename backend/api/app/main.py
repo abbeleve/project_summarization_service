@@ -239,9 +239,7 @@ async def process_audio(
             files = {
                 'file': (file.filename, open(tmp_file_path, 'rb'), file.content_type)
             }
-            
-            print(noise_sup_bool)
-            
+            print(noise_sup_bool, type(noise_sup_bool))
             data = {
                 'transcribe_model': transcribe_model or "v3_ctc",
                 'diarization_model': diarization_model or "pyannote/speaker-diarization-community-1",
@@ -250,28 +248,67 @@ async def process_audio(
                 'noise_sup_bool': noise_sup_bool
             }
             
-            # Отправка запроса к внешнему сервису транскрибации
-            async with httpx.AsyncClient(timeout=1300.0) as client:
-                response = await client.post(
-                    "http://audio-ml:8053/transcribe",
-                    files=files,
-                    data=data
-                )
+            # # Отправка запроса к внешнему сервису транскрибации
+            # async with httpx.AsyncClient(timeout=1300.0) as client:
+            #     response = await client.post(
+            #         "http://audio-ml:8053/transcribe",
+            #         files=files,
+            #         data=data
+            #     )
             
-            if response.status_code != 200:
-                try:
-                    error_detail = response.json().get("detail", response.text)
-                except:
-                    error_detail = response.text
+            # if response.status_code != 200:
+            #     try:
+            #         error_detail = response.json().get("detail", response.text)
+            #     except:
+            #         error_detail = response.text
                 
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Transcription service error: {error_detail}"
-                )
+            #     raise HTTPException(
+            #         status_code=response.status_code,
+            #         detail=f"Transcription service error: {error_detail}"
+            #     )
 
-            ml_response = response.json()
+            # ml_response = response.json()
             
-            segments = ml_response.get("transcript", [])
+            # segments = ml_response.get("transcript", [])
+
+            segments = [
+                {
+                    "Speaker": "SPEAKER_01",
+                    "start": 0.0,
+                    "stop": 8.5,
+                    "Text": "Добрый день, коллеги! Начинаем еженедельное совещание отдела разработки. Сегодня у нас в повестке: обсуждение текущего спринта, проблемы с интеграцией платежной системы и план на следующую неделю."
+                },
+                {
+                    "Speaker": "SPEAKER_01",
+                    "start": 8.5,
+                    "stop": 12.2,
+                    "Text": "Первым делом, отчет от команды бэкенда. Иван, расскажи, пожалуйста, о прогрессе по API."
+                },
+                {
+                    "Speaker": "SPEAKER_02",
+                    "start": 12.2,
+                    "stop": 25.7,
+                    "Text": "Спасибо. За прошедшую неделю мы завершили интеграцию с новым провайдером SMS. Основные эндпоинты работают стабильно, осталось дописать тесты. Сложность возникла с асинхронной обработкой webhook, но мы нашли решение."
+                },
+                {
+                    "Speaker": "SPEAKER_03",
+                    "start": 25.7,
+                    "stop": 38.4,
+                    "Text": "От фронтенда. Мы закончили рефакторинг компонента календаря, добавили поддержку перетаскивания событий. Также исправили баг с отображением модальных окон на мобильных устройствах. На следующей неделе планируем начать работу над дашбордом аналитики."
+                },
+                {
+                    "Speaker": "SPEAKER_04",
+                    "start": 38.4,
+                    "stop": 47.9,
+                    "Text": "По DevOps. Мы успешно мигрировали staging-окружение на новый кластер. Мониторинг показывает стабильную работу. На этой неделе займемся настройкой автоматического масштабирования."
+                },
+                {
+                    "Speaker": "SPEAKER_01",
+                    "start": 47.9,
+                    "stop": 55.3,
+                    "Text": "В целом, спринт выполнен на 85%. Основные задержки связаны с интеграцией платежей, но мы уже нашли решение и в понедельник представим прототип."
+                }
+            ]
 
             if not segments:
                 raise HTTPException(500, "ML service returned empty transcript")
@@ -283,8 +320,71 @@ async def process_audio(
                     segments_texts.append(text)
             original_text = " ".join(segments_texts)
             
+            
+
+            # summary = ""
+            # if segments:
+            #     try:
+            #         # Подготавливаем данные для суммаризации
+            #         summarize_data = {
+            #             "text": json.dumps(segments),
+            #             "llm_model": llm_model or "openai/gpt-oss-20b",
+            #             "base_url": "",
+            #             "base_url": "",
+            #             "task_choice": "summarization"
+            #         }
+                    
+            #         # Отправляем запрос на суммаризацию
+            #         async with httpx.AsyncClient(timeout=300.0) as client:
+            #             summarize_response = await client.post(
+            #                 "http://audio-ml:8053/summarize",
+            #                 data=summarize_data
+            #             )
+                    
+            #         if summarize_response.status_code == 200:
+            #             print('response')
+            #             print(summarize_response)
+            #             summary_result = summarize_response.json()
+            #             print('result')
+            #             print(summary_result)
+            #             summary_json = summary_result.get("summary", "")
+            #             print('json')
+            #             print(summary_json)
+            #             title = summary_json.get("title", "no title")
+            #             summary = summary_json.get("summary", "no summary")
+            #             keypoints = summary_json.get("key_points", "no_keypoints")
+            #             print(summary)
+            #             print('-'*50)
+            #             print(keypoints, title)
+            #             print("KEYPOINTS" + "-"*50)
+            #         else:
+            #             print(f"Summarization service error: {summarize_response.status_code}")
+            #             summary = ""
+                        
+            #     except Exception as e:
+            #         print(f"Error during summarization: {str(e)}")
+            #         summary = ""
+            summary = """📊 **Итоги еженедельного совещания отдела разработки:**
+
+✅ **Бэкенд:** Завершена интеграция с новым SMS-провайдером, основные API работают стабильно. Осталось дописать тесты. Решена проблема асинхронной обработки webhook.
+
+✅ **Фронтенд:** Завершен рефакторинг календаря, добавлена поддержка drag-and-drop. Исправлены баги с модальными окнами на мобильных устройствах. План на следующую неделю: разработка дашборда аналитики.
+
+✅ **DevOps:** Успешно выполнена миграция staging-окружения на новый кластер. Система работает стабильно. В планах: настройка автоматического масштабирования.
+
+📈 **Общий прогресс спринта:** 85% выполнено.
+🚧 **Текущие проблемы:** Задержки с интеграцией платежной системы, но решение найдено.
+📅 **Следующие шаги:** В понедельник будет представлен прототип платежной интеграции."""
+
+            key_points = ["первый", "второй"]
+
+            title = "Тестовый анализ"
+            
             # Вставляем транскрипцию в базу
-            transcript_id = db.insert_transcripts(original_text)
+            transcript_id = db.insert_transcripts(
+                text=original_text,
+                title=title or f"Запись от {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+            )
             
             if not transcript_id:
                 raise HTTPException(500, "Failed to save transcript to database")
@@ -303,53 +403,14 @@ async def process_audio(
                     end_time=int(end * 1000)
                 )
 
-            summary = ""
-            if segments:
-                try:
-                    # Подготавливаем данные для суммаризации
-                    summarize_data = {
-                        "text": json.dumps(segments),
-                        "llm_model": llm_model or "openai/gpt-oss-20b",
-                        "base_url": "",
-                        "base_url": "",
-                        "task_choice": "summarization"
-                    }
-                    
-                    # Отправляем запрос на суммаризацию
-                    async with httpx.AsyncClient(timeout=300.0) as client:
-                        summarize_response = await client.post(
-                            "http://audio-ml:8053/summarize",
-                            data=summarize_data
-                        )
-                    
-                    if summarize_response.status_code == 200:
-                        print('response')
-                        print(summarize_response)
-                        summary_result = summarize_response.json()
-                        print('result')
-                        print(summary_result)
-                        summary_json = summary_result.get("summary", "")
-                        print('json')
-                        print(summary_json)
-                        title = summary_json.get("title", "no title")
-                        summary = summary_json.get("summary", "no summary")
-                        keypoints = summary_json.get("key_points", "no_keypoints")
-                        print(summary)
-                        print('-'*50)
-                        print(keypoints, title)
-                        print("KEYPOINTS" + "-"*50)
-                    else:
-                        print(f"Summarization service error: {summarize_response.status_code}")
-                        summary = ""
-                        
-                except Exception as e:
-                    print(f"Error during summarization: {str(e)}")
-                    summary = ""
-            
             # Сохраняем суммаризацию в базу
             if summary:
-                db.insert_summaries(transcript_id, summary)
-
+                db.insert_summaries(
+                    transcript_id=transcript_id,
+                    text=summary,
+                    key_points=key_points
+                )
+                
             speakers = []
             for segment in segments:
                 speaker = segment.get("speaker", "UNKNOWN")
@@ -363,14 +424,16 @@ async def process_audio(
                     duration = end_time
 
             parts = db.select_parts_transcription_by_transcript_id(transcript_id)
-        
+            
             # Формируем ответ
             return {
                 "status": "success",
                 "transcript_id": str(transcript_id),
+                "title": title,
                 "original_text": original_text,
                 "segments": segments,
                 "summary": summary,
+                "key_points": key_points,
                 "speakers": speakers,
                 "duration": duration,
                 "parts": parts,
@@ -442,8 +505,10 @@ async def get_user_transcripts(
                 transcripts_map[transcript_id_str] = {
                     "transcript_id": transcript_id_str,
                     "original_text": transcript_data.get('original_text', ''),
+                    "title": transcript_data.get('title', ''),
                     "created_at": transcript_data.get('created_at'),
                     "summary": summary_data.get('text') if summary_data else None,
+                    "key_points": summary_data.get('key_points') if summary_data else None,
                     "parts": []
                 }
             
@@ -483,8 +548,10 @@ async def get_transcript(
         return {
             "transcript_id": transcript_id,
             "original_text": transcript_data.get('original_text', ''),
+            "title": transcript_data.get('title', ''),
             "parts": parts,
-            "summary": summary_data.get('text') if summary_data else None
+            "summary": summary_data.get('text') if summary_data else None,
+            "key_points": summary_data.get('key_points') if summary_data else None
         }
         
     except HTTPException:
