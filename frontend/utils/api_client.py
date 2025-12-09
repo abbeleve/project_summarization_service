@@ -77,7 +77,12 @@ class APIClient:
             # Добавляем стандартные заголовки
             if 'headers' not in kwargs:
                 kwargs['headers'] = headers
-            
+            if endpoint == "/process":
+                print(">>> DEBUG REQUEST TO /process <<<")
+                print("Метод:", method)
+                print("URL:", f"{APIClient.BASE_URL}{endpoint}")
+                print("Data:", kwargs.get("data", {}))
+                print(">>> END DEBUG <<<")
             # Выполняем запрос
             response = requests.request(
                 method=method,
@@ -152,7 +157,8 @@ class APIClient:
             if llm_model := kwargs.get('llm_model'):
                 data['llm_model'] = llm_model
 
-            noise_sup_bool = kwargs.get('noise_sup_bool', False)
+            noise_sup_bool = kwargs.get('noise_sup_bool', 'false')
+            print(noise_sup_bool)
             data['noise_sup_bool'] = noise_sup_bool
             
             # Используем универсальный метод для запроса

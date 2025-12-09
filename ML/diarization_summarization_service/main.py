@@ -44,7 +44,7 @@ async def transcribe(
 
     temp_dir = tempfile.mkdtemp()
     input_path = os.path.join(temp_dir, f"{uuid.uuid4()}{ext}")
-
+    print(noise_sup_bool)
     try:
         with open(input_path, "wb") as f:
             f.write(await file.read())
@@ -113,7 +113,7 @@ async def question(request: Request):
         llm_model = body.get("llm_model", "openai/gpt-oss-20b")
         base_url = body.get("base_url", "https://openrouter.ai/api/v1")
     except Exception as e:
-        raise HTTPHttpException(400, "Invalid JSON")
+        raise ValueError("Invalid JSON")
 
     if not text or not text.strip():
         raise HTTPException(400, "'text' must be provided and non-empty")

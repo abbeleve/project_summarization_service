@@ -129,7 +129,7 @@ def display_speaker_time_distribution(segments: list):
 
 def display_meeting_chat(transcript_id: str):
     chat_key = f"chat_{transcript_id}"
-    
+    print(transcript_id)
     # 🔥 Загружаем историю из API, если ещё не загружена
     if chat_key not in st.session_state:
         st.session_state[chat_key] = []

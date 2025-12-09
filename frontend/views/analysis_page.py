@@ -69,11 +69,11 @@ def show_new_analysis(data: dict):
     col_transcript, col_chat = st.columns([2, 1])  # 2/3 транскрипция, 1/3 чат
 
     with col_transcript:
-        display_analysis_result(display_data, f"transcript_{filename}.txt")
+        display_analysis_result(display_data, f"transcript_{data['id']}.txt")
 
     with col_chat:
         st.markdown("### 💬 Чат с LLM")
-        display_meeting_chat(filename)
+        display_meeting_chat(data['id'])
 
 
 def show_historical_analysis(transcript_id: str):
@@ -127,6 +127,7 @@ def show_historical_analysis(transcript_id: str):
 
     with col_chat:
         st.markdown("### 💬 Чат с LLM")
+        print(transcript_id)
         display_meeting_chat(transcript_id)
 
 def convert_segments_to_display_format(segments: list) -> list:

@@ -239,6 +239,7 @@ async def process_audio(
             files = {
                 'file': (file.filename, open(tmp_file_path, 'rb'), file.content_type)
             }
+            print("BOOL"*50)
             print(noise_sup_bool, type(noise_sup_bool))
             
             data = {
@@ -302,21 +303,11 @@ async def process_audio(
                         )
                     
                     if summarize_response.status_code == 200:
-                        print('response')
-                        print(summarize_response)
                         summary_result = summarize_response.json()
-                        print('result')
-                        print(summary_result)
                         summary_json = summary_result.get("summary", "")
-                        print('json')
-                        print(summary_json)
                         title = summary_json.get("title", "no title")
                         summary = summary_json.get("summary", "no summary")
                         key_points = summary_json.get("key_points", "no_keypoints")
-                        print(summary)
-                        print('-'*50)
-                        print(key_points, title)
-                        print("KEYPOINTS" + "-"*50)
                     else:
                         print(f"Summarization service error: {summarize_response.status_code}")
                         summary = ""
@@ -428,6 +419,7 @@ async def proxy_ask_question(
     """
     AUDIO_ML_URL = "http://audio-ml:8053"
     # 1. Проверяем, существует ли транскрипция и принадлежит ли она пользователю
+    print(transcript_id)
     transcript = db.select_transcripts_by_id(transcript_id)
     if not transcript:
         raise HTTPException(status_code=404, detail="Транскрипция не найдена")
@@ -494,6 +486,8 @@ async def get_chat_history(
             for msg in messages
         ]
     }
+
+
 
 @app.get("/transcripts")
 async def get_user_transcripts(

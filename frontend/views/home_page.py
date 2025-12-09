@@ -322,7 +322,7 @@ def process_pending_analysis():
             diarize_lib=pending.get('diarize_lib'),
             transcribe_lib=pending.get('transcribe_lib'),
             llm_model=pending.get('llm_model'),
-            noise_sup_bool=bool(pending.get('noise_sup_bool', False))
+            noise_sup_bool=str(pending.get('noise_sup_bool', 'false'))
         )
 
         if result:
