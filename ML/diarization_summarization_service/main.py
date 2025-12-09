@@ -44,7 +44,6 @@ async def transcribe(
 
     temp_dir = tempfile.mkdtemp()
     input_path = os.path.join(temp_dir, f"{uuid.uuid4()}{ext}")
-    print(noise_sup_bool)
     try:
         with open(input_path, "wb") as f:
             f.write(await file.read())

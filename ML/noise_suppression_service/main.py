@@ -20,7 +20,7 @@ async def denoise(file: UploadFile = File(...)):
         if not os.path.exists(output_path):
             raise RuntimeError("Denoising completed but output file was not created")
 
-        return FileResponse(output_path, media_type="audio/wav", filename="clean.wav")
+        return FileResponse(output_path, media_type="audio/wav", filename=output_path)
 
     except Exception as e:
         print(f"Error during denoising: {e}")

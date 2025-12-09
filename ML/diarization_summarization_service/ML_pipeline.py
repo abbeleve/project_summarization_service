@@ -281,11 +281,11 @@ class AudioRecognition():
             )
       wav_input_audio_path = self.convert_to_wav(input_audio_path, wav_output_path)
     #using noise_suppression
-    if noise_sup_bool:
-      print("go to noise suppressor")
-      clean_wav_input_audio_path = request_for_noise_suppression(wav_input_audio_path)
-    else:
-      clean_wav_input_audio_path = wav_input_audio_path
+    # if noise_sup_bool:
+    #   print("go to noise suppressor")
+    #   clean_wav_input_audio_path = request_for_noise_suppression(wav_input_audio_path)
+    # else:
+    clean_wav_input_audio_path = wav_input_audio_path
     clean_wav_input_audio_path = self.convert_to_wav(clean_wav_input_audio_path, clean_wav_input_audio_path)
     #diarization model choose
     if diarization_lib == "pyannote":

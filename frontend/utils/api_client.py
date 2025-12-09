@@ -206,6 +206,22 @@ class APIClient:
             return None
     
     @staticmethod
+    def apply_noise_suppression(file):
+        """
+        Отправляет файл на шумоподавление и возвращает байты очищенного аудио.
+        """
+        files = {"file": (file.name, file.getvalue(), file.type)}
+        response = APIClient._make_request(
+            method="POST",
+            endpoint="/apply-noise-suppression",
+            files=files,
+            timeout=1000
+        )
+        if response and response.status_code == 200:
+            return response.content
+        return None
+
+    @staticmethod
     def get_transcripts() -> list:
         """Получить историю транскрипций пользователя"""
         response = APIClient._make_request(

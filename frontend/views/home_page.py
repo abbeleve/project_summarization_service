@@ -28,30 +28,65 @@ def show_home_page():
 
 def show_upload_section():
     st.subheader("📤 Новый анализ")
-    
+
     uploaded_file = st.file_uploader(
         "Загрузите аудиофайл для анализа", 
         type=SUPPORTED_FORMATS,
         help="Поддерживаемые форматы: " + ", ".join(SUPPORTED_FORMATS)
     )
 
+
     if uploaded_file:
+        # === Определяем, новый ли файл ===
+        previous_file = st.session_state.get("last_uploaded_filename")
+        current_file = uploaded_file.name
+
+        if previous_file != current_file:
+            # Сбрасываем всё состояние, связанное с аудио
+            keys_to_clear = [
+                "original_audio",
+                "denoised_audio",
+                "denoise_ready",
+                "denoise_attempted"
+            ]
+            for key in keys_to_clear:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.session_state.last_uploaded_filename = current_file
+
+        st.session_state.original_audio = uploaded_file
+
+        # Обрабатываем шумоподавление, если ещё не делали для ЭТОГО файла
+        if "denoise_attempted" not in st.session_state:
+            st.session_state.denoise_attempted = True
+            with st.spinner("🔊 Применяю шумоподавление..."):
+                denoised_bytes = APIClient.apply_noise_suppression(uploaded_file)
+                if denoised_bytes:
+                    st.session_state.denoised_audio = denoised_bytes
+                    st.session_state.denoise_ready = True
+                else:
+                    st.session_state.denoise_ready = False
+
         col1, col2 = st.columns([1, 1])
-        
         with col1:
             st.success(f"📄 Файл: {uploaded_file.name}")
-            
         with col2:
             st.info(f"📊 Размер: {uploaded_file.size:,} байт")
-        
+
+        # === Отображение плееров ===
+        st.markdown("### 🎧 Оригинал")
+        st.audio(uploaded_file)
+
+        if st.session_state.get("denoise_ready"):
+            st.markdown("### 🎧 С шумоподавлением")
+            from io import BytesIO
+            st.audio(BytesIO(st.session_state.denoised_audio), format="audio/wav")
+
+        # === Настройки моделей ===
         with st.expander("⚙️ Настройки моделей", expanded=True):
             col_model1, col_model2 = st.columns(2)
-            
             with col_model1:
-                # Транскрибация
                 st.markdown("**Транскрибация**")
-                
-                # Выбор библиотеки транскрибации
                 transcribe_lib = st.selectbox(
                     "Библиотека",
                     list(TRANSCRIBE_CONFIG.keys()),
@@ -59,11 +94,7 @@ def show_upload_section():
                     help="Выберите библиотеку для транскрибации",
                     key="transcribe_lib_select"
                 )
-                
-                # Получаем модели для выбранной библиотеки
                 transcribe_models = get_transcribe_models_by_lib(transcribe_lib)
-                
-                # Выбор модели транскрибации
                 transcribe_model = st.selectbox(
                     "Модель",
                     transcribe_models,
@@ -71,8 +102,6 @@ def show_upload_section():
                     help="Выберите модель для преобразования речи в текст",
                     key="transcribe_model_select"
                 )
-                
-                # LLM суммаризация (не зависит от библиотек)
                 st.markdown("**Суммаризация**")
                 llm_model = st.selectbox(
                     "Модель суммаризации",
@@ -81,8 +110,6 @@ def show_upload_section():
                     help="Выберите модель для суммаризации текста",
                     key="llm_select"
                 )
-
-                # Галочка для шумодава
                 noise_sup_bool = st.checkbox(
                     "🔇 Использовать шумоподавление",
                     value=False,
@@ -90,10 +117,7 @@ def show_upload_section():
                 )
 
             with col_model2:
-                # Диаризация
                 st.markdown("**Диаризация**")
-                
-                # Выбор библиотеки диаризации
                 diarize_lib = st.selectbox(
                     "Библиотека",
                     list(DIARIZATION_CONFIG.keys()),
@@ -101,11 +125,7 @@ def show_upload_section():
                     help="Выберите библиотеку для диаризации",
                     key="diarize_lib_select"
                 )
-                
-                # Получаем модели для выбранной библиотеки
                 diarization_models = get_diarization_models_by_lib(diarize_lib)
-                
-                # Выбор модели диаризации
                 diarization_model = st.selectbox(
                     "Модель",
                     diarization_models,
@@ -113,12 +133,46 @@ def show_upload_section():
                     help="Выберите модель для определения спикеров",
                     key="diarization_model_select"
                 )
-        
-        # Кнопка анализа
-        if st.button("🎯 Анализировать", type="primary", use_container_width=True):
+
+        # === Кнопка анализа ===
+        denoise_ready = st.session_state.get("denoise_ready", False)
+        denoise_requested = noise_sup_bool
+
+        # Блокируем кнопку, если шумоподавление запрошено, но не готово
+        disable_analyze = denoise_requested and not denoise_ready
+
+        if disable_analyze:
+            st.warning("⏳ Ожидание завершения обработки шумоподавления...")
+            analyze_clicked = False
+        else:
+            analyze_clicked = st.button(
+                "🎯 Анализировать", 
+                type="primary", 
+                use_container_width=True,
+                disabled=disable_analyze
+            )
+
+        if analyze_clicked:
+            if denoise_requested and denoise_ready:
+                class FakeUploadFile:
+                    def __init__(self, name, content, mime_type="audio/wav"):
+                        self.name = name
+                        self._content = content
+                        self.type = mime_type
+                    def getvalue(self):
+                        return self._content
+
+                audio_to_send = FakeUploadFile(
+                    name=f"denoised_{uploaded_file.name}",
+                    content=st.session_state.denoised_audio,
+                    mime_type="audio/wav"
+                )
+            else:
+                audio_to_send = uploaded_file
+
             with st.spinner("🔍 Начинаем анализ..."):
                 st.session_state.pending_analysis = {
-                    "file": uploaded_file,
+                    "file": audio_to_send,
                     "filename": uploaded_file.name,
                     "transcribe_model": transcribe_model,
                     "diarization_model": diarization_model,
@@ -128,6 +182,8 @@ def show_upload_section():
                     "noise_sup_bool": str(noise_sup_bool).lower()
                 }
                 st.rerun()
+        
+        
 
 def show_history_section():
     st.subheader("📋 История транскрипций")

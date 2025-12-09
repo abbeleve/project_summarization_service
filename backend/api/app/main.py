@@ -1,7 +1,7 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Request, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Request, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware import Middleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 import time
@@ -465,6 +465,29 @@ async def proxy_ask_question(
 
     # 6. Возвращаем ответ фронтенду
     return JSONResponse(content=response_data)
+
+@app.post("/apply-noise-suppression")
+async def apply_noise_suppression(file: UploadFile = File(...)):
+    async with httpx.AsyncClient(timeout=1000.0) as client:
+        try:
+            file_content = await file.read()
+            files = {"file": (file.filename, file_content, file.content_type)}
+
+            resp = await client.post("http://denoiser:8052/denoise", files=files)
+            resp.raise_for_status()
+
+            return Response(
+                content=resp.content,
+                media_type=resp.headers.get("content-type", "audio/wav"),
+                headers={
+                    "Content-Disposition": resp.headers.get(" content-disposition", 'attachment; filename="clean.wav"')
+                }
+            )
+
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Proxy error: {str(e)}")
 
 @app.get("/chat/{transcript_id}")
 async def get_chat_history(
