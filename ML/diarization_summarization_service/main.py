@@ -27,6 +27,7 @@ async def transcribe(
     transcribe_lib: str = Form("gigaam"),
     noise_sup_bool: str = Form('false'),
 ):
+    print(file)
     if not recognizer:
         raise HTTPException(500, "Model not initialized")
 
