@@ -159,6 +159,7 @@ def display_meeting_chat(transcript_id: str):
                 
                 st.markdown(answer)
                 st.session_state[chat_key].append({"role": "assistant", "content": answer})
+                
 def display_transcription_segments(segments: list, clean_text: str, file_key: str):
     """Отобразить сегменты транскрипции"""
     
