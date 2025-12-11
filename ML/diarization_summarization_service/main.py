@@ -30,27 +30,29 @@ async def transcribe(
     print(file)
     if not recognizer:
         raise HTTPException(500, "Model not initialized")
-
+    print('trans1')
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ['.mp3', '.wav', '.mp4', '.ogg']:
         raise HTTPException(400, f"Unsupported file format: {ext}")
-
+    print('trans2')
     allowed_transcribe_libs = {"gigaam", "whisper"}
     allowed_diarize_libs = {"pyannote"}
-
+    
     if transcribe_lib not in allowed_transcribe_libs:
         raise HTTPException(400, f"Unsupported transcribe_lib. Use: {allowed_transcribe_libs}")
+    print('trans3')
     if diarize_lib not in allowed_diarize_libs:
         raise HTTPException(400, f"Unsupported diarize_lib. Use: {allowed_diarize_libs}")
-
+    print('trans4')
     temp_dir = tempfile.mkdtemp()
     input_path = os.path.join(temp_dir, f"{uuid.uuid4()}{ext}")
     try:
+        print('trans5')
         with open(input_path, "wb") as f:
             f.write(await file.read())
-
+        print('trans6')
         noise_sup_bool = noise_sup_bool.lower() in ("true", "yes", "1", "on")
-
+        print('trans7')
         result = recognizer.run_diarization_transcription_pipeline(
             input_audio_path=input_path,
             diarization_lib=diarize_lib,
@@ -63,6 +65,7 @@ async def transcribe(
         return {"transcript": result}
 
     except Exception as e:
+        print(str(e))
         raise HTTPException(500, f"Processing failed: {str(e)}")
 
     finally:
@@ -93,6 +96,7 @@ async def summarize(
         return {"summary": summary}
 
     except Exception as e:
+        print(str(e))
         raise HTTPException(500, f"Summarization failed: {str(e)}")
     
 @app.post("/ask")

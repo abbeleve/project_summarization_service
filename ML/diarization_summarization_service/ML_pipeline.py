@@ -280,6 +280,8 @@ class AudioRecognition():
                 file_name_root + ".wav"
             )
       wav_input_audio_path = self.convert_to_wav(input_audio_path, wav_output_path)
+    else:
+      wav_input_audio_path = input_audio_path
     #using noise_suppression
     # if noise_sup_bool:
     #   print("go to noise suppressor")
@@ -412,11 +414,12 @@ class AudioRecognition():
             max_tokens = max_tokens,
             response_format={"type": "json_object"}
         )
-        
+        print(response)
         raw = response.choices[0].message.content.strip()
-
+        print(raw)
         try:
             result = json.loads(raw)
+            print(result)
             # Валидация (опционально)
             for key in ["title", "summary", "key_points"]:
                 if key not in result:
