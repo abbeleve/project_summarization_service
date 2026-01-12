@@ -28,6 +28,7 @@ COPY ML_pipeline.py .
 COPY main.py .
 COPY noise_suppression_request.py .
 COPY whisper_request.py .
+COPY ontology.txt .
 
 EXPOSE 8053
 

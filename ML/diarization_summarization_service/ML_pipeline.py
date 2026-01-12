@@ -28,7 +28,6 @@ from tqdm import tqdm
 import openai
 from openai import OpenAI
 import gigaam
-from time import time
 from pyannote.audio.core.task import Specifications
 from noise_suppression_request import request_for_noise_suppression
 from whisper_request import transcribe_with_whisper_service
@@ -111,6 +110,16 @@ class AudioRecognition():
 6. Ответ должен быть **кратким, точным и основанным исключительно на тексте**.
 """
     self.QUESTIONS_PROMPT = "Ответь на вопросы пользователя согласно правилам из системного пропмта по следующему тексту:"
+    with open("ontology.txt") as f:
+      self.ontology_file_text = f.read()
+    self.ALLOWED_MEETING_TYPES = {
+      "Оперативное совещание",
+      "Стратегическое совещание",
+      "Финансовое совещание",
+      "HR-совещание",
+      "Обзор проекта",
+      "Экстренное совещание"
+    }
     # self.pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=self.HF_API_KEY).to(torch.device("cuda"))
     # if not(os.path.isfile("diarize_worker.py")):
     #   raise ValueError("Can't find diarize_worker.py file. Please import from github")
@@ -297,7 +306,8 @@ class AudioRecognition():
       transcription_results = self.transcribe_gigaam(diarization_results, clean_wav_input_audio_path, transcription_model=transcribe_model)
     elif transcribe_lib == "whisper":
       print(diarization_results)
-      transcription_results = self.transcribe_gigaam(diarization_results, clean_wav_input_audio_path)
+      # transcription_results = self.transcribe_whisper(diarization_results, clean_wav_input_audio_path)
+      transcription_results = self.transcribe_gigaam(diarization_results, clean_wav_input_audio_path, transcription_model=transcribe_model)
     return transcription_results
 
 
@@ -345,11 +355,10 @@ class AudioRecognition():
 
   def summarize_with_openai(self, text: str = None,
                             file_path: str = None,
-                            model: str = "openai/gpt-oss-20b",
+                            model: str = "arcee-ai/trinity-mini:free",
                             base_url: str = "https://openrouter.ai/api/v1",
                             temperature: float = 0.01,
-                            max_tokens: int = 3000,
-                            task_choice: str = 'summarization'):
+                            max_tokens: int = 3000):
     """
     Makes API call to openai services, summarizes given text
     Args:
@@ -373,13 +382,9 @@ class AudioRecognition():
     if file_path:
       with open(file_path, mode='r', encoding='utf-8') as f:
         text = f.read()
-    print("SUMMARIZATION" + "-"*50)
-    print(text)
-    print("SUMMARIZATION" + "-"*50)
-    
     system_prompt = (
-        "Ты — точный и нейтральный ассистент по анализу деловых совещаний. "
-        "Твоя задача — проанализировать предоставленный текст и вернуть ТОЛЬКО валидный JSON в следующем формате:\n"
+        "Ты — точный и нейтральный ассистент по анализу деловых совещаний."
+        "Твоя задача — проанализировать предоставленный текст и вернуть ТОЛЬКО валидный JSON о названии совещания, о кратком содержании текста и о ключевых моментах совещания в следующем формате:\n"
         "{\n"
         '  "title": "Краткое название совещания (5–7 слов, описательное, без кавычек)",\n'
         '  "summary": "Фактологическое краткое содержание (200–300 слов). Используй только информацию из текста. Не выдумывай. Нейтральный тон. Связный текст.",\n'
@@ -390,6 +395,7 @@ class AudioRecognition():
         "  ]\n"
         "}\n\n"
         "Правила:\n"
+        "- Отвечать только на РУССКОМ ЯЗЫКЕ.\n"
         "- Все поля обязательны.\n"
         "- В key_points включай любые решения, назначения, согласованные действия или события, даже если они описаны в обобщённой форме (например: «было решено назначить», «установлено проводить встречи», «договорились внедрить», «планируется развивать»).\n"
         "- Обращай внимание на глаголы: «решено», «назначено», «установлено», «согласовано», «планируется», «необходимо», «будет проводиться», «поручено», «принято» — такие фразы считаются решениями.\n"
@@ -412,7 +418,24 @@ class AudioRecognition():
             ],
             temperature=temperature,
             max_tokens = max_tokens,
-            response_format={"type": "json_object"}
+            response_format={
+              "type": "json_schema",
+              "json_schema": {
+                  "name": "meeting_analysis",
+                  "schema": {
+                      "type": "object",
+                      "properties": {
+                          "title": {"type": "string"},
+                          "summary": {"type": "string"},
+                          "key_points": {"type": "array", "items": {"type": "string"}},
+                      },
+                      "required": ["title", "summary", "key_points"]
+                  }
+              },
+              "plugins": [
+              {"id": "response-healing"}
+              ]
+            },
         )
         print(response)
         raw = response.choices[0].message.content.strip()
@@ -420,19 +443,71 @@ class AudioRecognition():
         try:
             result = json.loads(raw)
             print(result)
-            # Валидация (опционально)
             for key in ["title", "summary", "key_points"]:
                 if key not in result:
                     raise ValueError(f"Отсутствует поле: {key}")
             if not isinstance(result["key_points"], list):
-                raise ValueError("key_points должен быть списком")
+                raise ValueError("key_points должен быть списком") # ! Место которое надо исправить, похоже придется делать retry
             return result
-        except json.JSONDecodeError:
-            raise RuntimeError(f"Модель вернула невалидный JSON:\n{raw}")
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Модель вернула невалидный JSON:\n{raw}") from e
 
     except Exception as e:
-        raise RuntimeError(f"Error during OpenAI-compatible summarization: {e}")
+        raise RuntimeError(f"Error during OpenAI-compatible summarization: {e}") from e
 
+  def classify_meeting_type_with_openai(self, text: str, 
+                                        model: str = "arcee-ai/trinity-mini:free", 
+                                        base_url: str = "https://openrouter.ai/api/v1",
+                                        temperature: float = 0.001,
+                                        max_tokens: int = 3000) -> str:
+    system_prompt = (
+        "Ты — эксперт по анализу деловых совещаний. Используй онтологию ниже для определения типа совещания.\n\n"
+        f"{self.ontology_file_text}\n\n"
+        "Верни ТОЛЬКО название типа совещания из списка:\n"
+        '"Оперативное совещание", "Стратегическое совещание", "Финансовое совещание", '
+        '"HR-совещание", "Обзор проекта", "Экстренное совещание".\n'
+        "Никаких пояснений, только одно название."
+    )
+    client = OpenAI(api_key=os.getenv(self.openai_api_key_envname), base_url=base_url)
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Текст совещания:\n{text}"}
+        ],
+        temperature=temperature,
+        max_tokens=max_tokens
+    )
+    raw = response.choices[0].message.content.strip()
+
+    allowed = {
+        "Оперативное совещание", "Стратегическое совещание", "Финансовое совещание",
+        "HR-совещание", "Обзор проекта", "Экстренное совещание"
+    }
+    if raw in allowed:
+        return raw
+    else:
+        return self._fallback_classification(text)
+    
+  def _fallback_classification(self, text: str) -> str:
+    text_lower = text.lower()
+    keywords_map = {
+        "Оперативное совещание": ["статус", "задача", "срок", "блокер", "назначить"],
+        "Стратегическое совещание": ["стратегия", "рынок", "цель", "план", "перспектива"],
+        "Финансовое совещание": ["бюджет", "расход", "доход", "квартал", "финансы", "q1", "q2", "q3", "q4"],
+        "HR-совещание": ["сотрудник", "зарплата", "собеседование", "мотивация", "увольнение", "hr"],
+        "Обзор проекта": ["проект", "этап", "риск", "клиент", "сдача", "одобрить"],
+        "Экстренное совещание": ["авария", "ошибка", "срочно", "исправить", "падение", "критично"]
+    }
+    scores = {}
+    for meeting_type, keywords in keywords_map.items():
+        score = sum(1 for kw in keywords if kw in text_lower)
+        if score > 0:
+            scores[meeting_type] = score
+    if scores:
+        return max(scores, key=scores.get)
+    return "Не определено"
+  
   def questions_with_openai(self, text: str = None,
                             model: str = "openai/gpt-oss-20b",
                             base_url: str = "https://openrouter.ai/api/v1",

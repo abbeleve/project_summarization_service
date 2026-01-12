@@ -48,6 +48,8 @@ services:
              sleep 10 &&
              echo '🚀 Запуск API...' &&
              python -m app.main"
+    volumes:
+      - ./backend/api:/app
 
   frontend:
     build: ./frontend
@@ -89,6 +91,7 @@ services:
       - PYTHONUNBUFFERED=1
       - HF_API_KEY=${HF_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
     runtime: nvidia
     restart: unless-stopped
     networks:

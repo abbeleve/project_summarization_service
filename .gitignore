@@ -7,6 +7,7 @@ backend/db/
 backend/app/__pycache__
 backend/app/.env
 ML/whisper_transcription_service/models/
+backend/api/alembic/alembic.db
 
 # C extensions
 *.so

@@ -176,6 +176,11 @@ class Summary(Base):
         default=list
     )
 
+    meeting_type: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True
+    )
+
     transcript: Mapped["Transcript"] = relationship(
         "Transcript",
         back_populates="summaries"
@@ -508,7 +513,11 @@ class DataBaseManager:
                 return False
 
 
-    def insert_summaries(self, transcript_id: UUID, text: str, key_points: Optional[List[str]] = None) -> Optional[UUID]:
+    def insert_summaries(self,
+                        transcript_id: UUID,
+                        text: str, 
+                        key_points: Optional[List[str]] = None,
+                        meeting_type: Optional[str] = None) -> Optional[UUID]:
         with self.session_scope() as session:
             try:
                 transcript = session.get(Transcript, transcript_id)
@@ -518,7 +527,8 @@ class DataBaseManager:
                 summary = Summary(
                     transcript_id=transcript_id,
                     text=text,
-                    key_points=key_points or []
+                    key_points=key_points or [],
+                    meeting_type=meeting_type
                 )
                 session.add(summary)
                 session.flush()
@@ -558,7 +568,8 @@ class DataBaseManager:
                         'id': str(summary.id),
                         'transcript_id': str(summary.transcript_id),
                         'text': summary.text,
-                        'key_points': summary.key_points if summary.key_points else [] 
+                        'key_points': summary.key_points if summary.key_points else [],
+                        'meeting_type': summary.meeting_type
                     }
                 return None
             except SQLAlchemyError as e:

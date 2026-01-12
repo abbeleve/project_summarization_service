@@ -230,6 +230,7 @@ def show_transcript_card(transcript: dict):
     """Отобразить карточку транскрипции"""
     transcript_id = transcript.get('transcript_id', 'N/A')
     title = transcript.get('title', f'Транскрипция #{transcript_id}')
+    meeting_type = transcript.get('meeting_type', 'Не определено')
     
     with st.container():
         col1, col2 = st.columns([3, 1])
@@ -237,6 +238,24 @@ def show_transcript_card(transcript: dict):
         with col1:
             # Заголовок с ID
             st.write(f"**{title}**")
+            # Тип совещания
+            st.markdown(
+                f"""
+                <div style="
+                    display: inline-block;
+                    background-color: #e0e0e0;
+                    color: #333333;
+                    padding: 2px 8px;
+                    border-radius: 12px;
+                    font-size: 0.85em;
+                    font-weight: 500;
+                    margin-top: 4px;
+                    border: none;
+                    box-shadow: none;
+                ">{meeting_type}</div><br>  <!-- ← Перенос строки -->
+                """,
+                unsafe_allow_html=True
+            )
             
             # Отображаем дату создания, если есть
             created_at = transcript.get("created_at")

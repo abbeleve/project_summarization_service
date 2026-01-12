@@ -14,6 +14,9 @@ from uuid import UUID, uuid4
 from datetime import timedelta, datetime
 import json
 
+from alembic.config import Config
+from alembic import command
+
 
 from .models.models import User, Token, TokenData, LoginRequest, TokenResponse
 from .db_service.gen_fake_data import gen_fake_data
@@ -227,7 +230,8 @@ async def process_audio(
     noise_sup_bool: str = Form("false"),
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
-):
+):  
+    print(llm_model)
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
             content = await file.read()
@@ -239,9 +243,6 @@ async def process_audio(
             files = {
                 'file': (file.filename, open(tmp_file_path, 'rb'), file.content_type)
             }
-            print("BOOL"*50)
-            print(noise_sup_bool, type(noise_sup_bool))
-            print(transcribe_model)
             
             data = {
                 'transcribe_model': transcribe_model or "v3_ctc",
@@ -284,38 +285,48 @@ async def process_audio(
                     segments_texts.append(text)
             original_text = " ".join(segments_texts)
             
-            
-
             summary = ""
-            if segments:
-                try:
-                    # Подготавливаем данные для суммаризации
-                    summarize_data = {
-                        "text": json.dumps(segments),
-                        "llm_model": llm_model or "openai/gpt-oss-20b:free",
-                        "task_choice": "summarization"
-                    }
-                    
-                    # Отправляем запрос на суммаризацию
-                    async with httpx.AsyncClient(timeout=300.0) as client:
-                        summarize_response = await client.post(
-                            "http://audio-ml:8053/summarize",
-                            data=summarize_data
-                        )
-                    
-                    if summarize_response.status_code == 200:
+            try:
+                # Подготавливаем данные для суммаризации и определения темы
+                transcription_text = "\n".join(
+                    f"{segment.get('Speaker', 'UNKNOWN')}: {segment.get('Text', '')}"
+                    for segment in segments
+                )
+                                    
+                summarize_data = {
+                    "input_text": transcription_text,
+                    "llm_model": llm_model or "arcee-ai/trinity-mini:free",
+                }
+                
+                # Отправляем запрос на суммаризацию и определение темы 
+                async with httpx.AsyncClient(timeout=300.0) as client:
+                    summarize_response = await client.post(
+                        "http://audio-ml:8053/llm_pipeline",
+                        data=summarize_data
+                    )
+                
+                if summarize_response.status_code == 200:
+                    try:
                         summary_result = summarize_response.json()
                         summary_json = summary_result.get("summary", "")
                         title = summary_json.get("title", "no title")
                         summary = summary_json.get("summary", "no summary")
                         key_points = summary_json.get("key_points", ["no_keypoints"])
-                    else:
-                        print(f"Summarization service error: {summarize_response.status_code}")
-                        summary = ""
-                        
-                except Exception as e:
-                    print(f"Error during summarization: {str(e)}")
+                        meeting_type = summary_json.get("meeting_type", "Не определено")
+                        print(meeting_type)
+                    except Exception as e:
+                        print(f"Summarization returned wrong JSON format, fallback to default: {e}")
+                else:
+                    print(f"Summarization service error: {summarize_response.status_code}")
                     summary = ""
+                    key_points = ["no_keypoints"]
+                    meeting_type = "Не определено"
+                    
+            except Exception as e:
+                print(f"Error during summarization: {str(e)}")
+                summary = ""
+                key_points = ["no_keypoints"]
+                meeting_type = "Не определено"
 
             # Вставляем транскрипцию в базу
             transcript_id = db.insert_transcripts(
@@ -339,13 +350,14 @@ async def process_audio(
                     start_time=int(start * 1000),
                     end_time=int(end * 1000)
                 )
-
+            print(meeting_type)
             # Сохраняем суммаризацию в базу
             if summary:
                 db.insert_summaries(
                     transcript_id=transcript_id,
                     text=summary,
-                    key_points=key_points
+                    key_points=key_points,
+                    meeting_type=meeting_type
                 )
                 
             speakers = []
@@ -405,8 +417,8 @@ async def process_audio(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Transcription error: {str(e)}"
-        )
+            detail=f"Transcription or summarization error: {str(e)}"
+        ) from e
 
 @app.post("/ask")
 async def proxy_ask_question(
@@ -550,6 +562,7 @@ async def get_user_transcripts(
                     "created_at": transcript_data.get('created_at'),
                     "summary": summary_data.get('text') if summary_data else None,
                     "key_points": summary_data.get('key_points') if summary_data else None,
+                    "meeting_type": summary_data.get('meeting_type', "Не определено"),
                     "parts": []
                 }
             
@@ -592,7 +605,8 @@ async def get_transcript(
             "title": transcript_data.get('title', ''),
             "parts": parts,
             "summary": summary_data.get('text') if summary_data else None,
-            "key_points": summary_data.get('key_points') if summary_data else None
+            "key_points": summary_data.get('key_points') if summary_data else None,
+            "meeting_type": summary_data.get('meeting_type', "Не определено")
         }
         
     except HTTPException:
@@ -655,7 +669,11 @@ async def startup_event():
     """Инициализация базы данных при запуске приложения с повторными попытками"""
     max_retries = 10
     retry_delay = 10
-    
+
+    def run_migrations():
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+
     for attempt in range(max_retries):
         try:
             print(f"🔄 Попытка инициализации БД {attempt + 1}/{max_retries}...")
@@ -706,6 +724,8 @@ async def startup_event():
             else:
                 print(f"❌ Не удалось инициализировать БД после {max_retries} попыток: {e}")
                 # Не падаем, а продолжаем работу - БД может быть доступна позже
+
+    run_migrations()
 
 @app.get("/health")
 async def health_check():

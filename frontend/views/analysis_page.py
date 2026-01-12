@@ -34,6 +34,7 @@ def show_new_analysis(data: dict):
         "title": result.get("title", f"Транскрипция #{result.get('transcript_id', '')}"),
         "summary": result.get("summary", ""),
         "key_points": result.get("key_points", []),
+        "meeting_type": result.get("meeting_type", "Не определено"),
         "transcription": convert_segments_to_display_format(result.get("segments", [])),
         "speakers_count": len(result.get("speakers", [])),
         "duration": f"{result.get('duration', 0):.1f} сек",
@@ -51,6 +52,7 @@ def show_new_analysis(data: dict):
     col1, col2 = st.columns([3, 1])
     with col1:
         st.header(f"📊 {display_data['title']}")
+        st.markdown(f"🏷️ **Тип:** {display_data.get('meeting_type', 'Не определено')}")
         st.success("✅ Анализ завершён")
         st.caption(f"Файл: {filename}")
 
@@ -91,6 +93,7 @@ def show_historical_analysis(transcript_id: str):
         "title": data.get("title", f"Транскрипция #{transcript_id}"),
         "summary": data.get("summary", ""),
         "key_points": data.get("key_points", []),
+        "meeting_type": data.get("meeting_type", "Не определено"),
         "transcription": convert_parts_to_display_format(data.get("parts", [])),
         "speakers_count": count_unique_speakers(data.get("parts", [])),
         "duration": calculate_duration(data.get("parts", [])),
@@ -108,7 +111,7 @@ def show_historical_analysis(transcript_id: str):
     with col1:
         st.header(f"📊 {display_data['title']}")
         st.caption(f"🗣️ {display_data['speakers_count']} спикеров | ⏱️ {display_data['duration']}")
-        
+        st.markdown(f"🏷️ **Тип:** {display_data.get('meeting_type', 'Не определено')}")
         # Показываем ключевые точки, если есть
         if display_data["key_points"]:
             with st.expander("🔑 Ключевые точки", expanded=True):

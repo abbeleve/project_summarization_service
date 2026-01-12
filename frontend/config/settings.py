@@ -25,7 +25,7 @@ DIARIZATION_CONFIG = {
 
 # Модели для суммаризации (LLM)
 LLM_MODELS = [
-    "openai/gpt-oss-20b:free",
+    "arcee-ai/trinity-mini:free",
 ]
 
 # Списки для обратной совместимости
