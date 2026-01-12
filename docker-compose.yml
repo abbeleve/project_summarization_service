@@ -94,18 +94,18 @@ services:
     networks:
       - meeting-network
   
-  audio-ml-whisper:
-    build:
-      context: ./ML/whisper_transcription_service
-      dockerfile: Dockerfile
-    ports:
-      - "8054:8054"
-    environment:
-      - PYTHONUNBUFFERED=1
-    runtime: nvidia
-    restart: unless-stopped
-    networks:
-      - meeting-network
+  # audio-ml-whisper:
+  #   build:
+  #     context: ./ML/whisper_transcription_service
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8054:8054"
+  #   environment:
+  #     - PYTHONUNBUFFERED=1
+  #   runtime: nvidia
+  #   restart: unless-stopped
+  #   networks:
+  #     - meeting-network
 
   denoiser:
     build:

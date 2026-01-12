@@ -297,7 +297,7 @@ class AudioRecognition():
       transcription_results = self.transcribe_gigaam(diarization_results, clean_wav_input_audio_path, transcription_model=transcribe_model)
     elif transcribe_lib == "whisper":
       print(diarization_results)
-      transcription_results = self.transcribe_whisper(diarization_results, clean_wav_input_audio_path)
+      transcription_results = self.transcribe_gigaam(diarization_results, clean_wav_input_audio_path)
     return transcription_results
 
 
