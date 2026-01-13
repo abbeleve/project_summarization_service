@@ -350,7 +350,27 @@ async def process_audio(
                     start_time=int(start * 1000),
                     end_time=int(end * 1000)
                 )
-            print(meeting_type)
+
+            # ОТПРАВЛЯЕМ РЕЗУЛЬТАТЫ В RAG
+            try:
+                parts = db.select_parts_transcription_by_transcript_id(transcript_id)
+                transcript_meta = {
+                    "id": transcript_id,
+                    "title": title,
+                    "meeting_type": meeting_type
+                }
+                print('parts'*50)
+                print(parts)
+                chunks = split_into_chunks(parts, transcript_meta)
+                print(chunks)
+                if chunks:
+                    async with httpx.AsyncClient(timeout=30.0) as client_rag:
+                        await client_rag.post(
+                            "http://rag-service:8055/index",
+                            json={"chunks": chunks}
+                        )
+            except Exception as e:
+                logger.warning(f"Не удалось проиндексировать в RAG: {e}")
             # Сохраняем суммаризацию в базу
             if summary:
                 db.insert_summaries(
@@ -420,6 +440,32 @@ async def process_audio(
             status_code=500,
             detail=f"Transcription or summarization error: {str(e)}"
         ) from e
+
+def split_into_chunks(parts: List[Dict], transcript_meta: Dict) -> List[Dict]:
+    chunks = []
+    for part in parts:
+        # part['text'] имеет формат "SPEAKER_01: текст"
+        if ":" in part["text"]:
+            speaker, text = part["text"].split(":", 1)
+            speaker = speaker.strip()
+            text = text.strip()
+        else:
+            speaker, text = "UNKNOWN", part["text"].strip()
+
+        # 🔥 КРИТИЧЕСКАЯ ПРОВЕРКА: пропускаем пустые тексты
+        if not text:
+            continue
+
+        chunks.append({
+            "text": text,
+            "transcript_id": str(transcript_meta["id"]),
+            "speaker": speaker,
+            "start_time": part["start_time"] / 1000.0,
+            "end_time": part["end_time"] / 1000.0,
+            "meeting_type": transcript_meta.get("meeting_type"),
+            "title": transcript_meta.get("title")
+        })
+    return chunks
 
 @app.post("/ask")
 async def proxy_ask_question(
