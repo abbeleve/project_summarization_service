@@ -177,7 +177,7 @@ async def question(request: Request):
         body = await request.json()
         text = body.get("text")
         question = body.get("question")
-        llm_model = body.get("llm_model", "openai/gpt-oss-20b:free")
+        llm_model = body.get("llm_model", "arcee-ai/trinity-mini:free")
     except Exception as e:
         raise ValueError("Invalid JSON") from e
     global base_url
@@ -185,7 +185,7 @@ async def question(request: Request):
         raise HTTPException(400, "'text' must be provided and non-empty")
     if not question or not question.strip():
         raise HTTPException(400, "'question' must be provided and non-empty")
-    allowed_models = {"openai/gpt-oss-20b:free"}
+    allowed_models = {"arcee-ai/trinity-mini:free"}
     if llm_model not in allowed_models:
         raise HTTPException(400, f"Unsupported model. Use: {allowed_models}")
 

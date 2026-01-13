@@ -383,6 +383,7 @@ async def process_audio(
                 "segments": segments,
                 "summary": summary,
                 "key_points": key_points,
+                "meeting_type": meeting_type,
                 "speakers": speakers,
                 "duration": duration,
                 "parts": parts,
@@ -431,30 +432,27 @@ async def proxy_ask_question(
     Проксирует запрос к LLM в audio-ml сервис и сохраняет историю в БД.
     """
     AUDIO_ML_URL = "http://audio-ml:8053"
-    # 1. Проверяем, существует ли транскрипция и принадлежит ли она пользователю
+    # Проверяем, существует ли транскрипция и принадлежит ли она пользователю
     print(transcript_id)
     transcript = db.select_transcripts_by_id(transcript_id)
     if not transcript:
         raise HTTPException(status_code=404, detail="Транскрипция не найдена")
-
-    # ⚠️ Если у вас есть привязка транскрипций к пользователям — добавьте проверку здесь
-    # Например: if transcript["user_id"] != current_user["id"]: ...
-
-    # 2. Получаем полный текст встречи (из parts_transcription)
+    
     parts = db.select_parts_transcription_by_transcript_id(transcript_id)
     meeting_text = "\n".join(
         part.get("text", "") for part in parts
     )
-
-    # 3. Подготавливаем данные для отправки в audio-ml
+    llm_model = "arcee-ai/trinity-mini:free" # ! HARD CODED
+    # Подготавливаем данные для отправки в audio-ml
     payload = {
         "question": question,
         "text": meeting_text,
+        "llm_model": llm_model,
     }
 
-    # 4. Отправляем запрос в audio-ml
+    # Отправляем запрос в audio-ml
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=160.0) as client:
             ml_response = await client.post(
                 f"{AUDIO_ML_URL}/ask",
                 json=payload  # Отправляем как JSON
