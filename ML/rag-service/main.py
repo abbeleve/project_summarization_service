@@ -82,15 +82,14 @@ async def index_chunks(req: IndexRequest):
 @app.post("/search")
 async def search_similar(req: SearchRequest):
     try:
-        query_vector = embedder.encode(req.query)[0]
-        search_params = {
-            "collection_name": COLLECTION_NAME,
-            "query_vector": query_vector,
-            "limit": req.limit,
-            "with_payload": True
-        }
+        # Формируем запрос с префиксом для E5
+        query_text = f"query: {req.query}"
+        query_vector = embedder.encode([query_text], normalize_embeddings=True)[0].tolist()
+
+        # Подготовка фильтра
+        query_filter = None
         if req.exclude_transcript_id:
-            search_params["query_filter"] = Filter(
+            query_filter = Filter(
                 must_not=[
                     FieldCondition(
                         key="transcript_id",
@@ -98,15 +97,28 @@ async def search_similar(req: SearchRequest):
                     )
                 ]
             )
-        results = client.search(**search_params)
+
+        # Выполняем поиск
+        search_result = client.query_points(
+            collection_name=COLLECTION_NAME,
+            query=query_vector,
+            query_filter=query_filter,
+            limit=req.limit,
+            with_payload=True
+        )
+
         return {
             "results": [
                 {
-                    "score": r.score,
-                    "payload": r.payload
+                    "score": point.score,
+                    "payload": point.payload
                 }
-                for r in results
+                for point in search_result.points
             ]
         }
+
     except Exception as e:
+        import traceback
+        print("💥 ОШИБКА В /search:")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")

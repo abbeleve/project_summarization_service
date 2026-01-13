@@ -472,7 +472,8 @@ async def proxy_ask_question(
     transcript_id: str = Form(...),
     question: str = Form(...),
     current_user: dict = Depends(get_current_user),
-    db: DataBaseManager = Depends(get_db)
+    db: DataBaseManager = Depends(get_db),
+    llm_model = Form("arcee-ai/trinity-mini:free"), #HARD CODED
 ):
     """
     Проксирует запрос к LLM в audio-ml сервис и сохраняет историю в БД.
@@ -480,19 +481,58 @@ async def proxy_ask_question(
     AUDIO_ML_URL = "http://audio-ml:8053"
     # Проверяем, существует ли транскрипция и принадлежит ли она пользователю
     print(transcript_id)
-    transcript = db.select_transcripts_by_id(transcript_id)
-    if not transcript:
-        raise HTTPException(status_code=404, detail="Транскрипция не найдена")
+    # transcript = db.select_transcripts_by_id(transcript_id)
+    # if not transcript:
+    #     raise HTTPException(status_code=404, detail="Транскрипция не найдена")
     
     parts = db.select_parts_transcription_by_transcript_id(transcript_id)
-    meeting_text = "\n".join(
-        part.get("text", "") for part in parts
-    )
-    llm_model = "arcee-ai/trinity-mini:free" # ! HARD CODED
+    if not parts:
+        raise HTTPException(status_code=404, detail="Транскрипция не найдена")
+    
+    meeting_text = "\n".join([p["text"] for p in parts])
+    # meeting_text = "\n".join(
+    #     part.get("text", "") for part in parts
+    # )
+    retrieved_context = ""
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client_rag:
+            rag_resp = await client_rag.post(
+                "http://rag-service:8055/search",
+                json={
+                    "query": question,
+                    "exclude_transcript_id": transcript_id, #исключаем текущее совещание
+                    "limit": 3 # HARD CODED LIMIT
+                }
+            )
+            if rag_resp.status_code == 200:
+                results = rag_resp.json().get("results", [])
+                if results:
+                    context_lines = []
+                    for i, res in enumerate(results, 1):
+                        payload = res["payload"]
+                        title = payload.get("title") or "Без названия"
+                        speaker = payload.get("speaker") or "Неизвестный"
+                        text = payload["text"]
+                        line = f"[{i}] ({title}): \"{text}\" (сказал: {speaker})"
+                        context_lines.append(line)
+                    retrieved_context = "\n".join(context_lines)
+    except Exception as e:
+        logger.warning(f"Ошибка при RAG-поиске: {e}")
+    print("ORIGINAL TEXT" * 10)
+    print(meeting_text)
+    if retrieved_context:
+        final_text = (
+            f"ТЕКУЩАЯ ВСТРЕЧА:\n{meeting_text}\n\n"
+            f"РЕЛЕВАНТНЫЙ КОНТЕКСТ ИЗ ПРОШЛЫХ ВСТРЕЧ:\n{retrieved_context}"
+        )
+    else:
+        final_text = meeting_text
+    print("WITH RAG"*10)
+    print(final_text)
     # Подготавливаем данные для отправки в audio-ml
     payload = {
         "question": question,
-        "text": meeting_text,
+        "text": final_text,
         "llm_model": llm_model,
     }
 

@@ -178,6 +178,7 @@ async def question(request: Request):
         text = body.get("text")
         question = body.get("question")
         llm_model = body.get("llm_model", "arcee-ai/trinity-mini:free")
+        print(text)
     except Exception as e:
         raise ValueError("Invalid JSON") from e
     global base_url
@@ -190,7 +191,6 @@ async def question(request: Request):
         raise HTTPException(400, f"Unsupported model. Use: {allowed_models}")
 
     base_url = base_url.strip()
-
     try:
         answer = recognizer.questions_with_openai(
             text=text,
