@@ -41,7 +41,7 @@ class IndexRequest(BaseModel):
 class SearchRequest(BaseModel):
     query: str
     exclude_transcript_id: Optional[str] = None  # чтобы не возвращать текущее совещание
-    limit: int = 3
+    limit: int = 5
 
 @app.post("/index")
 async def index_chunks(req: IndexRequest):

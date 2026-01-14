@@ -452,7 +452,6 @@ def split_into_chunks(parts: List[Dict], transcript_meta: Dict) -> List[Dict]:
         else:
             speaker, text = "UNKNOWN", part["text"].strip()
 
-        # 🔥 КРИТИЧЕСКАЯ ПРОВЕРКА: пропускаем пустые тексты
         if not text:
             continue
 
@@ -510,10 +509,13 @@ async def proxy_ask_question(
                     context_lines = []
                     for i, res in enumerate(results, 1):
                         payload = res["payload"]
-                        title = payload.get("title") or "Без названия"
+                        title = "Название совещания: " + '"' + payload.get("title") or "Без названия" + '"'
+                        meeting_type_raw = payload.get("meeting_type")
+                        meeting_type = f"Тема совещания: {meeting_type_raw}" if meeting_type_raw else ""
+                        meeting_type = '"' + meeting_type + '"'
                         speaker = payload.get("speaker") or "Неизвестный"
                         text = payload["text"]
-                        line = f"[{i}] ({title}): \"{text}\" (сказал: {speaker})"
+                        line = f"[{i}] ({title}), ({meeting_type}): \"{text}\" (сказал: {speaker})"
                         context_lines.append(line)
                     retrieved_context = "\n".join(context_lines)
     except Exception as e:

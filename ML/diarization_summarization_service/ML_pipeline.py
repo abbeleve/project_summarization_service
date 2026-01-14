@@ -112,7 +112,7 @@ class AudioRecognition():
 5. Если вопрос требует уточнения, но текст всё равно не даёт однозначного ответа — используй фразу из п. 3.
 6. Ответ должен быть **кратким, точным и основанным исключительно на тексте**.
 """
-    self.QUESTIONS_PROMPT = "Ответь на вопросы пользователя согласно правилам из системного пропмта по следующему тексту:"
+    self.QUESTIONS_PROMPT = "Ответь на вопросы пользователя согласно правилам из системного пропмта с учетом текста совещания и релевантного контекста из прошлых встреч полученного с помощью RAG-системы. Если ты нашел ответ на вопрос из RAG-контекста, то укажи когда и в каком совещании сказали:"
     with open("ontology.txt") as f:
       self.ontology_file_text = f.read()
     self.ALLOWED_MEETING_TYPES = {
@@ -535,13 +535,13 @@ class AudioRecognition():
     
     open_api_key = os.getenv(self.openai_api_key_envname)
     client = OpenAI(api_key=open_api_key, base_url=base_url)
-  
+    print(f"{self.QUESTIONS_PROMPT}\n\n{text}\n\nА вот вопрос от пользователя: {question}")
     try:
         response = client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": self.SYSTEM_QUESTIONS_PROMPT},
-                {"role": "user", "content": f"{self.QUESTIONS_PROMPT}\n\n{text}\n\nА вот вопрос от пользователя: {question}"}
+                {"role": "user", "content": f"{self.QUESTIONS_PROMPT}\n\n{text}\n\nА вот вопрос от пользователя:\n\n {question}"}
             ],
             temperature=temperature,
             max_tokens = max_tokens
