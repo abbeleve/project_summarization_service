@@ -11,6 +11,8 @@ ML/rag-service/models/
 backend/api/alembic/alembic.db
 qdrant_storage/
 result.txt
+milvus_data/
+volumes/
 
 # C extensions
 *.so

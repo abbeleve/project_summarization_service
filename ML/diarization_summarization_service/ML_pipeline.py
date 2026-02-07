@@ -10,9 +10,6 @@ def unsafe_torch_load(*args, **kwargs):
 
 torch.load = unsafe_torch_load
 import requests
-print("Testing HF connectivity...")
-r = requests.get("https://huggingface.co/pyannote/speaker-diarization-community-1", timeout=10)
-print("Status:", r.status_code)
 import torchaudio
 import os
 
@@ -551,17 +548,3 @@ class AudioRecognition():
 
     except Exception as e:
         raise RuntimeError(f"Error during OpenAI-compatible summarization: {e}")
-# HF_API_KEY = "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" # @param {"type":"string","placeholder":"HF_API_KEY"}
-# # OPENAI_API_KEY = "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" # @param {"type":"string","placeholder":"OPENAI_API_KEY"} groq key
-# OPENAI_API_KEY = "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" # @param {"type":"string","placeholder":"OPENAI_API_KEY"}
-# import os
-# #os.environ["SBER_API_KEY"] = SBER_API_KEY
-# os.environ["HF_API_KEY"] = HF_API_KEY
-# os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
-# loading_model = "large" # @param ["large","base","large-v3"]
-# audior = AudioRecognition()
-# # @title Запуск транскрибации. Укажи путь к файлу и путь к выходному файлу
-# file_path = "bfda67ac521afab.mp3" # @param {"type":"string","placeholder":"test.wav"}
-# output_file_path = "transcribed.txt" # @param {"type":"string","placeholder":"transcribed.txt"}
-# res = audior.run_diarization_transcription_pipeline(file_path, output_file_path, "pyannote", "gigaam")
-# print(res)

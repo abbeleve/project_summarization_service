@@ -14,7 +14,6 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Клонируем модель на этапе сборки (токен используется, но не сохраняется в финальном слое)
 RUN git lfs install && \
     git clone https://hf_token:${HF_API_KEY}@huggingface.co/pyannote/speaker-diarization-community-1 /app/pyannote-model
 

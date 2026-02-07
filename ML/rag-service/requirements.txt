@@ -4,3 +4,4 @@ qdrant-client
 sentence-transformers
 python-multipart
 torch
+pymilvus
