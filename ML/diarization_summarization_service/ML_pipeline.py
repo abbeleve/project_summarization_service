@@ -12,6 +12,7 @@ torch.load = unsafe_torch_load
 import requests
 import torchaudio
 import os
+import sys
 
 from pyannote.audio import Pipeline
 from pyannote.audio.pipelines.utils.hook import ProgressHook
@@ -28,19 +29,31 @@ import gigaam
 from pyannote.audio.core.task import Specifications
 from noise_suppression_request import request_for_noise_suppression
 from whisper_request import transcribe_with_whisper_service
+import logging
+
+LOG_FORMAT = (
+    "%(asctime)s | %(levelname)-8s | "
+    "%(filename)s:%(lineno)d | %(funcName)s() | %(message)s"
+)
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format=LOG_FORMAT,
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 class AudioRecognition():
 
-  def __init__(self, api_key_envname: str ="SBER_API_KEY", hf_api_key_envname="HF_API_KEY", openai_api_key_envname="OPENAI_API_KEY"):
+  def __init__(self, hf_api_key_envname="HF_API_KEY", openai_api_key_envname="OPENAI_API_KEY"):
 
     self.POSSIBLE_EXT = ('mp3', 'wav', 'mp4', 'ogg') #list of possible audio extensions (and probably video)
     self.SAMPLE_RATE = 16000 #sample rate must be 16000, bc of whisper ai
-    #self.GIGACHAT_API_KEY = os.getenv(api_key_envname)
-    #self.HF_API_KEY = os.getenv(hf_api_key_envname)
-    #self.OPENAI_API_KEY = os.getenv(openai_api_key_envname) #getting api key from env
     self.hf_api_key_envname = hf_api_key_envname
     self.openai_api_key_envname = openai_api_key_envname
-    self.whisper_model_path = "./models/faster-whisper-large-v3"
     self.SYSTEM_SUMMARIZATION_PROMPT = """\
 Ты — точный и нейтральный ассистент по обработке речи. Твоя задача — создать **строго фактологическое краткое содержание** предоставленного текста.
 
@@ -120,19 +133,6 @@ class AudioRecognition():
       "Обзор проекта",
       "Экстренное совещание"
     }
-    # self.pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=self.HF_API_KEY).to(torch.device("cuda"))
-    # if not(os.path.isfile("diarize_worker.py")):
-    #   raise ValueError("Can't find diarize_worker.py file. Please import from github")
-    # print('gigaam started')
-    # print(torch.cuda.is_available())
-    # print(">>> REAL pyannote.audio version:", pyannote.audio.__version__)
-    # self.model = gigaam.load_model(
-    #     gigaam_model,
-    #     device='cuda'
-    # )
-    # print('gigaam installed')
-    # #3.4.0
-    # self.diarize_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=os.getenv(self.hf_api_key_envname)).to(torch.device("cuda"))
 
   def convert_to_wav(self, input_path: str, output_wav_path: str):
 
@@ -161,19 +161,18 @@ class AudioRecognition():
             encoding="PCM_S",
             bits_per_sample=16
         )
-        print(f"Converted '{input_path}' to '{output_wav_path}'")
+        logging.info(f"Converted '{input_path}' to '{output_wav_path}'")
     except Exception as e:
+        logging.error(f"Failed to convert audio: {e}")
         raise RuntimeError(f"Failed to convert audio: {e}")
     return output_wav_path
 
   def diarize_pyannote(self, input_audio_path: str, diarize_model = "pyannote/speaker-diarization-community-1"):
     #running diarization
-    print("Начало диаризации с помощью pyannote")
-    # diarize_pipeline = Pipeline.from_pretrained(diarize_model, token=os.getenv(self.hf_api_key_envname)).to(torch.device("cuda"))
-    diarize_pipeline = Pipeline.from_pretrained(
-        "/app/pyannote-model"
-    ).to(torch.device("cuda"))
-    print("Модель загружена")
+    logging.info("Начало диаризации с помощью pyannote")
+    MODEL_PATH = os.getenv("PYANNOTE_MODEL_PATH", "/app/models/pyannote")
+    diarize_pipeline = Pipeline.from_pretrained(MODEL_PATH).to(torch.device("cuda"))
+    logging.info("Модель загружена")
     waveform, sample_rate = torchaudio.load(input_audio_path)
     output = diarize_pipeline({"waveform": waveform, "sample_rate": sample_rate})
     diarization_results = []
@@ -208,12 +207,10 @@ class AudioRecognition():
         device='cuda'
     )
 
-    print("Начало транскрибации с помощью gigaam")
+    logging.info("Начало транскрибации с помощью gigaam")
     for index, timings in tqdm(enumerate(diarization_results)):
       audio_chunk = waveform[:, int(timings['start'] * self.SAMPLE_RATE): int(timings['stop'] * self.SAMPLE_RATE)]
       resulted_transcription = ''
-      print(audio_chunk.shape, self.SAMPLE_RATE)
-      print(int(timings['start'] * self.SAMPLE_RATE), int(timings['stop'] * self.SAMPLE_RATE))
       for chunks in range(0, audio_chunk.shape[1], 23*self.SAMPLE_RATE):
         chunk = audio_chunk[:, chunks:chunks+23*self.SAMPLE_RATE]
         if chunk.shape[1] == 0:
@@ -227,25 +224,7 @@ class AudioRecognition():
     return diarization_results
 
   def transcribe_whisper(self, diarization_results, input_audio_path: str):
-    # if not os.path.isfile(input_audio_path):
-    #     raise FileNotFoundError(f"Audio file not found: {input_audio_path}")
-    # if os.path.getsize(input_audio_path) == 0:
-    #     raise ValueError(f"Audio file is empty: {input_audio_path}")
-    # audio_waveform = decode_audio(input_audio_path)
-
-    # model = WhisperModel(self.whisper_model_path, device='cuda')
-
-    # print("Начало транскрибации whisper")
-    # for index, timings in tqdm(enumerate(diarization_results)):
-    #   audio_chunk = audio_waveform[int(timings['start'] * self.SAMPLE_RATE): int(timings['stop'] * self.SAMPLE_RATE)]
-    #   segments, info = model.transcribe(audio_chunk, beam_size=5, language='ru')
-    #   # segments, info = self.model.transcribe(audio_chunk, beam_size=5, language='ru')
-    #   transcribed_text = ""
-    #   for segment in segments:
-    #     transcribed_text += segment.text
-    #   diarization_results[index]["Text"] = transcribed_text
-    # print(diarization_results)
-    print('whisper transcription')
+    logging.info('whisper transcription')
     diarization_results = transcribe_with_whisper_service(diarization_results, input_audio_path)
     return diarization_results
 
@@ -279,6 +258,7 @@ class AudioRecognition():
     file_ext = file_ext_with_dot[1:].lower()
 
     if file_ext not in self.POSSIBLE_EXT:
+      logging.error(f"Wrong file format '{file_ext}'")
       raise ValueError(f"Wrong file format '{file_ext}'. Supported file formats: {', '.join(self.POSSIBLE_EXT)}")
 
     input_audio_path = full_path
@@ -305,53 +285,9 @@ class AudioRecognition():
     if transcribe_lib == "gigaam":
       transcription_results = self.transcribe_gigaam(diarization_results, clean_wav_input_audio_path, transcription_model=transcribe_model)
     elif transcribe_lib == "whisper":
-      print(diarization_results)
       # transcription_results = self.transcribe_whisper(diarization_results, clean_wav_input_audio_path)
-      transcription_results = self.transcribe_gigaam(diarization_results, clean_wav_input_audio_path, transcription_model=transcribe_model)
+      transcription_results = self.transcribe_whisper(diarization_results, clean_wav_input_audio_path)
     return transcription_results
-
-
-  def speaker_identification(self, audio_chunk, threshold):
-    """
-    Identify speaker by voice chunk and embedding database.
-    Args:
-      audio_chunk(): audio
-      threshold(float): threshold for cosine similarity [0, 2]
-    Returns:
-      speaker_info
-    """
-    pass
-
-  def summarize_with_gigachat(self, text=None, file_path=None):
-    """
-    Makes API call to gigachat services, summarizes given text
-    Args:
-        text(str): text from transcribition
-        file_path(str): path to file with transcribed text
-    Returns:
-        summarization_results(str): summarization results
-    """
-    if file_path is None and text is None:
-      raise ValueError("Please specify file_path or paste text")
-
-    if file_path and text:
-      warnings.warn("When text and file_path are specified in functions args, text from args(file_path) will overwrite args(text)")
-
-    if file_path:
-      with open(file_path, mode='r') as f:
-        text = f.read()
-
-    with GigaChat(credentials=self.GIGACHAT_API_KEY, verify_ssl_certs=False) as giga:
-      messages = [
-          Messages(role=MessagesRole.SYSTEM, content=self.GIGACHAT_SYSTEM_PROMPT),
-          Messages(role=MessagesRole.USER, content=f"Создай краткое содержание следующего текста в соответствии с правилами выше:\n\n{text}")
-      ]
-      chat = Chat(messages=messages, temperature=0.01)
-      response = giga.chat(chat)
-      summarization_results = response.choices[0].message.content.strip()
-      return summarization_results
-
-    raise ValueError("Something went wrong with GigaChat API call")
 
   def summarize_with_openai(self, text: str = None,
                             file_path: str = None,
@@ -437,12 +373,9 @@ class AudioRecognition():
               ]
             },
         )
-        print(response)
         raw = response.choices[0].message.content.strip()
-        print(raw)
         try:
             result = json.loads(raw)
-            print(result)
             for key in ["title", "summary", "key_points"]:
                 if key not in result:
                     raise ValueError(f"Отсутствует поле: {key}")
@@ -450,9 +383,11 @@ class AudioRecognition():
                 raise ValueError("key_points должен быть списком") # ! Место которое надо исправить, похоже придется делать retry
             return result
         except json.JSONDecodeError as e:
+            logging.error(f"Модель вернула невалидный JSON:\n{raw}: {e}")
             raise RuntimeError(f"Модель вернула невалидный JSON:\n{raw}") from e
 
     except Exception as e:
+        logging.error(f"Error during OpenAI-compatible summarization: {e}")
         raise RuntimeError(f"Error during OpenAI-compatible summarization: {e}") from e
 
   def classify_meeting_type_with_openai(self, text: str, 
@@ -532,7 +467,7 @@ class AudioRecognition():
     
     open_api_key = os.getenv(self.openai_api_key_envname)
     client = OpenAI(api_key=open_api_key, base_url=base_url)
-    print(f"{self.QUESTIONS_PROMPT}\n\n{text}\n\nА вот вопрос от пользователя: {question}")
+    logging.info(f"{self.QUESTIONS_PROMPT}\n\n{text}\n\nА вот вопрос от пользователя: {question}")
     try:
         response = client.chat.completions.create(
             model=model,
@@ -547,4 +482,5 @@ class AudioRecognition():
         return summary
 
     except Exception as e:
+        logging.error(f"Error during OpenAI-compatible summarization: {e}")
         raise RuntimeError(f"Error during OpenAI-compatible summarization: {e}")

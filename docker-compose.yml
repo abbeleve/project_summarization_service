@@ -82,16 +82,16 @@ services:
   audio-ml:
     build:
       context: ./ML/diarization_summarization_service
-      dockerfile: Dockerfile
-      args:
-        HF_API_KEY: ${HF_API_KEY}
     ports:
       - "8053:8053"
+    volumes:
+      - ./ML/diarization_summarization_service/models/pyannote:/app/models/pyannote
     environment:
       - PYTHONUNBUFFERED=1
       - HF_API_KEY=${HF_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - PYANNOTE_MODEL_PATH=${PYANNOTE_MODEL_PATH}
     runtime: nvidia
     restart: unless-stopped
     networks:
@@ -140,18 +140,21 @@ services:
       - ./ML/rag-service/models:/app/models
     networks:
       - meeting-network
-  # audio-ml-whisper:
-  #   build:
-  #     context: ./ML/whisper_transcription_service
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "8054:8054"
-  #   environment:
-  #     - PYTHONUNBUFFERED=1
-  #   runtime: nvidia
-  #   restart: unless-stopped
-  #   networks:
-  #     - meeting-network
+
+  audio-ml-whisper:
+    build:
+      context: ./ML/whisper_transcription_service
+    ports:
+      - "8054:8054"
+    volumes:
+      - ./whisper_transcription_service/models/whisper:/app/models/whisper
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WHISPER_MODEL_PATH=${WHISPER_MODEL_PATH}
+    runtime: nvidia
+    restart: unless-stopped
+    networks:
+      - meeting-network
 
   denoiser:
     build:

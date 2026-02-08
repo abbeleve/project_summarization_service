@@ -14,9 +14,10 @@ RUN pip install -r /app/requirements.txt
 
 WORKDIR /app
 
+RUN mkdir -p /app/models/whisper
+
 EXPOSE 8054
 
 COPY main.py .
-COPY models ./models
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8054"]

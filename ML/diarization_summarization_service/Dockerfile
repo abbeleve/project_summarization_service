@@ -1,7 +1,5 @@
 FROM nvcr.io/nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
 
-ARG HF_API_KEY
-
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3 python3-pip python3-venv git git-lfs \
@@ -14,12 +12,11 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-RUN git lfs install && \
-    git clone https://hf_token:${HF_API_KEY}@huggingface.co/pyannote/speaker-diarization-community-1 /app/pyannote-model
-
 # Клонируем и устанавливаем GigaAM
 RUN git clone https://github.com/salute-developers/GigaAM.git /app/GigaAM && \
     pip install -e /app/GigaAM
+
+RUN mkdir -p /app/models/pyannote
 
 WORKDIR /app
 

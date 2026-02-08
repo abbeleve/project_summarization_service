@@ -232,6 +232,7 @@ async def process_audio(
     db: DataBaseManager = Depends(get_db)
 ):  
     print(llm_model)
+    print(transcribe_model)
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
             content = await file.read()
