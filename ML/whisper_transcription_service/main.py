@@ -11,10 +11,9 @@ from tqdm import tqdm
 from faster_whisper.audio import decode_audio
 import soundfile as sf
 
-WHISPER_MODEL_PATH = os.getenv("WHISPER_MODEL_PATH", "./models/faster-whisper-large-v3")
 SAMPLE_RATE = 16000
 
-model = WhisperModel(WHISPER_MODEL_PATH, device="cuda", compute_type="float16")
+model = None
 
 app = FastAPI(title="Whisper Transcription Service", version="1.0")
 
@@ -33,6 +32,9 @@ async def transcribe_endpoint(
     request: str = Form(...),
     audio: UploadFile = File(...)
 ):
+    global model
+    if model is None:
+        model = WhisperModel("large-v3", device="cuda", compute_type="float16")
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         tmp.write(await audio.read())
         audio_path = tmp.name
