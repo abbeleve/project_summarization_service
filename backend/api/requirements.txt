@@ -7,3 +7,8 @@ PyJWT
 python-dotenv
 psycopg2-binary
 bcrypt
+httpx
+sqlalchemy
+alembic
+pydantic
+faker

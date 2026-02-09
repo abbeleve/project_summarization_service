@@ -1,0 +1,6 @@
+models/
+__pycache__/
+*.pyc
+.git
+README.md
+download_model.py
