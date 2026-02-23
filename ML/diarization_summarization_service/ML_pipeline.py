@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 
 class AudioRecognition():
 
-  def __init__(self, hf_api_key_envname="HF_API_KEY", openai_api_key_envname="OPENAI_API_KEY", prompts_path="prompts/prompt_loader.yaml"):
+  def __init__(self, hf_api_key_envname="HF_API_KEY", openai_api_key_envname="OPENAI_API_KEY", prompts_path="prompts/llm_prompts.yaml"):
 
     self.POSSIBLE_EXT = ('mp3', 'wav', 'mp4', 'ogg') #list of possible audio extensions (and probably video)
     self.SAMPLE_RATE = 16000 #sample rate must be 16000, bc of whisper ai

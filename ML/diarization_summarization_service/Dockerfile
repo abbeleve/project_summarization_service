@@ -20,6 +20,7 @@ RUN mkdir -p /app/models/pyannote
 
 WORKDIR /app
 
+COPY ./prompts ./prompts
 COPY ML_pipeline.py .
 COPY main.py .
 COPY noise_suppression_request.py .

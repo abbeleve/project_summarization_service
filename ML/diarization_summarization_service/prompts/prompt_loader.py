@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class PromptLoader:
     """Загрузчик промптов из YAML-файла с поддержкой кэширования и fallback."""
     
-    def __init__(self, yaml_path: str = "prompts/prompts.yaml"):
+    def __init__(self, yaml_path: str = "prompts/llm_prompts.yaml"):
         self.yaml_path = Path(yaml_path)
         self._prompts: Optional[Dict[str, Any]] = None
         self._load()
