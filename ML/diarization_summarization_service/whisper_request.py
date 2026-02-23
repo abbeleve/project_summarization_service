@@ -24,6 +24,8 @@ def transcribe_with_whisper_service(
         raise ValueError("diarization_results is empty")
     if not input_audio_path or not input_audio_path.endswith(('.wav', '.mp3', '.flac', '.ogg')):
         raise ValueError("Invalid audio file path")
+    
+    response = None
 
     with open(input_audio_path, "rb") as audio_file:
         print(audio_file)
@@ -36,6 +38,8 @@ def transcribe_with_whisper_service(
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print("Response status:", response.status_code)
-            print("Response body:", response.text)
-            raise RuntimeError(f"Failed to transcribe via whisper service: {e}")
+            if response:
+                print("Response status:", response.status_code)
+                print("Response body:", response.text)
+                raise RuntimeError(f"Failed to transcribe via whisper service: {e}") from e
+            raise RuntimeError(f"No Response: {e}") from e
