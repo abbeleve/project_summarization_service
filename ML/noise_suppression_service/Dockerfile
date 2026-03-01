@@ -1,7 +1,5 @@
-# Базовый образ с CUDA 12.8 (используем ваш кэшированный образ)
-FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
+FROM python:3.9-slim
 
-# Устанавливаем Python и зависимости
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3 \
@@ -15,31 +13,11 @@ RUN apt-get update && \
         libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем Rust (требуется для deepfilternet)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.9
 
-# Устанавливаем PyTorch с CUDA 12.8
-RUN pip install --no-cache-dir --break-system-packages --ignore-installed \
-    torch==2.4.0 \
-    torchaudio==2.4.0 \
-    --index-url https://download.pytorch.org/whl/cu124
+RUN python3.9 -m pip install torch torchaudio soundfile deepfilternet fastapi uvicorn python-multipart
 
-# Устанавливаем зависимости
-RUN pip install --no-cache-dir --break-system-packages \
-    fastapi \
-    uvicorn \
-    python-multipart \
-    soundfile \
-    requests
-
-# Устанавливаем deepfilternet (стабильная версия с PyPI)
-RUN pip install --no-cache-dir --break-system-packages \
-    deepfilternet==0.5.6
-
-# Переменные окружения для CUDA
-ENV CUDA_LAUNCH_BLOCKING=1
-ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0"
+RUN python -c "from df.enhance import init_df; init_df()"
 
 COPY denoise.py /app/denoise.py
 COPY main.py /app/main.py

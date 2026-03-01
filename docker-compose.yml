@@ -29,7 +29,7 @@ services:
     environment:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POsTGRES_PASSWORD}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_HOST: postgres
       DB_PORT: 5432
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
