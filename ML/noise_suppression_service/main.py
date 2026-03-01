@@ -11,9 +11,10 @@ async def denoise(file: UploadFile = File(...)):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as inp:
         input_path = inp.name
         inp.write(await file.read())
+        inp.flush()
 
-    output_path = tempfile.mktemp(suffix="_clean.wav")
-    print(output_path)
+    with tempfile.NamedTemporaryFile(delete=False, suffix="_clean.wav") as out:
+        output_path = out.name
     try:
         denoise_file(input_path, output_path)
 
