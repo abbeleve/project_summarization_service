@@ -20,12 +20,25 @@ RUN mkdir -p /app/models/pyannote
 
 WORKDIR /app
 
+# Копируем новую структуру проекта
 COPY ./prompts ./prompts
-COPY ML_pipeline.py .
+COPY ./core ./core
+COPY ./services ./services
+COPY ./api ./api
+COPY ./tests ./tests
+
+# Копируем основные файлы
 COPY main.py .
+COPY config.py .
+COPY dependencies.py .
+COPY ontology.txt .
+
+# Копируем legacy для обратной совместимости (опционально)
+COPY ML_pipeline_legacy.py .
+
+# Копируем вспомогательные файлы
 COPY noise_suppression_request.py .
 COPY whisper_request.py .
-COPY ontology.txt .
 
 EXPOSE 8053
 

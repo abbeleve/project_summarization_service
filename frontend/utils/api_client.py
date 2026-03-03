@@ -1,5 +1,6 @@
 import requests
 import streamlit as st
+import time
 from config.settings import API_URL
 
 class APIClient:
@@ -206,19 +207,39 @@ class APIClient:
             return None
     
     @staticmethod
-    def apply_noise_suppression(file):
+    def apply_noise_suppression(file, max_retries=2):
         """
         Отправляет файл на шумоподавление и возвращает байты очищенного аудио.
+        Повторяет попытку при ошибке (max_retries раз).
         """
         files = {"file": (file.name, file.getvalue(), file.type)}
-        response = APIClient._make_request(
-            method="POST",
-            endpoint="/apply-noise-suppression",
-            files=files,
-            timeout=1000
-        )
-        if response and response.status_code == 200:
-            return response.content
+        
+        for attempt in range(max_retries + 1):
+            try:
+                response = APIClient._make_request(
+                    method="POST",
+                    endpoint="/apply-noise-suppression",
+                    files=files,
+                    timeout=1000
+                )
+                
+                if response and response.status_code == 200:
+                    return response.content
+                
+                # Если первая попытка не удалась, пробуем ещё раз
+                if attempt < max_retries:
+                    st.info(f"⏳ Повторная попыка шумоподавления ({attempt + 1}/{max_retries})...")
+                    time.sleep(2)  # Пауза перед повторной попыткой
+                else:
+                    st.error(f"❌ Шумоподавление не удалось после {max_retries + 1} попыток")
+                    
+            except Exception as e:
+                if attempt < max_retries:
+                    st.info(f"⏳ Повторная попыка шумоподавления ({attempt + 1}/{max_retries})...")
+                    time.sleep(2)
+                else:
+                    st.error(f"⚠️ Ошибка при шумоподавлении: {str(e)}")
+        
         return None
 
     @staticmethod

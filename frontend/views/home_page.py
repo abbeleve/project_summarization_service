@@ -26,11 +26,14 @@ def show_home_page():
     st.markdown("---")
     show_history_section()
 
+# Максимальный размер файла для шумоподавления (50 MB)
+MAX_DENOISE_SIZE = 50 * 1024 * 1024
+
 def show_upload_section():
     st.subheader("📤 Новый анализ")
 
     uploaded_file = st.file_uploader(
-        "Загрузите аудиофайл для анализа", 
+        "Загрузите аудиофайл для анализа",
         type=SUPPORTED_FORMATS,
         help="Поддерживаемые форматы: " + ", ".join(SUPPORTED_FORMATS)
     )
@@ -47,7 +50,8 @@ def show_upload_section():
                 "original_audio",
                 "denoised_audio",
                 "denoise_ready",
-                "denoise_attempted"
+                "denoise_attempted",
+                "denoise_error"
             ]
             for key in keys_to_clear:
                 if key in st.session_state:
@@ -56,9 +60,13 @@ def show_upload_section():
 
         st.session_state.original_audio = uploaded_file
 
+        # === Проверка размера файла перед шумоподавлением ===
+        if uploaded_file.size > MAX_DENOISE_SIZE:
+            st.error(f"⚠️ Файл слишком большой для шумоподавления (макс. {MAX_DENOISE_SIZE // 1024 // 1024} MB)")
+            st.session_state.denoise_ready = False
+            st.session_state.denoise_error = f"Файл превышает лимит {MAX_DENOISE_SIZE // 1024 // 1024} MB"
         # Обрабатываем шумоподавление, если ещё не делали для ЭТОГО файла
-        if "denoise_attempted" not in st.session_state:
-            st.session_state.denoise_attempted = True
+        elif "denoise_attempted" not in st.session_state:
             with st.spinner("🔊 Применяю шумоподавление..."):
                 denoised_bytes = APIClient.apply_noise_suppression(uploaded_file)
                 if denoised_bytes:
@@ -66,6 +74,8 @@ def show_upload_section():
                     st.session_state.denoise_ready = True
                 else:
                     st.session_state.denoise_ready = False
+                    st.session_state.denoise_error = "Не удалось применить шумоподавление"
+            st.session_state.denoise_attempted = True
 
         col1, col2 = st.columns([1, 1])
         with col1:

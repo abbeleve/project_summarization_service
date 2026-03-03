@@ -579,7 +579,7 @@ async def apply_noise_suppression(file: UploadFile = File(...)):
                 content=resp.content,
                 media_type=resp.headers.get("content-type", "audio/wav"),
                 headers={
-                    "Content-Disposition": resp.headers.get(" content-disposition", 'attachment; filename="clean.wav"')
+                    "Content-Disposition": resp.headers.get("content-disposition", 'attachment; filename="clean.wav"')
                 }
             )
 
