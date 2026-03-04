@@ -256,7 +256,7 @@ async def process_audio(
             # Отправка запроса к внешнему сервису транскрибации
             async with httpx.AsyncClient(timeout=1300.0) as client:
                 response = await client.post(
-                    "http://audio-ml:8053/transcribe",
+                    "http://audio-ml:8053/transcribe/",
                     files=files,
                     data=data
                 )
