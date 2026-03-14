@@ -29,7 +29,7 @@ services:
     environment:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POsTGRES_PASSWORD}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_HOST: postgres
       DB_PORT: 5432
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
@@ -51,23 +51,23 @@ services:
     volumes:
       - ./backend/api:/app
 
-  frontend:
-    build: ./frontend
-    ports:
-      - "8502:8501"
-    environment:
-      - API_URL=http://api:8000
-      - PYTHONUNBUFFERED=1
-    depends_on:
-      - api
-    networks:
-      - meeting-network
-    restart: on-failure
-    command: >
-      sh -c "echo '⏳ Ожидание запуска API...' &&
-             sleep 15 &&
-             echo '🚀 Запуск Streamlit...' &&
-             streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
+  # frontend:
+  #   build: ./frontend
+  #   ports:
+  #     - "8502:8501"
+  #   environment:
+  #     - API_URL=http://api:8000
+  #     - PYTHONUNBUFFERED=1
+  #   depends_on:
+  #     - api
+  #   networks:
+  #     - meeting-network
+  #   restart: on-failure
+  #   command: >
+  #     sh -c "echo '⏳ Ожидание запуска API...' &&
+  #            sleep 15 &&
+  #            echo '🚀 Запуск Streamlit...' &&
+  #            streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
   
   adminer:
     image: adminer

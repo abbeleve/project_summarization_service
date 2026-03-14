@@ -33,7 +33,7 @@ app = FastAPI(title="Meeting Analyzer API", version="1.0.0")
 # Создаем middleware список
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8501", "http://frontend:8501"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,6 +43,8 @@ auth_middleware = AuthMiddleware(jwt_service)
 
 @app.middleware("http")
 async def auth_middleware_wrapper(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return await call_next(request)
     return await auth_middleware(request, call_next)
 
 # Функция для получения БД
