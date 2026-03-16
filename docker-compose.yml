@@ -43,13 +43,13 @@ services:
     networks:
       - meeting-network
     restart: on-failure
+    volumes:
+      - ./backend/api:/app
     command: >
       sh -c "echo '⏳ Ожидание полной готовности PostgreSQL...' &&
              sleep 10 &&
              echo '🚀 Запуск API...' &&
-             python -m app.main"
-    volumes:
-      - ./backend/api:/app
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   frontend:
     build: ./frontend
@@ -63,11 +63,13 @@ services:
     networks:
       - meeting-network
     restart: on-failure
+    volumes:
+      - ./frontend:/app
     command: >
       sh -c "echo '⏳ Ожидание запуска API...' &&
              sleep 15 &&
              echo '🚀 Запуск Streamlit...' &&
-             streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
+             streamlit run app.py --server.port=8501 --server.address=0.0.0.0 --server.headless true"
   
   adminer:
     image: adminer
@@ -85,6 +87,7 @@ services:
     ports:
       - "8053:8053"
     volumes:
+      - ./ML/diarization_summarization_service:/app
       - ./ML/diarization_summarization_service/models/pyannote:/app/models/pyannote
     environment:
       - PYTHONUNBUFFERED=1
@@ -96,6 +99,7 @@ services:
     restart: unless-stopped
     networks:
       - meeting-network
+    command: uvicorn main:app --host 0.0.0.0 --port 8053 --reload
 
   qdrant:
     image: qdrant/qdrant:v1.13.0
@@ -137,9 +141,11 @@ services:
       - MILVUS_HOST=${MILVUS_HOST}
       - MILVUS_PORT=${MILVUS_INTERNAL_PORT}
     volumes:
+      - ./ML/rag-service:/app
       - ./ML/rag-service/models:/app/models
     networks:
       - meeting-network
+    command: uvicorn main:app --host 0.0.0.0 --port 8055 --reload
 
   audio-ml-whisper:
     build:
@@ -147,6 +153,7 @@ services:
     ports:
       - "8054:8054"
     volumes:
+      - ./ML/whisper_transcription_service:/app
       - ./whisper_transcription_service/models/whisper:/app/models/whisper
     environment:
       - PYTHONUNBUFFERED=1
@@ -155,6 +162,7 @@ services:
     restart: unless-stopped
     networks:
       - meeting-network
+    command: uvicorn main:app --host 0.0.0.0 --port 8054 --reload
 
   denoiser:
     build:
@@ -162,6 +170,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8052:8052"
+    volumes:
+      - ./ML/noise_suppression_service:/app
     environment:
       - PYTHONUNBUFFERED=1
       - CUDA_VISIBLE_DEVICES=0
@@ -176,6 +186,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    command: uvicorn main:app --host 0.0.0.0 --port 8052 --reload
 
 networks:
   meeting-network:
