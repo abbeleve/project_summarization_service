@@ -10,6 +10,7 @@ from config import settings
 from core.audio_converter import AudioConverter
 from core.diarization.pyannote import PyannoteDiarization
 from core.transcription.gigaam import GigaamTranscription
+from core.transcription.whisper import WhisperTranscription
 from core.noise_suppression import NoiseSuppressionClient
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,12 @@ async def transcribe(
                 segments=diarization_segments,
                 audio_path=audio_path,
                 model_name=transcribe_model
+            )
+        elif transcribe_lib == "whisper":
+            transcriber = WhisperTranscription()
+            transcribed_segments = transcriber.transcribe(
+                segments=diarization_segments,
+                audio_path=audio_path
             )
         else:
             raise HTTPException(400, f"Unsupported transcribe_lib: {transcribe_lib}")
