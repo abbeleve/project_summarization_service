@@ -1,6 +1,18 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - meeting-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
   postgres:
     image: postgres:17
     container_name: postgres_container
@@ -32,6 +44,8 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_HOST: postgres
       DB_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      CELERY_TASK_QUEUE: celery
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: ${JWT_ALGORITHM}
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES}
@@ -40,14 +54,49 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - meeting-network
     restart: on-failure
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    volumes:
+      - ./backend/api:/app
+  celery-worker:
+    build: ./backend/api
+    container_name: celery_worker
     command: >
-      sh -c "echo '⏳ Ожидание полной готовности PostgreSQL...' &&
-             sleep 10 &&
-             echo '🚀 Запуск API...' &&
-             python -m app.main"
+      celery -A app.celery_app worker
+      --loglevel=info
+      --concurrency=2
+      --prefetch-multiplier=1
+      --pool=solo
+    environment:
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      CELERY_TASK_QUEUE: celery
+      HF_API_KEY: ${HF_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      audio-ml:
+        condition: service_started
+      audio-ml-whisper:
+        condition: service_started
+      denoiser:
+        condition: service_started
+    networks:
+      - meeting-network
+    restart: on-failure
     volumes:
       - ./backend/api:/app
 
@@ -96,6 +145,13 @@ services:
     restart: unless-stopped
     networks:
       - meeting-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   qdrant:
     image: qdrant/qdrant:v1.13.0
@@ -155,6 +211,13 @@ services:
     restart: unless-stopped
     networks:
       - meeting-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   denoiser:
     build:

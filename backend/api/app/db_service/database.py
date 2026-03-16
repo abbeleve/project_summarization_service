@@ -171,7 +171,7 @@ class Summary(Base):
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
     key_points: Mapped[Optional[List[str]]] = mapped_column(
-        JSONB, 
+        JSONB,
         nullable=True,
         default=list
     )
@@ -192,6 +192,69 @@ class Summary(Base):
             'transcript_id': str(self.transcript_id),
             'text': self.text,
             'key_points': self.key_points if self.key_points else []
+        }
+
+
+class CeleryTask(Base):
+    """
+    Модель для хранения статуса задач Celery.
+    """
+    __tablename__ = 'celery_tasks'
+    
+    user_id: Mapped[Optional[UUID]] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Staff.id', ondelete='SET NULL'),
+        nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="pending"  # pending, processing, completed, failed
+    )
+    step: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True  # transcription, summarization, db_save, rag_index
+    )
+    progress: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=True  # {"percent": 50, "step": "transcription"}
+    )
+    result: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=True  # {"transcript_id": 123}
+    )
+    error: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True
+    )
+    created_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    updated_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
+    
+    employee: Mapped[Optional["Staff"]] = relationship(
+        "Staff",
+        back_populates="parts_transcriptions"  #借用 existing relationship
+    )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'user_id': str(self.user_id) if self.user_id else None,
+            'status': self.status,
+            'step': self.step,
+            'progress': self.progress,
+            'result': self.result,
+            'error': self.error,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
         }
 
 
@@ -634,4 +697,131 @@ class DataBaseManager:
                 return [msg.to_dict() for msg in messages]
             except SQLAlchemyError as e:
                 print(f"Ошибка при получении истории чата: {e}")
+                return []
+
+    # === Методы для работы с задачами Celery ===
+
+    def insert_celery_task(
+        self,
+        task_id: str,
+        user_id: UUID,
+        status: str = "pending"
+    ) -> Optional[str]:
+        """
+        Создаёт новую задачу Celery в БД.
+        
+        Args:
+            task_id: ID задачи Celery (UUID string)
+            user_id: ID пользователя
+            status: Начальный статус (pending, processing, completed, failed)
+        
+        Returns:
+            task_id если успешно, None иначе
+        """
+        from uuid import UUID as UUID_obj
+        
+        with self.session_scope() as session:
+            try:
+                # Преобразуем строку task_id в UUID для CeleryTask
+                # Celery использует строку, но мы храним как UUID
+                celery_task = CeleryTask(
+                    id=UUID_obj(task_id),
+                    user_id=user_id,
+                    status=status,
+                    step=None,
+                    progress=None,
+                    result=None,
+                    error=None
+                )
+                session.add(celery_task)
+                session.flush()
+                return task_id
+            except SQLAlchemyError as e:
+                print(f"Ошибка при создании задачи Celery: {e}")
+                return None
+
+    def update_celery_task_status(
+        self,
+        task_id: str,
+        status: str,
+        progress: Dict[str, Any] = None
+    ) -> bool:
+        """
+        Обновляет статус задачи Celery.
+        
+        Args:
+            task_id: ID задачи Celery
+            status: Новый статус
+            progress: Прогресс выполнения {"step": "...", "percent": 50}
+        
+        Returns:
+            True если успешно, False иначе
+        """
+        from uuid import UUID as UUID_obj
+        
+        with self.session_scope() as session:
+            try:
+                task = session.get(CeleryTask, UUID_obj(task_id))
+                if not task:
+                    return False
+                
+                task.status = status
+                if progress:
+                    task.step = progress.get("step")
+                    task.progress = progress
+                
+                if status == "completed":
+                    task.result = progress
+                elif status == "failed":
+                    task.error = progress.get("error") if progress else None
+                
+                session.flush()
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при обновлении задачи Celery: {e}")
+                return False
+
+    def get_celery_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Получает информацию о задаче Celery.
+        
+        Args:
+            task_id: ID задачи Celery
+        
+        Returns:
+            Словарь с информацией о задаче или None
+        """
+        from uuid import UUID as UUID_obj
+        
+        with self.session_scope() as session:
+            try:
+                task = session.get(CeleryTask, UUID_obj(task_id))
+                if task:
+                    return task.to_dict()
+                return None
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении задачи Celery: {e}")
+                return None
+
+    def get_user_celery_tasks(self, user_id: UUID, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Получает список задач Celery пользователя.
+        
+        Args:
+            user_id: ID пользователя
+            limit: Максимальное количество задач
+        
+        Returns:
+            Список задач
+        """
+        with self.session_scope() as session:
+            try:
+                tasks = session.query(CeleryTask)\
+                    .filter(CeleryTask.user_id == user_id)\
+                    .order_by(CeleryTask.created_at.desc())\
+                    .limit(limit)\
+                    .all()
+                return [task.to_dict() for task in tasks]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении задач Celery: {e}")
                 return []
