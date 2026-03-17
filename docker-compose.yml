@@ -87,7 +87,13 @@ services:
     ports:
       - "8053:8053"
     volumes:
-      - ./ML/diarization_summarization_service:/app
+      - ./ML/diarization_summarization_service/main.py:/app/main.py
+      - ./ML/diarization_summarization_service/config.py:/app/config.py
+      - ./ML/diarization_summarization_service/dependencies.py:/app/dependencies.py
+      - ./ML/diarization_summarization_service/core:/app/core
+      - ./ML/diarization_summarization_service/api:/app/api
+      - ./ML/diarization_summarization_service/services:/app/services
+      - ./ML/diarization_summarization_service/prompts:/app/prompts
       - ./ML/diarization_summarization_service/models/pyannote:/app/models/pyannote
     environment:
       - PYTHONUNBUFFERED=1
