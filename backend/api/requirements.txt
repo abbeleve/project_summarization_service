@@ -14,3 +14,4 @@ pydantic
 faker
 celery[redis]>=5.3.0
 redis>=4.5.0
+requests

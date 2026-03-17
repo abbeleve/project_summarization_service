@@ -19,6 +19,10 @@ def show_home_page():
     else:
         show_user_sidebar()
 
+    # Сбрасываем пагинацию на страницу 0
+    if "page" not in st.session_state:
+        st.session_state.page = 0
+
     process_pending_analysis()
 
     st.header("🎙️ Анализатор встреч")
@@ -180,18 +184,27 @@ def show_upload_section():
             else:
                 audio_to_send = uploaded_file
 
-            with st.spinner("🔍 Начинаем анализ..."):
-                st.session_state.pending_analysis = {
-                    "file": audio_to_send,
-                    "filename": uploaded_file.name,
-                    "transcribe_model": transcribe_model,
-                    "diarization_model": diarization_model,
-                    "diarize_lib": diarize_lib,
-                    "transcribe_lib": transcribe_lib,
-                    "llm_model": llm_model,
-                    "noise_sup_bool": str(noise_sup_bool).lower()
-                }
-                st.rerun()
+            # Отправляем задачу и получаем task_id
+            with st.spinner("🚀 Отправка задачи на обработку..."):
+                result = APIClient.process_audio(
+                    audio_to_send,
+                    transcribe_model=transcribe_model,
+                    diarization_model=diarization_model,
+                    diarize_lib=diarize_lib,
+                    transcribe_lib=transcribe_lib,
+                    llm_model=llm_model,
+                    noise_sup_bool=str(noise_sup_bool).lower()
+                )
+                
+                if result and result.get("task_id"):
+                    # Сохраняем task_id для polling
+                    st.session_state.pending_task_id = result.get("task_id")
+                    st.session_state.pending_filename = uploaded_file.name
+                    st.info(f"✅ Задача отправлена! Task ID: `{result.get('task_id')[:8]}...`")
+                    st.session_state.pending_analysis = None  # Очищаем pending_analysis
+                    st.rerun()
+                else:
+                    st.error("❌ Ошибка при отправке задачи")
         
         
 
@@ -202,21 +215,44 @@ def show_history_section():
         st.error("🚨 Сервер анализа недоступен")
         return
 
-    transcripts = APIClient.get_transcripts()
+    # Инициализация пагинации в session_state
+    if "page" not in st.session_state:
+        st.session_state.page = 0
+    
+    ITEMS_PER_PAGE = 10
+
+    # Получаем транскрипции с пагинацией
+    result = APIClient.get_transcripts(limit=ITEMS_PER_PAGE, offset=st.session_state.page * ITEMS_PER_PAGE)
+    
+    transcripts = result.get("items", [])
+    total = result.get("total", 0)
+    total_pages = (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
 
     if not transcripts:
         st.info("📝 У вас пока нет транскрипций")
         return
 
-    # Сортируем транскрипции по дате создания (сверху новые)
-    transcripts_sorted = sorted(
-        transcripts,
-        key=lambda x: parse_created_at(x.get("created_at", "")),
-        reverse=True  # Сверху новые
-    )
-
-    for transcript in transcripts_sorted:
+    # Отображаем транскрипции
+    for transcript in transcripts:
         show_transcript_card(transcript)
+
+    # Пагинация
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col1:
+        if st.button("◀ Назад", disabled=st.session_state.page == 0, use_container_width=True):
+            st.session_state.page -= 1
+            st.rerun()
+    
+    with col2:
+        st.write(f"**Страница {st.session_state.page + 1} из {max(1, total_pages)}**")
+        st.write(f"Всего записей: {total}")
+    
+    with col3:
+        if st.button("Вперед ▶", disabled=st.session_state.page >= total_pages - 1, use_container_width=True):
+            st.session_state.page += 1
+            st.rerun()
 
 def parse_created_at(created_at_str: str) -> datetime:
     """Парсит строку с датой в datetime"""
@@ -384,41 +420,81 @@ def calculate_duration_card(parts: list) -> str:
         return f"{minutes} мин {seconds} сек"
 
 def process_pending_analysis():
-    if not st.session_state.get("pending_analysis"):
+    """Polling для отслеживания статуса задачи"""
+    # Проверяем есть ли задача в процессе
+    task_id = st.session_state.get("pending_task_id")
+    if not task_id:
+        return
+
+    # Показываем прогресс
+    st.markdown("### 🔄 Прогресс обработки")
+    
+    # Получаем статус задачи
+    task_status = APIClient.get_task_status(task_id)
+    
+    if not task_status:
+        st.error("❌ Не удалось получить статус задачи")
+        st.session_state.pending_task_id = None
         return
     
-    pending = st.session_state.pending_analysis
-    uploaded_file = pending["file"]
+    status = task_status.get("status", "unknown")
+    step = task_status.get("step", "unknown")
+    progress = task_status.get("progress", {})
+    error = task_status.get("error")
+    result = task_status.get("result")
     
-    st.info(f"""
-    ⚙️ **Настройки анализа:**
-    - Модель транскрибации: `{pending.get('transcribe_model', 'v3_ctc')}`
-    - Библиотека транскрибации: `{pending.get('transcribe_lib', 'gigaam')}`
-    - Модель диаризации: `{pending.get('diarization_model', 'pyannote/speaker-diarization-community-1')}`
-    - Библиотека диаризации: `{pending.get('diarize_lib', 'pyannote')}`
-    - Модель суммаризации: `{pending.get('llm_model', 'openai/gpt-oss-20b')}`
-    """)
-
-    with st.spinner("🔍 Анализируем аудиозапись..."):
-        result = APIClient.process_audio(
-            uploaded_file,
-            transcribe_model=pending.get('transcribe_model'),
-            diarization_model=pending.get('diarization_model'),
-            diarize_lib=pending.get('diarize_lib'),
-            transcribe_lib=pending.get('transcribe_lib'),
-            llm_model=pending.get('llm_model'),
-            noise_sup_bool=str(pending.get('noise_sup_bool', 'false'))
-        )
-
-        if result:
-            st.session_state.current_analysis = {
-                "id": result.get("transcript_id", "new"),
-                "data": result,
-                "filename": pending["filename"],
-                "is_new": True
-            }
-            st.session_state.pending_analysis = None
-            navigate("analysis", id=result.get("transcript_id", "new"))
+    # Отображаем прогресс бар
+    percent = progress.get("percent", 0) if isinstance(progress, dict) else 0
+    step_name = progress.get("step", step) if isinstance(progress, dict) else step
+    
+    # Маппинг шагов на понятные названия
+    step_names = {
+        "transcription": "🎤 Транскрибация",
+        "summarization": "📝 Суммаризация",
+        "db_save": "💾 Сохранение в БД",
+        "rag_index": "🔍 RAG индексирование",
+        "completed": "✅ Готово",
+        "failed": "❌ Ошибка"
+    }
+    
+    display_step = step_names.get(step_name, step_name)
+    
+    # Прогресс бар
+    st.progress(percent / 100)
+    st.info(f"**{display_step}**... {percent}%")
+    
+    # Логи статуса
+    if status == "pending":
+        st.warning("⏳ Задача ожидает обработки...")
+        time.sleep(2)
+        st.rerun()
+        
+    elif status == "processing":
+        st.success(f"⚙️ Обработка: {display_step}")
+        time.sleep(3)  # Polling каждые 3 секунды
+        st.rerun()
+        
+    elif status == "completed":
+        st.success("✅ Обработка завершена успешно!")
+        
+        # Получаем transcript_id из результата
+        transcript_id = None
+        if result and isinstance(result, dict):
+            transcript_id = result.get("transcript_id")
+        
+        if transcript_id:
+            st.session_state.pending_task_id = None
+            st.session_state.page = 0  # Сбрасываем пагинацию
+            time.sleep(1)
+            navigate("analysis", id=transcript_id)
         else:
-            st.error("❌ Ошибка при анализе аудиофайла")
-            st.session_state.pending_analysis = None
+            st.error("❌ Задача завершена, но не удалось получить transcript_id")
+            st.session_state.pending_task_id = None
+            
+    elif status == "failed":
+        st.error(f"❌ Ошибка обработки: {error or 'Неизвестная ошибка'}")
+        st.session_state.pending_task_id = None
+        
+    else:
+        st.warning(f"⚠️ Неизвестный статус: {status}")
+        st.session_state.pending_task_id = None

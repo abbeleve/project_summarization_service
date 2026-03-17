@@ -540,34 +540,36 @@ async def get_chat_history(
 
 @app.get("/transcripts")
 async def get_user_transcripts(
+    limit: int = 10,
+    offset: int = 0,
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
-    """Получить все транскрипции пользователя"""
+    """Получить все транскрипции пользователя с пагинацией"""
     try:
         # Получаем части транскрипций, созданные пользователем
         user_parts = db.select_parts_transcription_by_employee_id(current_user["user_id"])
 
         # Группируем по transcript_id
         transcripts_map = {}
-        
+
         for part in user_parts:
             transcript_id_str = part['transcript_id']
-            
+
             if transcript_id_str not in transcripts_map:
                 # Получаем основную информацию о транскрипции
                 try:
                     transcript_uuid = UUID(transcript_id_str)
                 except ValueError:
                     continue
-                    
+
                 transcript_data = db.select_transcripts_by_id(transcript_uuid)
                 if not transcript_data:
                     continue
-                    
+
                 # Получаем суммаризацию
                 summary_data = db.select_summaries_by_transcript_id(transcript_uuid)
-                
+
                 transcripts_map[transcript_id_str] = {
                     "transcript_id": transcript_id_str,
                     "original_text": transcript_data.get('original_text', ''),
@@ -578,13 +580,28 @@ async def get_user_transcripts(
                     "meeting_type": summary_data.get('meeting_type', "Не определено"),
                     "parts": []
                 }
-            
+
             # Добавляем часть в список
             transcripts_map[transcript_id_str]["parts"].append(part)
-        
-        # Преобразуем в список
-        return list(transcripts_map.values())
-        
+
+        # Преобразуем в список и сортируем по дате (сначала новые)
+        transcripts_list = list(transcripts_map.values())
+        transcripts_list.sort(
+            key=lambda x: x.get('created_at', ''),
+            reverse=True
+        )
+
+        # Применяем пагинацию
+        total = len(transcripts_list)
+        paginated = transcripts_list[offset:offset + limit]
+
+        return {
+            "items": paginated,
+            "total": total,
+            "limit": limit,
+            "offset": offset
+        }
+
     except Exception as e:
         logger.error(f"Error fetching user transcripts: {str(e)}")
         raise HTTPException(500, f"Error fetching transcripts: {str(e)}")

@@ -36,6 +36,11 @@ class Staff(Base):
         back_populates="employee",
         cascade="all, delete-orphan"
     )
+    celery_tasks: Mapped[List["CeleryTask"]] = relationship(
+        "CeleryTask",
+        back_populates="employee",
+        cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint("email ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'"),
@@ -241,7 +246,7 @@ class CeleryTask(Base):
     
     employee: Mapped[Optional["Staff"]] = relationship(
         "Staff",
-        back_populates="parts_transcriptions"  #借用 existing relationship
+        back_populates="celery_tasks"
     )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -764,22 +769,36 @@ class DataBaseManager:
                 task = session.get(CeleryTask, UUID_obj(task_id))
                 if not task:
                     return False
-                
+
                 task.status = status
                 if progress:
                     task.step = progress.get("step")
-                    task.progress = progress
-                
+                    # Сериализуем прогресс для JSONB (конвертируем UUID в строки)
+                    task.progress = self._serialize_for_json(progress)
+
                 if status == "completed":
-                    task.result = progress
+                    # Сериализуем результат для JSONB
+                    task.result = self._serialize_for_json(progress)
                 elif status == "failed":
                     task.error = progress.get("error") if progress else None
-                
+
                 session.flush()
                 return True
             except SQLAlchemyError as e:
                 print(f"Ошибка при обновлении задачи Celery: {e}")
                 return False
+
+    @staticmethod
+    def _serialize_for_json(obj: Any) -> Any:
+        """Конвертирует UUID и другие не-JSON сериализуемые объекты в строки."""
+        from uuid import UUID
+        if isinstance(obj, UUID):
+            return str(obj)
+        elif isinstance(obj, dict):
+            return {k: DataBaseManager._serialize_for_json(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [DataBaseManager._serialize_for_json(item) for item in obj]
+        return obj
 
     def get_celery_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         """

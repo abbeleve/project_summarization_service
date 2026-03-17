@@ -37,7 +37,7 @@ class APIClient:
                 return True
             else:
                 return False
-                
+            print('')
         except:
             return False
     
@@ -138,6 +138,39 @@ class APIClient:
             st.error(f"⚠️ Неизвестная ошибка при выполнении запроса: {str(e)}")
             return None
     
+    @staticmethod
+    def get_task_status(task_id: str) -> dict:
+        """Получить статус задачи по task_id"""
+        try:
+            response = APIClient._make_request(
+                method="GET",
+                endpoint=f"/tasks/{task_id}",
+                timeout=30
+            )
+
+            if not response:
+                return None
+
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 404:
+                st.warning("⚠️ Задача не найдена")
+                return None
+            elif response.status_code == 403:
+                st.warning("⚠️ Нет доступа к этой задаче")
+                return None
+            else:
+                try:
+                    error_detail = response.json().get("detail", response.text)
+                except:
+                    error_detail = response.text[:100]
+                st.error(f"❌ Ошибка получения статуса: {error_detail}")
+                return None
+
+        except Exception as e:
+            st.error(f"⚠️ Ошибка при получении статуса: {str(e)}")
+            return None
+
     @staticmethod
     def process_audio(file, **kwargs) -> dict:
         """Отправить аудио на обработку"""
@@ -243,28 +276,28 @@ class APIClient:
         return None
 
     @staticmethod
-    def get_transcripts() -> list:
-        """Получить историю транскрипций пользователя"""
+    def get_transcripts(limit: int = 10, offset: int = 0) -> dict:
+        """Получить историю транскрипций пользователя с пагинацией"""
         response = APIClient._make_request(
             method="GET",
-            endpoint="/transcripts",
+            endpoint=f"/transcripts?limit={limit}&offset={offset}",
             timeout=30
         )
-        
+
         if not response:
-            return []
-        
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
         if response.status_code == 200:
             return response.json()
         elif response.status_code == 204:
-            return []  # Нет данных
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
         else:
             try:
                 error_detail = response.json().get("detail", response.text)
             except:
                 error_detail = response.text[:100] + "..." if len(response.text) > 100 else response.text
             st.error(f"❌ Ошибка получения истории (код {response.status_code}): {error_detail}")
-            return []
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
     
     @staticmethod
     def get_transcript_by_id(transcript_id: str) -> dict:

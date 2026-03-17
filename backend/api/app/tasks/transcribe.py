@@ -205,12 +205,12 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
         update_task_status(task_id, "completed", {
             "step": "completed",
             "percent": 100,
-            "transcript_id": transcript_id
+            "transcript_id": str(transcript_id)  # Конвертируем UUID в строку
         })
-        
+
         return {
             "status": "completed",
-            "transcript_id": transcript_id,
+            "transcript_id": str(transcript_id),  # Конвертируем UUID в строку
             "title": title,
             "meeting_type": meeting_type
         }
