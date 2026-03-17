@@ -44,7 +44,7 @@ class Settings(BaseSettings):
         description="Частота дискретизации аудио (Hz)"
     )
     max_audio_size_mb: int = Field(
-        default=100,
+        default=200,
         description="Максимальный размер аудиофайла (MB)"
     )
     chunk_duration_sec: int = Field(

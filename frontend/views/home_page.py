@@ -26,8 +26,8 @@ def show_home_page():
     st.markdown("---")
     show_history_section()
 
-# Максимальный размер файла для шумоподавления (50 MB)
-MAX_DENOISE_SIZE = 50 * 1024 * 1024
+# Максимальный размер файла для шумоподавления (200 MB)
+MAX_DENOISE_SIZE = 200 * 1024 * 1024
 
 def show_upload_section():
     st.subheader("📤 Новый анализ")
