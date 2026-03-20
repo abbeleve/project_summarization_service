@@ -235,7 +235,6 @@ async def process_audio(
     Отправляет аудио на обработку в фоновом режиме (Celery).
     Возвращает task_id для отслеживания статуса.
     """
-    import uuid
     from app.tasks.transcribe import transcribe_and_summarize_task
     
     print(f"llm_model: {llm_model}")
@@ -296,8 +295,7 @@ async def get_task_status(
     """
     Получение статуса задачи обработки аудио.
     """
-    from uuid import UUID as UUID_obj
-    
+
     try:
         # Получение задачи из БД
         task = db.get_celery_task(task_id)
