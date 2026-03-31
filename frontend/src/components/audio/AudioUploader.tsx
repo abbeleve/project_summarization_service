@@ -69,14 +69,15 @@ export const AudioUploader = ({
 
   const handleSubmit = () => {
     if (file) {
-      const fileToProcess = settings.noiseSuppression && denoisedFile 
+      const fileToProcess = settings.noiseSuppression && denoisedFile
         ? new File([denoisedFile], `denoised_${file.name}`, { type: 'audio/wav' })
         : file;
       onProcess(fileToProcess, settings);
     }
   };
 
-  const canProcess = file && (!settings.noiseSuppression || denoisedFile || isDenoising);
+  const canProcess = file && (!settings.noiseSuppression || denoisedFile);
+  const needsDenoising = settings.noiseSuppression && !denoisedFile;
 
   return (
     <Card className="space-y-6">
@@ -132,22 +133,36 @@ export const AudioUploader = ({
 
       {/* Noise suppression */}
       {file && onNoiseSuppression && (
-        <div className="p-4 bg-gray-50 rounded-lg">
-          <NoiseSuppressionToggle
-            enabled={settings.noiseSuppression}
-            onChange={(enabled) => setSettings(s => ({ ...s, noiseSuppression: enabled }))}
-            disabled={isProcessing}
-          />
-          
-          {settings.noiseSuppression && !denoisedFile && (
-            <Button 
-              size="sm" 
-              onClick={handleDenoise} 
-              isLoading={isDenoising}
+        <div className="p-4 bg-gray-50 rounded-lg space-y-3">
+          <div className="flex items-center justify-between">
+            <NoiseSuppressionToggle
+              enabled={settings.noiseSuppression}
+              onChange={(enabled) => setSettings(s => ({ ...s, noiseSuppression: enabled }))}
               disabled={isProcessing}
-            >
-              Обработать
-            </Button>
+            />
+            
+            {!denoisedFile && (
+              <Button
+                size="sm"
+                onClick={handleDenoise}
+                isLoading={isDenoising}
+                disabled={isProcessing}
+              >
+                🎧 Обработать от шума
+              </Button>
+            )}
+          </div>
+
+          {denoisedFile && (
+            <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 p-2 rounded">
+              <span>✅ Файл обработан</span>
+              <button
+                onClick={() => setDenoisedFile(null)}
+                className="text-red-600 hover:text-red-800 ml-auto"
+              >
+                Сбросить
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -238,8 +253,13 @@ export const AudioUploader = ({
         isLoading={isProcessing}
         fullWidth
         size="lg"
+        title={needsDenoising ? 'Сначала обработайте файл от шума' : ''}
       >
-        {isProcessing ? '🔄 Обработка...' : '🎯 Анализировать'}
+        {isProcessing
+          ? '🔄 Обработка...'
+          : needsDenoising
+            ? '⚠️ Сначала обработайте файл от шума'
+            : '🎯 Анализировать'}
       </Button>
     </Card>
   );

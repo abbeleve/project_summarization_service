@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { transcriptsApi } from '@/api/transcripts';
-import type { Transcript, ProcessingSettings } from '@/types/transcript';
+import type { Transcript, ProcessingSettings, ProcessAudioResponse, TaskQueuedResponse } from '@/types/transcript';
 
 export const useTranscripts = () => {
   const queryClient = useQueryClient();
@@ -41,9 +41,11 @@ export const useTranscripts = () => {
     isLoading,
     error,
     refetch,
-    processAudio: processMutation.mutateAsync,
+    processAudio: processMutation.mutateAsync as typeof processAudio,
     isProcessing: processMutation.isPending,
     deleteTranscript: deleteMutation.mutateAsync,
     getTranscript
   };
 };
+
+type processAudio = (data: { file: File; settings: ProcessingSettings }) => Promise<ProcessAudioResponse | TaskQueuedResponse>;

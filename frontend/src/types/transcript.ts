@@ -66,6 +66,36 @@ export interface ProcessAudioResponse {
   };
 }
 
+export interface TaskQueuedResponse {
+  task_id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  message: string;
+  poll_url: string;
+  step?: string;
+  progress?: number;
+  result?: {
+    transcript_id: string;
+    title: string;
+  };
+  error?: string;
+}
+
+export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export interface TaskInfo {
+  task_id: string;
+  status: TaskStatus;
+  step?: string;
+  progress?: number;
+  error?: string;
+  created_at?: string;
+  updated_at?: string;
+  result?: {
+    transcript_id: string;
+    title: string;
+  };
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;

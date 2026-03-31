@@ -1,11 +1,11 @@
 import apiClient from './client';
-import type { Transcript, ProcessAudioResponse, ProcessingSettings } from '../types/transcript';
+import type { Transcript, ProcessAudioResponse, ProcessingSettings, TaskQueuedResponse } from '../types/transcript';
 
 export const transcriptsApi = {
   processAudio: async (
-    file: File, 
+    file: File,
     settings: ProcessingSettings
-  ): Promise<ProcessAudioResponse> => {
+  ): Promise<ProcessAudioResponse | TaskQueuedResponse> => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('transcribe_model', settings.transcribeModel);
@@ -15,7 +15,7 @@ export const transcriptsApi = {
     formData.append('llm_model', settings.llmModel);
     formData.append('noise_sup_bool', settings.noiseSuppression.toString());
 
-    const response = await apiClient.post<ProcessAudioResponse>('/process', formData, {
+    const response = await apiClient.post<ProcessAudioResponse | TaskQueuedResponse>('/process', formData, {
       timeout: 300000
     });
     return response.data;

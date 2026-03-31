@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranscripts } from '@/hooks/useTranscripts';
+import { useTaskPolling } from '@/hooks/useTaskPolling';
 import { AudioUploader } from '@/components/audio/AudioUploader';
+import { TaskProgress } from '@/components/tasks/TaskProgress';
+import { transcriptsApi } from '@/api/transcripts';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -9,18 +12,72 @@ import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { type ProcessingSettings } from '@/types/transcript';
+import type { TaskInfo } from '@/types/transcript';
 
 export const HomePage = () => {
   const navigate = useNavigate();
   const { transcripts, isLoading, error, processAudio, deleteTranscript } = useTranscripts();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(() => {
+    // Восстанавливаем task_id из sessionStorage при загрузке страницы
+    return sessionStorage.getItem('activeTaskId');
+  });
+  const [taskError, setTaskError] = useState<string | null>(null);
+
+  const handleTaskComplete = useCallback((task: TaskInfo) => {
+    setActiveTaskId(null);
+    setTaskError(null);
+    sessionStorage.removeItem('activeTaskId');
+    // Перезагружаем страницу для обновления списка транскрипций
+    window.location.reload();
+  }, []);
+
+  const handleTaskError = useCallback((errorMsg: string) => {
+    setTaskError(errorMsg);
+    setActiveTaskId(null);
+    sessionStorage.removeItem('activeTaskId');
+  }, []);
+
+  // Сохраняем task_id в sessionStorage при изменении
+  useEffect(() => {
+    if (activeTaskId) {
+      sessionStorage.setItem('activeTaskId', activeTaskId);
+    } else {
+      sessionStorage.removeItem('activeTaskId');
+    }
+  }, [activeTaskId]);
+
+  const { task: activeTask } = useTaskPolling({
+    taskId: activeTaskId,
+    onComplete: handleTaskComplete,
+    onError: handleTaskError,
+    enabled: !!activeTaskId
+  });
 
   const handleProcess = async (file: File, settings: ProcessingSettings) => {
     try {
+      setTaskError(null);
       const result = await processAudio({ file, settings });
-      navigate(`/analysis/${result.transcript_id}`);
+      
+      // Проверяем, вернул ли backend task_id (очередь) или готовую транскрипцию
+      if ('task_id' in result) {
+        setActiveTaskId(result.task_id);
+      } else if ('transcript_id' in result) {
+        navigate(`/analysis/${result.transcript_id}`);
+      }
     } catch (err) {
       console.error('Processing error:', err);
+      setTaskError(err instanceof Error ? err.message : 'Ошибка обработки');
+    }
+  };
+
+  const handleNoiseSuppression = async (file: File): Promise<Blob | null> => {
+    try {
+      const blob = await transcriptsApi.applyNoiseSuppression(file);
+      return blob;
+    } catch (err) {
+      console.error('Noise suppression error:', err);
+      return null;
     }
   };
 
@@ -38,11 +95,32 @@ export const HomePage = () => {
       {/* Upload section */}
       <section>
         <h2 className="text-xl font-bold text-gray-900 mb-4">📤 Новый анализ</h2>
-        <AudioUploader 
-          onProcess={handleProcess} 
-          isProcessing={false}
+        <AudioUploader
+          onProcess={handleProcess}
+          isProcessing={!!activeTaskId}
+          onNoiseSuppression={handleNoiseSuppression}
         />
       </section>
+
+      {/* Active task progress */}
+      {activeTaskId && activeTask && (
+        <section>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">⏳ Обработка</h2>
+          <TaskProgress
+            task={activeTask}
+          />
+        </section>
+      )}
+
+      {/* Task error */}
+      {taskError && (
+        <section>
+          <ErrorMessage
+            message={`Ошибка обработки: ${taskError}`}
+            onRetry={() => setTaskError(null)}
+          />
+        </section>
+      )}
 
       {/* History section */}
       <section>
