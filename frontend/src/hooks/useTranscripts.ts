@@ -1,13 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { transcriptsApi } from '@/api/transcripts';
+import { transcriptsApi, type TranscriptsResponse } from '@/api/transcripts';
 import type { Transcript, ProcessingSettings, ProcessAudioResponse, TaskQueuedResponse } from '@/types/transcript';
 
-export const useTranscripts = () => {
-  const queryClient = useQueryClient();
+interface UseTranscriptsOptions {
+  limit?: number;
+  offset?: number;
+}
 
-  const { data: transcripts, isLoading, error, refetch } = useQuery<Transcript[], Error>({
-    queryKey: ['transcripts'],
-    queryFn: transcriptsApi.getAll,
+export const useTranscripts = (options: UseTranscriptsOptions = {}) => {
+  const queryClient = useQueryClient();
+  const { limit = 50, offset = 0 } = options;
+
+  const { data: transcriptsData, isLoading, error, refetch } = useQuery<TranscriptsResponse, Error>({
+    queryKey: ['transcripts', limit, offset],
+    queryFn: () => transcriptsApi.getAll(limit, offset),
     staleTime: 5 * 60 * 1000,
     retry: 1
   });
@@ -37,7 +43,10 @@ export const useTranscripts = () => {
   };
 
   return {
-    transcripts,
+    transcripts: transcriptsData?.items || [],
+    total: transcriptsData?.total || 0,
+    limit,
+    offset,
     isLoading,
     error,
     refetch,
