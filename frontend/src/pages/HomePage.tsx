@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranscripts } from '@/hooks/useTranscripts';
-import { useTaskPolling } from '@/hooks/useTaskPolling';
+import { useActiveTasks } from '@/hooks/useActiveTasks';
 import { AudioUploader } from '@/components/audio/AudioUploader';
-import { TaskProgress } from '@/components/tasks/TaskProgress';
+import { ActiveTasksList } from '@/components/tasks/ActiveTasksList';
 import { transcriptsApi } from '@/api/transcripts';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -12,47 +12,23 @@ import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { type ProcessingSettings } from '@/types/transcript';
-import type { TaskInfo } from '@/types/transcript';
 
 export const HomePage = () => {
   const navigate = useNavigate();
   const { transcripts, isLoading, error, processAudio, deleteTranscript } = useTranscripts();
+  const { tasks, addTask, removeTask } = useActiveTasks();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(() => {
-    // Восстанавливаем task_id из sessionStorage при загрузке страницы
-    return sessionStorage.getItem('activeTaskId');
-  });
   const [taskError, setTaskError] = useState<string | null>(null);
 
-  const handleTaskComplete = useCallback((task: TaskInfo) => {
-    setActiveTaskId(null);
-    setTaskError(null);
-    sessionStorage.removeItem('activeTaskId');
-    // Перезагружаем страницу для обновления списка транскрипций
-    window.location.reload();
-  }, []);
-
-  const handleTaskError = useCallback((errorMsg: string) => {
-    setTaskError(errorMsg);
-    setActiveTaskId(null);
-    sessionStorage.removeItem('activeTaskId');
-  }, []);
-
-  // Сохраняем task_id в sessionStorage при изменении
+  // Проверяем завершённые задачи и показываем уведомление
   useEffect(() => {
-    if (activeTaskId) {
-      sessionStorage.setItem('activeTaskId', activeTaskId);
-    } else {
-      sessionStorage.removeItem('activeTaskId');
+    const completedTask = tasks.find(t => t.status === 'completed' && t.result?.transcript_id);
+    if (completedTask) {
+      setTaskError(null);
+      // Можно добавить toast-уведомление здесь
+      console.log('Task completed:', completedTask.task_id);
     }
-  }, [activeTaskId]);
-
-  const { task: activeTask } = useTaskPolling({
-    taskId: activeTaskId,
-    onComplete: handleTaskComplete,
-    onError: handleTaskError,
-    enabled: !!activeTaskId
-  });
+  }, [tasks]);
 
   const handleProcess = async (file: File, settings: ProcessingSettings) => {
     try {
@@ -61,7 +37,8 @@ export const HomePage = () => {
       
       // Проверяем, вернул ли backend task_id (очередь) или готовую транскрипцию
       if ('task_id' in result) {
-        setActiveTaskId(result.task_id);
+        addTask(result.task_id);
+        // Не блокируем интерфейс, просто добавляем задачу в список
       } else if ('transcript_id' in result) {
         navigate(`/analysis/${result.transcript_id}`);
       }
@@ -97,17 +74,18 @@ export const HomePage = () => {
         <h2 className="text-xl font-bold text-gray-900 mb-4">📤 Новый анализ</h2>
         <AudioUploader
           onProcess={handleProcess}
-          isProcessing={!!activeTaskId}
+          isProcessing={false}
           onNoiseSuppression={handleNoiseSuppression}
         />
       </section>
 
-      {/* Active task progress */}
-      {activeTaskId && activeTask && (
+      {/* Active tasks list */}
+      {tasks.length > 0 && (
         <section>
-          <h2 className="text-xl font-bold text-gray-900 mb-4">⏳ Обработка</h2>
-          <TaskProgress
-            task={activeTask}
+          <ActiveTasksList
+            tasks={tasks}
+            onRemove={removeTask}
+            onNavigate={(transcriptId) => navigate(`/analysis/${transcriptId}`)}
           />
         </section>
       )}
