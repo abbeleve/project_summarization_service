@@ -12,10 +12,11 @@ const STEP_LABELS: Record<string, string> = {
   'transcription': '📝 Транскрибация',
   'diarization': '🗣️ Диаризация',
   'summarization': '📋 Суммаризация',
+  'rag_index': '📚 RAG индексация',
   'completed': '✅ Готово'
 };
 
-const STEP_ORDER = ['noise_suppression', 'transcription', 'diarization', 'summarization', 'completed'];
+const STEP_ORDER = ['noise_suppression', 'transcription', 'diarization', 'summarization', 'rag_index', 'completed'];
 
 export const TaskProgress = ({ task, onCancel }: TaskProgressProps) => {
   const stepLabel = task.step ? (STEP_LABELS[task.step] || task.step) : 'Обработка...';

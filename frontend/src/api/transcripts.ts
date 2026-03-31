@@ -1,6 +1,13 @@
 import apiClient from './client';
 import type { Transcript, ProcessAudioResponse, ProcessingSettings, TaskQueuedResponse } from '../types/transcript';
 
+export interface TranscriptsResponse {
+  items: Transcript[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export const transcriptsApi = {
   processAudio: async (
     file: File,
@@ -21,9 +28,9 @@ export const transcriptsApi = {
     return response.data;
   },
 
-  getAll: async (): Promise<Transcript[]> => {
-    const response = await apiClient.get<{ items: Transcript[] }>('/transcripts');
-    return response.data.items;
+  getAll: async (limit: number = 50, offset: number = 0): Promise<TranscriptsResponse> => {
+    const response = await apiClient.get<TranscriptsResponse>(`/transcripts?limit=${limit}&offset=${offset}`);
+    return response.data;
   },
 
   getById: async (id: string): Promise<Transcript> => {
@@ -38,7 +45,7 @@ export const transcriptsApi = {
   applyNoiseSuppression: async (file: File): Promise<Blob> => {
     const formData = new FormData();
     formData.append('file', file);
-    
+
     const response = await apiClient.post('/apply-noise-suppression', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       responseType: 'blob',
