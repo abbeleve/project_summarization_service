@@ -22,8 +22,8 @@ export const transcriptsApi = {
   },
 
   getAll: async (): Promise<Transcript[]> => {
-    const response = await apiClient.get<Transcript[]>('/transcripts');
-    return response.data;
+    const response = await apiClient.get<{ items: Transcript[] }>('/transcripts');
+    return response.data.items;
   },
 
   getById: async (id: string): Promise<Transcript> => {
