@@ -33,7 +33,13 @@ app = FastAPI(title="Meeting Analyzer API", version="1.0.0")
 # Создаем middleware список
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8501", "http://frontend:8501"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,6 +49,8 @@ auth_middleware = AuthMiddleware(jwt_service)
 
 @app.middleware("http")
 async def auth_middleware_wrapper(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return await call_next(request)
     return await auth_middleware(request, call_next)
 
 # Функция для получения БД
@@ -230,217 +238,141 @@ async def process_audio(
     noise_sup_bool: str = Form("false"),
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
-):  
-    print(llm_model)
-    print(transcribe_model)
+):
+    """
+    Отправляет аудио на обработку в фоновом режиме (Celery).
+    Возвращает task_id для отслеживания статуса.
+    """
+    from app.tasks.transcribe import transcribe_and_summarize_task
+    
+    print(f"llm_model: {llm_model}")
+    print(f"transcribe_model: {transcribe_model}")
+    
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            tmp_file_path = tmp_file.name
+        # Чтение файла в байты
+        file_bytes = await file.read()
         
-        try:
-            # Подготовка данных для отправки
-            files = {
-                'file': (file.filename, open(tmp_file_path, 'rb'), file.content_type)
-            }
-            
-            data = {
-                'transcribe_model': transcribe_model or "v3_ctc",
-                'diarization_model': diarization_model or "pyannote/speaker-diarization-community-1",
-                'diarize_lib': diarize_lib or "pyannote",
-                'transcribe_lib': transcribe_lib or "gigaam",
-                'noise_sup_bool': noise_sup_bool
-            }
-            
-            # Отправка запроса к внешнему сервису транскрибации
-            async with httpx.AsyncClient(timeout=1300.0) as client:
-                response = await client.post(
-                    "http://audio-ml:8053/transcribe/",
-                    files=files,
-                    data=data
-                )
-            
-            if response.status_code != 200:
-                try:
-                    error_detail = response.json().get("detail", response.text)
-                except:
-                    error_detail = response.text
-                
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Transcription service error: {error_detail}"
-                )
-
-            ml_response = response.json()
-            
-            segments = ml_response.get("transcript", [])
-
-            if not segments:
-                raise HTTPException(500, "ML service returned empty transcript")
-
-            segments_texts = []
-            for segment in segments:
-                text = segment.get("Text", "")
-                if text:
-                    segments_texts.append(text)
-            original_text = " ".join(segments_texts)
-            
-            summary = ""
-            try:
-                # Подготавливаем данные для суммаризации и определения темы
-                transcription_text = "\n".join(
-                    f"{segment.get('Speaker', 'UNKNOWN')}: {segment.get('Text', '')}"
-                    for segment in segments
-                )
-                                    
-                summarize_data = {
-                    "input_text": transcription_text,
-                    "llm_model": llm_model or "arcee-ai/trinity-mini:free",
-                }
-                
-                # Отправляем запрос на суммаризацию и определение темы 
-                async with httpx.AsyncClient(timeout=300.0) as client:
-                    summarize_response = await client.post(
-                        "http://audio-ml:8053/llm_pipeline",
-                        data=summarize_data
-                    )
-                
-                if summarize_response.status_code == 200:
-                    try:
-                        summary_result = summarize_response.json()
-                        summary_json = summary_result.get("summary", "")
-                        title = summary_json.get("title", "no title")
-                        summary = summary_json.get("summary", "no summary")
-                        key_points = summary_json.get("key_points", ["no_keypoints"])
-                        meeting_type = summary_json.get("meeting_type", "Не определено")
-                        print(meeting_type)
-                    except Exception as e:
-                        print(f"Summarization returned wrong JSON format, fallback to default: {e}")
-                else:
-                    print(f"Summarization service error: {summarize_response.status_code}")
-                    summary = ""
-                    key_points = ["no_keypoints"]
-                    meeting_type = "Не определено"
-                    
-            except Exception as e:
-                print(f"Error during summarization: {str(e)}")
-                summary = ""
-                key_points = ["no_keypoints"]
-                meeting_type = "Не определено"
-
-            # Вставляем транскрипцию в базу
-            transcript_id = db.insert_transcripts(
-                text=original_text,
-                title=title or f"Запись от {datetime.now().strftime('%d.%m.%Y %H:%M')}"
-            )
-            
-            if not transcript_id:
-                raise HTTPException(500, "Failed to save transcript to database")
-            
-            for segment in segments:
-                speaker = segment.get("Speaker", "UNKNOWN")
-                text = segment.get("Text", "")
-                start = segment.get("start", 0.0)
-                end = segment.get("stop", 0.0)
-                
-                db.insert_parts_transcription(
-                    employee_id=current_user["user_id"],
-                    transcript_id=transcript_id,
-                    text=f"{speaker}: {text}",
-                    start_time=int(start * 1000),
-                    end_time=int(end * 1000)
-                )
-
-            # ОТПРАВЛЯЕМ РЕЗУЛЬТАТЫ В RAG
-            try:
-                parts = db.select_parts_transcription_by_transcript_id(transcript_id)
-                transcript_meta = {
-                    "id": transcript_id,
-                    "title": title,
-                    "meeting_type": meeting_type
-                }
-                print('parts'*50)
-                print(parts)
-                chunks = split_into_chunks(parts, transcript_meta)
-                print(chunks)
-                if chunks:
-                    async with httpx.AsyncClient(timeout=30.0) as client_rag:
-                        await client_rag.post(
-                            "http://rag-service:8055/index",
-                            json={"chunks": chunks}
-                        )
-            except Exception as e:
-                logger.warning(f"Не удалось проиндексировать в RAG: {e}")
-            # Сохраняем суммаризацию в базу
-            if summary:
-                db.insert_summaries(
-                    transcript_id=transcript_id,
-                    text=summary,
-                    key_points=key_points,
-                    meeting_type=meeting_type
-                )
-                
-            speakers = []
-            for segment in segments:
-                speaker = segment.get("speaker", "UNKNOWN")
-                if speaker not in speakers:
-                    speakers.append(speaker)
-            
-            duration = 0.0
-            for segment in segments:
-                end_time = segment.get("stop", 0.0)
-                if end_time > duration:
-                    duration = end_time
-
-            parts = db.select_parts_transcription_by_transcript_id(transcript_id)
-            
-            # Формируем ответ
-            return {
-                "status": "success",
-                "transcript_id": str(transcript_id),
-                "title": title,
-                "original_text": original_text,
-                "segments": segments,
-                "summary": summary,
-                "key_points": key_points,
-                "meeting_type": meeting_type,
-                "speakers": speakers,
-                "duration": duration,
-                "parts": parts,
-                "used_models": {
-                    "transcribe_model": transcribe_model or "v3_ctc",
-                    "diarization_model": diarization_model or "pyannote/speaker-diarization-community-1",
-                    "transcribe_lib": transcribe_lib or "gigaam",
-                    "diarize_lib": diarize_lib or "pyannote"
-                }
-            }
-            
-        finally:
-            # Закрываем файл и удаляем временный файл
-            if os.path.exists(tmp_file_path):
-                try:
-                    if 'files' in locals() and files.get('file'):
-                        files['file'][1].close()
-                except:
-                    pass
-                os.unlink(tmp_file_path)
-                
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=504,
-            detail="Transcription service timeout. Try again with a smaller file or different model."
+        # Подготовка опций для задачи
+        options = {
+            "transcribe_model": transcribe_model or "v3_ctc",
+            "diarization_model": diarization_model or "pyannote/speaker-diarization-community-1",
+            "diarize_lib": diarize_lib or "pyannote",
+            "transcribe_lib": transcribe_lib or "gigaam",
+            "llm_model": llm_model or "arcee-ai/trinity-mini:free",
+            "noise_sup_bool": noise_sup_bool,
+            "user_id": current_user["user_id"]
+        }
+        
+        # Отправка задачи в Celery
+        task = transcribe_and_summarize_task.delay(file_bytes, options)
+        task_id = str(task.id)
+        
+        # Сохранение задачи в БД
+        db.insert_celery_task(
+            task_id=task_id,
+            user_id=current_user["user_id"],
+            status="pending"
         )
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Transcription service unavailable: {str(e)}"
-        )
+        
+        logger.info(f"Задача {task_id} отправлена в обработку для пользователя {current_user['user_id']}")
+        
+        # Мгновенный ответ (202 Accepted)
+        return {
+            "task_id": task_id,
+            "status": "pending",
+            "message": "Задача принята в обработку",
+            "poll_url": f"/tasks/{task_id}"
+        }
+        
     except Exception as e:
+        logger.error(f"Ошибка при отправке задачи в Celery: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
-            status_code=500,
-            detail=f"Transcription or summarization error: {str(e)}"
-        ) from e
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to queue task: {str(e)}"
+        )
+
+
+@app.get("/tasks/{task_id}")
+async def get_task_status(
+    task_id: str,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """
+    Получение статуса задачи обработки аудио.
+    """
+
+    try:
+        # Получение задачи из БД
+        task = db.get_celery_task(task_id)
+        
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Задача не найдена"
+            )
+        
+        # Проверка прав доступа (пользователь может видеть только свои задачи)
+        if task.get("user_id") != current_user["user_id"]:
+            # Проверка на админа
+            if current_user.get("role") != "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Нет доступа к этой задаче"
+                )
+        
+        # Формирование ответа
+        response = {
+            "task_id": task_id,
+            "status": task["status"],
+            "step": task.get("step"),
+            "progress": task.get("progress"),
+            "result": task.get("result"),
+            "error": task.get("error"),
+            "created_at": task.get("created_at"),
+            "updated_at": task.get("updated_at")
+        }
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при получении статуса задачи: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get task status: {str(e)}"
+        )
+
+
+@app.get("/tasks")
+async def get_user_tasks(
+    limit: int = 50,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """
+    Получение списка задач пользователя.
+    """
+    try:
+        from uuid import UUID as UUID_obj
+        user_id = UUID_obj(current_user["user_id"])
+        
+        tasks = db.get_user_celery_tasks(user_id, limit)
+        
+        return {
+            "tasks": tasks,
+            "count": len(tasks)
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка задач: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get tasks: {str(e)}"
+        )
 
 def split_into_chunks(parts: List[Dict], transcript_meta: Dict) -> List[Dict]:
     chunks = []
@@ -614,34 +546,36 @@ async def get_chat_history(
 
 @app.get("/transcripts")
 async def get_user_transcripts(
+    limit: int = 10,
+    offset: int = 0,
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
-    """Получить все транскрипции пользователя"""
+    """Получить все транскрипции пользователя с пагинацией"""
     try:
         # Получаем части транскрипций, созданные пользователем
         user_parts = db.select_parts_transcription_by_employee_id(current_user["user_id"])
 
         # Группируем по transcript_id
         transcripts_map = {}
-        
+
         for part in user_parts:
             transcript_id_str = part['transcript_id']
-            
+
             if transcript_id_str not in transcripts_map:
                 # Получаем основную информацию о транскрипции
                 try:
                     transcript_uuid = UUID(transcript_id_str)
                 except ValueError:
                     continue
-                    
+
                 transcript_data = db.select_transcripts_by_id(transcript_uuid)
                 if not transcript_data:
                     continue
-                    
+
                 # Получаем суммаризацию
                 summary_data = db.select_summaries_by_transcript_id(transcript_uuid)
-                
+
                 transcripts_map[transcript_id_str] = {
                     "transcript_id": transcript_id_str,
                     "original_text": transcript_data.get('original_text', ''),
@@ -652,13 +586,28 @@ async def get_user_transcripts(
                     "meeting_type": summary_data.get('meeting_type', "Не определено"),
                     "parts": []
                 }
-            
+
             # Добавляем часть в список
             transcripts_map[transcript_id_str]["parts"].append(part)
-        
-        # Преобразуем в список
-        return list(transcripts_map.values())
-        
+
+        # Преобразуем в список и сортируем по дате (сначала новые)
+        transcripts_list = list(transcripts_map.values())
+        transcripts_list.sort(
+            key=lambda x: x.get('created_at', ''),
+            reverse=True
+        )
+
+        # Применяем пагинацию
+        total = len(transcripts_list)
+        paginated = transcripts_list[offset:offset + limit]
+
+        return {
+            "items": paginated,
+            "total": total,
+            "limit": limit,
+            "offset": offset
+        }
+
     except Exception as e:
         logger.error(f"Error fetching user transcripts: {str(e)}")
         raise HTTPException(500, f"Error fetching transcripts: {str(e)}")

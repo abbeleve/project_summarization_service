@@ -3,7 +3,6 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 from app.db_service.database import Base  # ← ваша базовая модель
-from app.db_service.database import DataBaseManager
 import os
 
 # this is the Alembic Config object
@@ -17,13 +16,27 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 def get_url():
+    """
+    Получает URL подключения к PostgreSQL.
+
+    Для локального запуска (venv):
+        export DB_HOST=localhost
+        export DB_USER=postgres_user
+        export DB_PASSWORD=your_password
+        export DB_NAME=postgres
+        export DB_PORT=5430  # ← внешний порт из docker-compose
+
+    Для Docker (по умолчанию):
+        DB_HOST=postgres
+        DB_PORT=5432
+    """
     return (
         f"postgresql://"
-        f"{os.getenv('DB_USER', 'postgres_user')}:"
-        f"{os.getenv('DB_PASSWORD', 'postgres_password')}@"
-        f"{os.getenv('DB_HOST', 'postgres')}:"
-        f"{os.getenv('DB_PORT', '5432')}/"
-        f"{os.getenv('DB_NAME', 'postgres')}"
+        f"{os.getenv('POSTGRES_USER', 'postgres_user')}:"
+        f"{os.getenv('POSTGRES_PASSWORD', 'postgres_password')}@"
+        f"{os.getenv('DB_HOST', 'localhost')}:"
+        f"{os.getenv('DB_PORT', '5430')}/"  # ← слеш перед именем БД
+        f"{os.getenv('POSTGRES_DB', 'postgres')}"
     )
 
 def run_migrations_offline() -> None:

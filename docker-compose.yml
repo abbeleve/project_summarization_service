@@ -1,6 +1,18 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - meeting-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
   postgres:
     image: postgres:17
     container_name: postgres_container
@@ -32,6 +44,8 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_HOST: postgres
       DB_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      CELERY_TASK_QUEUE: celery
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: ${JWT_ALGORITHM}
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES}
@@ -40,34 +54,69 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - meeting-network
     restart: on-failure
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    volumes:
+      - ./backend/api:/app
+  celery-worker:
+    build: ./backend/api
+    container_name: celery_worker
     command: >
-      sh -c "echo '⏳ Ожидание полной готовности PostgreSQL...' &&
-             sleep 10 &&
-             echo '🚀 Запуск API...' &&
-             python -m app.main"
+      celery -A app.celery_app worker
+      --loglevel=info
+      --concurrency=2
+      --prefetch-multiplier=1
+      --pool=solo
+    environment:
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      CELERY_TASK_QUEUE: celery
+      HF_API_KEY: ${HF_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      audio-ml:
+        condition: service_started
+      audio-ml-whisper:
+        condition: service_started
+      denoiser:
+        condition: service_started
+    networks:
+      - meeting-network
+    restart: on-failure
     volumes:
       - ./backend/api:/app
 
-  frontend:
-    build: ./frontend
-    ports:
-      - "8502:8501"
-    environment:
-      - API_URL=http://api:8000
-      - PYTHONUNBUFFERED=1
-    depends_on:
-      - api
-    networks:
-      - meeting-network
-    restart: on-failure
-    command: >
-      sh -c "echo '⏳ Ожидание запуска API...' &&
-             sleep 15 &&
-             echo '🚀 Запуск Streamlit...' &&
-             streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
+  # frontend:
+  #   build: ./frontend
+  #   ports:
+  #     - "8502:8501"
+  #   environment:
+  #     - API_URL=http://api:8000
+  #     - PYTHONUNBUFFERED=1
+  #   depends_on:
+  #     - api
+  #   networks:
+  #     - meeting-network
+  #   restart: on-failure
+  #   command: >
+  #     sh -c "echo '⏳ Ожидание запуска API...' &&
+  #            sleep 15 &&
+  #            echo '🚀 Запуск Streamlit...' &&
+  #            streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
   
   adminer:
     image: adminer
@@ -85,6 +134,13 @@ services:
     ports:
       - "8053:8053"
     volumes:
+      - ./ML/diarization_summarization_service/main.py:/app/main.py
+      - ./ML/diarization_summarization_service/config.py:/app/config.py
+      - ./ML/diarization_summarization_service/dependencies.py:/app/dependencies.py
+      - ./ML/diarization_summarization_service/core:/app/core
+      - ./ML/diarization_summarization_service/api:/app/api
+      - ./ML/diarization_summarization_service/services:/app/services
+      - ./ML/diarization_summarization_service/prompts:/app/prompts
       - ./ML/diarization_summarization_service/models/pyannote:/app/models/pyannote
     environment:
       - PYTHONUNBUFFERED=1
@@ -96,6 +152,14 @@ services:
     restart: unless-stopped
     networks:
       - meeting-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: uvicorn main:app --host 0.0.0.0 --port 8053 --reload
 
   qdrant:
     image: qdrant/qdrant:v1.13.0
@@ -137,9 +201,11 @@ services:
       - MILVUS_HOST=${MILVUS_HOST}
       - MILVUS_PORT=${MILVUS_INTERNAL_PORT}
     volumes:
+      - ./ML/rag-service:/app
       - ./ML/rag-service/models:/app/models
     networks:
       - meeting-network
+    command: uvicorn main:app --host 0.0.0.0 --port 8055 --reload
 
   audio-ml-whisper:
     build:
@@ -147,6 +213,7 @@ services:
     ports:
       - "8054:8054"
     volumes:
+      - ./ML/whisper_transcription_service:/app
       - ./whisper_transcription_service/models/whisper:/app/models/whisper
     environment:
       - PYTHONUNBUFFERED=1
@@ -155,6 +222,14 @@ services:
     restart: unless-stopped
     networks:
       - meeting-network
+    command: uvicorn main:app --host 0.0.0.0 --port 8054 --reload
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   denoiser:
     build:
@@ -162,6 +237,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8052:8052"
+    volumes:
+      - ./ML/noise_suppression_service:/app
     environment:
       - PYTHONUNBUFFERED=1
       - CUDA_VISIBLE_DEVICES=0
@@ -176,6 +253,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    command: uvicorn main:app --host 0.0.0.0 --port 8052 --reload
 
 networks:
   meeting-network:

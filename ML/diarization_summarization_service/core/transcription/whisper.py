@@ -2,6 +2,7 @@
 Реализация транскрибации с помощью Whisper сервиса.
 Отправляет запрос к внешнему сервису whisper_transcription_service.
 """
+import json
 import logging
 import requests
 from typing import List
@@ -57,29 +58,28 @@ class WhisperTranscription(TranscriptionBase):
             self.validate_audio_path(audio_path)
             
             logger.info(f"Начало транскрибации через Whisper сервис: {audio_path}")
-            
+
             # Отправка запроса к сервису
             with open(audio_path, "rb") as f:
-                files = {"file": (audio_path, f, "audio/wav")}
+                files = {"audio": (audio_path, f, "audio/wav")}
                 data = {
-                    "diarization_results": [seg.to_dict() for seg in segments]
+                    "request": json.dumps({"diarization_results": [seg.to_dict() for seg in segments]})
                 }
-                
+
                 response = requests.post(
                     self.service_url,
                     files=files,
                     data=data,
                     timeout=self.timeout
                 )
-            
+
             if response.status_code != 200:
                 raise RuntimeError(f"Whisper service error: {response.status_code} - {response.text}")
-            
-            # Парсинг ответа
-            result = response.json()
-            transcribed_segments = result.get("transcript", [])
-            
-            # Обновление сегментов
+
+            # Парсинг ответа (Whisper сервис возвращает список сегментов)
+            transcribed_segments = response.json()
+
+            # Обновление сегментов текстом из ответа
             for i, segment in enumerate(segments):
                 if i < len(transcribed_segments):
                     segment.text = transcribed_segments[i].get("Text", "")

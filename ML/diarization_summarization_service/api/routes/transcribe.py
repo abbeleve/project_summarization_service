@@ -5,12 +5,18 @@ import logging
 import tempfile
 import shutil
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from config import settings
 from core.audio_converter import AudioConverter
 from core.diarization.pyannote import PyannoteDiarization
 from core.transcription.gigaam import GigaamTranscription
+from core.transcription.whisper import WhisperTranscription
 from core.noise_suppression import NoiseSuppressionClient
+from dependencies import (
+    get_audio_converter_singleton,
+    get_diarization_singleton,
+    get_transcription_singleton
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +33,10 @@ async def transcribe(
     ),
     diarize_lib: str = Form("pyannote", description="Библиотека диаризации"),
     transcribe_lib: str = Form("gigaam", description="Библиотека транскрибации"),
-    noise_sup_bool: str = Form("false", description="Использовать шумоподавление")
+    noise_sup_bool: str = Form("false", description="Использовать шумоподавление"),
+    audio_converter: AudioConverter = Depends(get_audio_converter_singleton),
+    diarizer: PyannoteDiarization = Depends(get_diarization_singleton),
+    transcriber_gigaam: GigaamTranscription = Depends(get_transcription_singleton)
 ):
     """
     Транскрибация аудиофайла с диаризацией.
@@ -40,58 +49,49 @@ async def transcribe(
     - **noise_sup_bool**: Использовать ли шумоподавление
     """
     # Валидация расширения файла
-    converter = AudioConverter()
-    converter.validate_extension(file.filename)
-    
-    # Парсинг флага шумоподавления
-    use_noise_suppression = noise_sup_bool.lower() in ("true", "yes", "1", "on")
-    
+    audio_converter.validate_extension(file.filename)
+
     # Временная директория для файлов
     temp_dir = None
-    
+
     try:
         # Создание временной директории
         temp_dir = tempfile.mkdtemp()
         input_path = Path(temp_dir) / f"input{Path(file.filename).suffix}"
-        
+
         # Сохранение загруженного файла
         with open(input_path, "wb") as f:
             f.write(await file.read())
-        
-        logger.info(f"Загружен файл: {input_path} ({len(await file.read()) if hasattr(await file.read(), '__len__') else 'unknown'} bytes)")
-        
+
+        logger.info(f"Загружен файл: {input_path}")
+
         # Конвертация в WAV если нужно
-        audio_converter = AudioConverter()
         if input_path.suffix.lower() != '.wav':
             wav_path = Path(temp_dir) / "input.wav"
             audio_converter.convert_to_wav(str(input_path), str(wav_path))
             audio_path = str(wav_path)
         else:
             audio_path = str(input_path)
-        
-        # Применение шумоподавления если запрошено
-        if use_noise_suppression:
-            logger.info("Применение шумоподавления...")
-            noise_client = NoiseSuppressionClient()
-            clean_audio_path = noise_client.apply_noise_suppression(audio_path)
-            
-            # Конвертация очищенного аудио в нужный формат
-            if clean_audio_path != audio_path:
-                audio_path = clean_audio_path
-        
-        # Диаризация
+
+        # Диаризация (используем singleton экземпляр)
         logger.info("Запуск диаризации...")
-        diarizer = PyannoteDiarization()
         diarization_segments = diarizer.diarize(audio_path)
-        
+
         # Транскрибация
         logger.info("Запуск транскрибации...")
         if transcribe_lib == "gigaam":
-            transcriber = GigaamTranscription()
-            transcribed_segments = transcriber.transcribe(
+            # Используем singleton экземпляр с кэшем моделей
+            transcribed_segments = transcriber_gigaam.transcribe(
                 segments=diarization_segments,
                 audio_path=audio_path,
                 model_name=transcribe_model
+            )
+        elif transcribe_lib == "whisper":
+            # Whisper сервис — создаём новый экземпляр (легковесный HTTP клиент)
+            transcriber = WhisperTranscription()
+            transcribed_segments = transcriber.transcribe(
+                segments=diarization_segments,
+                audio_path=audio_path
             )
         else:
             raise HTTPException(400, f"Unsupported transcribe_lib: {transcribe_lib}")
@@ -134,41 +134,40 @@ async def transcribe(
 @router.post("/diarize")
 async def diarize_only(
     file: UploadFile = File(..., description="Аудиофайл для диаризации"),
-    model: str = Form("pyannote/speaker-diarization-community-1", description="Модель диаризации")
+    model: str = Form("pyannote/speaker-diarization-community-1", description="Модель диаризации"),
+    audio_converter: AudioConverter = Depends(get_audio_converter_singleton),
+    diarizer: PyannoteDiarization = Depends(get_diarization_singleton)
 ):
     """
     Только диаризация аудио (без транскрибации).
     """
-    converter = AudioConverter()
-    converter.validate_extension(file.filename)
-    
+    audio_converter.validate_extension(file.filename)
+
     temp_dir = None
-    
+
     try:
         temp_dir = tempfile.mkdtemp()
         input_path = Path(temp_dir) / f"input{Path(file.filename).suffix}"
-        
+
         with open(input_path, "wb") as f:
             f.write(await file.read())
-        
+
         # Конвертация в WAV
-        audio_converter = AudioConverter()
         if input_path.suffix.lower() != '.wav':
             wav_path = Path(temp_dir) / "input.wav"
             audio_converter.convert_to_wav(str(input_path), str(wav_path))
             audio_path = str(wav_path)
         else:
             audio_path = str(input_path)
-        
-        # Диаризация
-        diarizer = PyannoteDiarization(model_path=model)
+
+        # Диаризация (используем singleton экземпляр)
         segments = diarizer.diarize(audio_path)
-        
+
         return {
             "segments": [seg.to_dict() for seg in segments],
             "speakers_count": len(set(seg.speaker for seg in segments))
         }
-        
+
     except Exception as e:
         logger.error(f"Ошибка диаризации: {e}")
         raise HTTPException(500, f"Diarization failed: {str(e)}")
