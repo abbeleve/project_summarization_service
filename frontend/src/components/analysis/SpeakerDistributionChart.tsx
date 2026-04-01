@@ -1,12 +1,16 @@
+import { useState } from 'react';
 import { PieChart, Pie, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { type TranscriptSegment } from '@/types/transcript';
 import { getSpeakerColor } from '@/utils/speakerColors';
+import { SpeakerActivityChart } from './SpeakerActivityChart';
+import { SpeakerHeatmap } from './SpeakerHeatmap';
 
 interface SpeakerDistributionChartProps {
   segments: TranscriptSegment[];
 }
 
 export const SpeakerDistributionChart = ({ segments }: SpeakerDistributionChartProps) => {
+  const [view, setView] = useState<'distribution' | 'activity' | 'heatmap'>('distribution');
   const speakerTimes: Record<string, number> = {};
 
   segments.forEach(seg => {
@@ -42,22 +46,73 @@ export const SpeakerDistributionChart = ({ segments }: SpeakerDistributionChartP
 
   if (data.length === 0) {
     return (
-      <Card className="p-6 text-center text-gray-500">
-        Нет данных о спикерах
-      </Card>
+      <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-2xl p-5 border border-gray-200">
+        <div className="text-center text-gray-500 py-12">
+          Нет данных о спикерах
+        </div>
+      </div>
     );
   }
 
   return (
     <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-2xl p-5 border border-gray-200">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-blue-500 flex items-center justify-center shadow-md">
-          <span className="text-lg">🗣️</span>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-blue-500 flex items-center justify-center shadow-md">
+            <span className="text-lg">
+              {view === 'distribution' ? '🥧' : view === 'activity' ? '📈' : '🔥'}
+            </span>
+          </div>
+          <h4 className="text-lg font-bold text-gray-900">
+            {view === 'distribution'
+              ? 'Распределение времени'
+              : view === 'activity'
+                ? 'Активность по времени'
+                : 'Тепловая карта'}
+          </h4>
         </div>
-        <h4 className="text-lg font-bold text-gray-900">Распределение времени по спикерам</h4>
+        
+        {/* Переключатель видов */}
+        <div className="flex gap-1 bg-white rounded-lg p-1 border border-gray-200">
+          <button
+            onClick={() => setView('distribution')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
+              view === 'distribution'
+                ? 'bg-indigo-500 text-white shadow-sm'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+            title="Распределение"
+          >
+            <span>🥧</span>
+          </button>
+          <button
+            onClick={() => setView('activity')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
+              view === 'activity'
+                ? 'bg-indigo-500 text-white shadow-sm'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+            title="Активность по времени"
+          >
+            <span>📈</span>
+          </button>
+          <button
+            onClick={() => setView('heatmap')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
+              view === 'heatmap'
+                ? 'bg-indigo-500 text-white shadow-sm'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+            title="Тепловая карта"
+          >
+            <span>🔥</span>
+          </button>
+        </div>
       </div>
 
-      <div className="h-64">
+      {view === 'distribution' ? (
+        <>
+          <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -117,6 +172,12 @@ export const SpeakerDistributionChart = ({ segments }: SpeakerDistributionChartP
           </tbody>
         </table>
       </div>
+        </>
+      ) : view === 'activity' ? (
+        <SpeakerActivityChart segments={segments} />
+      ) : (
+        <SpeakerHeatmap segments={segments} />
+      )}
     </div>
   );
 };
