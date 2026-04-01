@@ -56,7 +56,7 @@ export const SpeakerDistributionChart = ({ segments, onSegmentClick }: SpeakerDi
   }
 
   return (
-    <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-2xl p-5 border border-gray-200">
+    <div className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/20 rounded-2xl p-5 border border-gray-200 dark:border-gray-700">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-blue-500 flex items-center justify-center shadow-md">
@@ -64,7 +64,7 @@ export const SpeakerDistributionChart = ({ segments, onSegmentClick }: SpeakerDi
               {view === 'distribution' ? '🥧' : view === 'activity' ? '📈' : '🔥'}
             </span>
           </div>
-          <h4 className="text-lg font-bold text-gray-900">
+          <h4 className="text-lg font-bold text-gray-900 dark:text-white">
             {view === 'distribution'
               ? 'Распределение времени'
               : view === 'activity'
@@ -147,10 +147,10 @@ export const SpeakerDistributionChart = ({ segments, onSegmentClick }: SpeakerDi
       </div>
 
       {/* Table view */}
-      <div className="mt-4 border-t border-gray-200 pt-4">
+      <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-gray-500">
+            <tr className="text-left text-gray-500 dark:text-gray-400">
               <th className="pb-2">Спикер</th>
               <th className="pb-2 text-right">Время</th>
               <th className="pb-2 text-right">Доля</th>
@@ -158,16 +158,16 @@ export const SpeakerDistributionChart = ({ segments, onSegmentClick }: SpeakerDi
           </thead>
           <tbody>
             {data.map((item, idx) => (
-              <tr key={idx} className="border-t border-gray-100 hover:bg-gray-50 transition-colors">
+              <tr key={idx} className="border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                 <td className="py-3 flex items-center gap-2">
                   <span
                     className="w-3 h-3 rounded-full shadow-sm"
                     style={{ backgroundColor: item.fill }}
                   />
-                  <span className="font-medium text-gray-900">{item.name}</span>
+                  <span className="font-medium text-gray-900 dark:text-white">{item.name}</span>
                 </td>
-                <td className="py-3 text-right text-gray-700">{item.value.toFixed(1)} сек</td>
-                <td className="py-3 text-right font-medium text-gray-900">{item.percent}%</td>
+                <td className="py-3 text-right text-gray-700 dark:text-gray-300">{item.value.toFixed(1)} сек</td>
+                <td className="py-3 text-right font-medium text-gray-900 dark:text-white">{item.percent}%</td>
               </tr>
             ))}
           </tbody>

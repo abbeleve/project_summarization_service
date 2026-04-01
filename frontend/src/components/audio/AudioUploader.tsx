@@ -113,10 +113,10 @@ export const AudioUploader = ({
         {...getRootProps()}
         className={`relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-300
           ${isDragActive 
-            ? 'border-violet-500 bg-gradient-to-br from-violet-50 to-purple-50 scale-[1.02]' 
-            : 'border-gray-300 hover:border-violet-400 hover:bg-gray-50'}
+            ? 'border-violet-500 bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 scale-[1.02]' 
+            : 'border-gray-300 dark:border-gray-600 hover:border-violet-400 hover:bg-gray-50 dark:hover:bg-gray-800'}
           ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
-          ${!file ? 'bg-gradient-to-br from-gray-50 to-white' : 'bg-white'}
+          ${!file ? 'bg-gradient-to-br from-gray-50 to-white dark:from-gray-800 dark:to-gray-900' : 'bg-white dark:bg-gray-800'}
         `}
       >
         <input {...getInputProps()} />
@@ -133,31 +133,31 @@ export const AudioUploader = ({
         </div>
         
         <p className={`text-lg font-medium mb-2 ${
-          isDragActive ? 'text-violet-700' : 'text-gray-700'
+          isDragActive ? 'text-violet-700 dark:text-violet-300' : 'text-gray-700 dark:text-gray-300'
         }`}>
           {isDragActive ? 'Отпустите файл здесь...' : 'Перетащите аудиофайл или кликните для выбора'}
         </p>
-        <p className="text-sm text-gray-500">
-          Поддерживаемые форматы: <span className="font-medium text-gray-700">{SUPPORTED_FORMATS.join(', ')}</span>
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Поддерживаемые форматы: <span className="font-medium text-gray-700 dark:text-gray-300">{SUPPORTED_FORMATS.join(', ')}</span>
         </p>
       </div>
 
       {/* Выбранный файл */}
       {file && (
-        <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-2xl p-5 border border-violet-200">
+        <div className="bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 rounded-2xl p-5 border border-violet-200 dark:border-violet-800">
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center gap-3 flex-1">
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg">
                 <span className="text-2xl">🎵</span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-gray-900 truncate">{file.name}</p>
-                <p className="text-sm text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                <p className="font-semibold text-gray-900 dark:text-white truncate">{file.name}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
               </div>
             </div>
             <button
               onClick={() => { setFile(null); setDenoisedFile(null); }}
-              className="w-8 h-8 rounded-full bg-white hover:bg-red-50 flex items-center justify-center transition-colors text-gray-400 hover:text-red-500 shadow-sm"
+              className="w-8 h-8 rounded-full bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center justify-center transition-colors text-gray-400 hover:text-red-500 shadow-sm"
               disabled={isProcessing}
             >
               <span className="text-lg">×</span>
@@ -166,16 +166,16 @@ export const AudioUploader = ({
 
           {/* Аудио превью */}
           <div className="space-y-4">
-            <div className="bg-white rounded-xl p-4 border border-gray-200">
-              <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                 <span>🎧</span> Оригинал
               </p>
               <audio controls className="w-full" src={URL.createObjectURL(file)} />
             </div>
 
             {denoisedFile && (
-              <div className="bg-white rounded-xl p-4 border border-green-200">
-                <p className="text-sm font-medium text-green-700 mb-2 flex items-center gap-2">
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-green-200 dark:border-green-800">
+                <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-2 flex items-center gap-2">
                   <span>✨</span> С шумоподавлением
                 </p>
                 <audio controls className="w-full" src={URL.createObjectURL(denoisedFile)} />
@@ -187,7 +187,7 @@ export const AudioUploader = ({
 
       {/* Noise suppression */}
       {file && onNoiseSuppression && (
-        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-5 border border-emerald-200">
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-2xl p-5 border border-emerald-200 dark:border-emerald-800">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-md">
@@ -214,12 +214,12 @@ export const AudioUploader = ({
           </div>
 
           {denoisedFile && (
-            <div className="flex items-center gap-2 text-sm text-emerald-700 bg-white/70 backdrop-blur p-3 rounded-xl border border-emerald-100">
+            <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400 bg-white/70 dark:bg-gray-800/70 backdrop-blur p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
               <span className="text-lg">✅</span>
               <span className="font-medium">Файл обработан</span>
               <button
                 onClick={() => setDenoisedFile(null)}
-                className="text-red-600 hover:text-red-800 ml-auto font-medium"
+                className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 ml-auto font-medium"
               >
                 Сбросить
               </button>
@@ -229,8 +229,8 @@ export const AudioUploader = ({
       )}
 
       {/* Settings - аккордеон */}
-      <details className="group border border-gray-200 rounded-2xl overflow-visible bg-white">
-        <summary className="flex items-center gap-3 font-semibold cursor-pointer p-4 bg-gradient-to-r from-slate-50 to-gray-50 hover:from-slate-100 hover:to-gray-100 transition-colors">
+      <details className="group border border-gray-200 dark:border-gray-700 rounded-2xl overflow-visible bg-white dark:bg-gray-800">
+        <summary className="flex items-center gap-3 font-semibold cursor-pointer p-4 bg-gradient-to-r from-slate-50 to-gray-50 dark:from-gray-700 dark:to-gray-800 hover:from-slate-100 hover:to-gray-100 dark:hover:from-gray-600 dark:hover:to-gray-700 transition-colors">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-400 to-gray-500 flex items-center justify-center shadow-md">
             <span className="text-lg">⚙️</span>
           </div>
@@ -513,7 +513,7 @@ export const AudioUploader = ({
         className={`w-full py-4 px-6 rounded-2xl font-semibold text-lg transition-all duration-300 shadow-lg hover:shadow-xl ${
           canProcess && !isProcessing
             ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:from-violet-700 hover:to-purple-700 hover:scale-[1.02]'
-            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
         }`}
       >
         {isProcessing ? (

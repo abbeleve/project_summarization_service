@@ -77,7 +77,7 @@ export const HomePage = () => {
     <div className="space-y-8">
       {/* Upload section */}
       <section>
-        <h2 className="text-xl font-bold text-gray-900 mb-4">📤 Новый анализ</h2>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">📤 Новый анализ</h2>
         <AudioUploader
           onProcess={handleProcess}
           isProcessing={false}
@@ -113,8 +113,8 @@ export const HomePage = () => {
             <span className="text-2xl">📋</span>
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">История транскрипций</h2>
-            <p className="text-sm text-gray-500">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">История транскрипций</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               {total > 0 ? `Всего ${total} транскрипций` : 'Пока пусто'}
             </p>
           </div>
@@ -127,13 +127,13 @@ export const HomePage = () => {
         ) : error ? (
           <ErrorMessage message="Не удалось загрузить историю" />
         ) : !transcripts?.length ? (
-          <Card className="p-12 text-center">
+          <Card className="p-12 text-center dark:bg-gray-800 dark:border-gray-700">
             <div className="max-w-md mx-auto">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center mx-auto mb-4">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-100 to-purple-100 dark:from-violet-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">📝</span>
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">У вас пока нет транскрипций</h3>
-              <p className="text-gray-500 mb-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">У вас пока нет транскрипций</h3>
+              <p className="text-gray-500 dark:text-gray-400 mb-6">
                 Загрузите аудиофайл выше, чтобы начать анализ встречи
               </p>
             </div>
@@ -141,15 +141,15 @@ export const HomePage = () => {
         ) : (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-gray-600">
-                Показано <span className="font-semibold text-gray-900">{transcripts.length}</span> из <span className="font-semibold text-gray-900">{total}</span> транскрипций
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Показано <span className="font-semibold text-gray-900 dark:text-white">{transcripts.length}</span> из <span className="font-semibold text-gray-900 dark:text-white">{total}</span> транскрипций
               </p>
             </div>
             <div className="grid gap-4">
               {transcripts.map((transcript) => (
                 <div
                   key={transcript.transcript_id}
-                  className="group bg-white rounded-2xl border border-gray-200 p-5 hover:shadow-xl hover:border-violet-200 transition-all duration-300 cursor-pointer"
+                  className="group bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-xl hover:border-violet-200 dark:hover:border-violet-800 transition-all duration-300 cursor-pointer"
                   onClick={() => navigate(`/analysis/${transcript.transcript_id}`)}
                 >
                   <div className="flex items-start gap-4">
@@ -174,7 +174,7 @@ export const HomePage = () => {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-4 mb-2">
-                        <h3 className="text-lg font-bold text-gray-900 group-hover:text-violet-600 transition-colors">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
                           {transcript.title}
                         </h3>
                         <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -203,33 +203,33 @@ export const HomePage = () => {
 
                       <div className="flex flex-wrap items-center gap-2 mb-3">
                         <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                          transcript.meeting_type.includes('Оперативное') ? 'bg-blue-100 text-blue-700' :
-                          transcript.meeting_type.includes('Стратегическое') ? 'bg-purple-100 text-purple-700' :
-                          transcript.meeting_type.includes('Финансовое') ? 'bg-green-100 text-green-700' :
-                          transcript.meeting_type.includes('HR') ? 'bg-pink-100 text-pink-700' :
-                          transcript.meeting_type.includes('Экстренное') ? 'bg-red-100 text-red-700' :
-                          'bg-orange-100 text-orange-700'
+                          transcript.meeting_type.includes('Оперативное') ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
+                          transcript.meeting_type.includes('Стратегическое') ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
+                          transcript.meeting_type.includes('Финансовое') ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
+                          transcript.meeting_type.includes('HR') ? 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300' :
+                          transcript.meeting_type.includes('Экстренное') ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
+                          'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
                         }`}>
                           {transcript.meeting_type}
                         </span>
-                        <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 flex items-center gap-1">
+                        <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 flex items-center gap-1">
                           <span>📅</span>
                           {format(new Date(transcript.created_at), 'dd.MM.yyyy HH:mm', { locale: ru })}
                         </span>
                       </div>
 
                       {transcript.key_points?.[0] && (
-                        <p className="text-sm text-gray-600 mb-3 line-clamp-2 leading-relaxed">
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 line-clamp-2 leading-relaxed">
                           {transcript.key_points[0]}
                         </p>
                       )}
 
                       <div className="flex items-center gap-4 text-sm">
-                        <span className="flex items-center gap-1.5 text-gray-600 bg-gray-50 px-3 py-1.5 rounded-lg">
+                        <span className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 px-3 py-1.5 rounded-lg">
                           <span className="text-violet-500">🗣️</span>
                           <span className="font-medium">{transcript.speakers?.length || 0} спикеров</span>
                         </span>
-                        <span className="flex items-center gap-1.5 text-gray-600 bg-gray-50 px-3 py-1.5 rounded-lg">
+                        <span className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 px-3 py-1.5 rounded-lg">
                           <span className="text-violet-500">⏱️</span>
                           <span className="font-medium">{(transcript.duration || 0).toFixed(1)} мин</span>
                         </span>
@@ -239,8 +239,8 @@ export const HomePage = () => {
 
                   {/* Delete confirmation */}
                   {confirmDelete === transcript.transcript_id && (
-                    <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl">
-                      <p className="text-sm text-red-800 font-medium mb-3">Удалить эту транскрипцию?</p>
+                    <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+                      <p className="text-sm text-red-800 dark:text-red-300 font-medium mb-3">Удалить эту транскрипцию?</p>
                       <div className="flex gap-2">
                         <Button
                           variant="danger"

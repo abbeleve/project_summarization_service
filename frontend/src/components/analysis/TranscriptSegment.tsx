@@ -28,8 +28,8 @@ export const TranscriptSegment = memo(({
       className={clsx(
         'p-4 rounded-xl border transition-all cursor-pointer group',
         isActive
-          ? 'bg-primary-50 border-primary-300 shadow-md'
-          : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-lg'
+          ? 'bg-primary-50 border-primary-300 shadow-md dark:bg-primary-900/20 dark:border-primary-700'
+          : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-lg'
       )}
     >
       <div className="flex items-start gap-3 mb-3">
@@ -46,7 +46,7 @@ export const TranscriptSegment = memo(({
         {/* Информация о спикере и времени */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-1">
-            <span className="font-semibold text-gray-900">{speaker}</span>
+            <span className="font-semibold text-gray-900 dark:text-white">{speaker}</span>
             <span className={clsx(
               'px-2 py-1 rounded-md text-xs font-medium',
               color.light,
@@ -55,7 +55,7 @@ export const TranscriptSegment = memo(({
               {formatTime(startTime)} – {formatTime(endTime)}
             </span>
           </div>
-          <p className="text-gray-700 leading-relaxed text-sm">{text}</p>
+          <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm">{text}</p>
         </div>
       </div>
     </div>

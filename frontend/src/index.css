@@ -1,10 +1,18 @@
 @import "tailwindcss";
 
+/* Включаем dark mode через класс на html элементе */
+@variant dark (&:where(.dark, .dark *));
+
 body {
   font-family: system-ui, -apple-system, sans-serif;
   background: #f9fafb;
   color: #111827;
   -webkit-font-smoothing: antialiased;
+}
+
+.dark body {
+  background: #1f2937;
+  color: #f9fafb;
 }
 
 .line-clamp-2 {
@@ -39,11 +47,23 @@ body {
   border-radius: 4px;
 }
 
+.dark ::-webkit-scrollbar-track {
+  background: #374151;
+}
+
 ::-webkit-scrollbar-thumb {
   background: #c1c1c1;
   border-radius: 4px;
 }
 
+.dark ::-webkit-scrollbar-thumb {
+  background: #6b7280;
+}
+
 ::-webkit-scrollbar-thumb:hover {
   background: #a1a1a1;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
 }

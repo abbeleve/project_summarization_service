@@ -111,14 +111,14 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
 
   if (heatmapData.cells.length === 0) {
     return (
-      <div className="bg-gradient-to-r from-cyan-50 to-blue-50 rounded-2xl p-5 border border-gray-200">
+      <div className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-2xl p-5 border border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center shadow-md">
             <span className="text-lg">🔥</span>
           </div>
-          <h4 className="text-lg font-bold text-gray-900">Тепловая карта активности</h4>
+          <h4 className="text-lg font-bold text-gray-900 dark:text-white">Тепловая карта активности</h4>
         </div>
-        <div className="text-center text-gray-500 py-12">
+        <div className="text-center text-gray-500 dark:text-gray-400 py-12">
           Нет данных для отображения
         </div>
       </div>
@@ -128,12 +128,12 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
   const { speakers, timeSlots, cells } = heatmapData;
 
   return (
-    <div className="bg-gradient-to-r from-cyan-50 to-blue-50 rounded-2xl p-5 border border-gray-200">
+    <div className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-2xl p-5 border border-gray-200 dark:border-gray-700">
       <div className="flex items-center gap-3 mb-4">
         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center shadow-md">
           <span className="text-lg">🔥</span>
         </div>
-        <h4 className="text-lg font-bold text-gray-900">Тепловая карта активности</h4>
+        <h4 className="text-lg font-bold text-gray-900 dark:text-white">Тепловая карта активности</h4>
       </div>
 
       <div className="overflow-x-auto">
@@ -143,7 +143,7 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
             {timeSlots.map((timeSlot, idx) => (
               <div
                 key={timeSlot}
-                className="flex-1 text-xs text-gray-500 text-center min-w-[30px]"
+                className="flex-1 text-xs text-gray-500 dark:text-gray-400 text-center min-w-[30px]"
               >
                 {formatTime(timeSlot)}
               </div>
@@ -155,7 +155,7 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
             {speakers.map(speaker => (
               <div key={speaker} className="flex items-center gap-2">
                 {/* Имя спикера */}
-                <div className="w-20 text-xs font-medium text-gray-700 truncate flex-shrink-0">
+                <div className="w-20 text-xs font-medium text-gray-700 dark:text-gray-300 truncate flex-shrink-0">
                   {speaker.replace('SPEAKER_', 'SP ')}
                 </div>
                 
@@ -197,11 +197,11 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
 
           {/* Легенда */}
           <div className="flex items-center gap-2 mt-4 ml-20">
-            <span className="text-xs text-gray-500">Активность:</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">Активность:</span>
             <div className="flex gap-1">
-              <div className="w-6 h-3 rounded bg-gray-100" title="Нет активности" />
-              <div className="w-6 h-3 rounded bg-blue-100" title="Низкая" />
-              <div className="w-6 h-3 rounded bg-blue-300" title="Средняя" />
+              <div className="w-6 h-3 rounded bg-gray-100 dark:bg-gray-700" title="Нет активности" />
+              <div className="w-6 h-3 rounded bg-blue-100 dark:bg-blue-900/30" title="Низкая" />
+              <div className="w-6 h-3 rounded bg-blue-300 dark:bg-blue-700" title="Средняя" />
               <div className="w-6 h-3 rounded bg-blue-500" title="Высокая" />
               <div className="w-6 h-3 rounded bg-blue-600" title="Очень высокая" />
             </div>
@@ -209,7 +209,7 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
         </div>
       </div>
 
-      <p className="text-xs text-gray-500 mt-3 text-center">
+      <p className="text-xs text-gray-500 dark:text-gray-400 mt-3 text-center">
         Каждая ячейка показывает активность спикера в 1-минутном интервале
       </p>
     </div>

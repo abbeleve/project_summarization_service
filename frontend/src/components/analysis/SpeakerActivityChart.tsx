@@ -95,14 +95,14 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
 
   if (data.length === 0) {
     return (
-      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-5 border border-gray-200">
+      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-2xl p-5 border border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-md">
             <span className="text-lg">📈</span>
           </div>
-          <h4 className="text-lg font-bold text-gray-900">Активность спикеров</h4>
+          <h4 className="text-lg font-bold text-gray-900 dark:text-white">Активность спикеров</h4>
         </div>
-        <div className="text-center text-gray-500 py-12">
+        <div className="text-center text-gray-500 dark:text-gray-400 py-12">
           Нет данных об активности
         </div>
       </div>
@@ -110,23 +110,23 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
   }
 
   return (
-    <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-5 border border-gray-200">
+    <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-2xl p-5 border border-gray-200 dark:border-gray-700">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-md">
             <span className="text-lg">📈</span>
           </div>
-          <h4 className="text-lg font-bold text-gray-900">Активность спикеров</h4>
+          <h4 className="text-lg font-bold text-gray-900 dark:text-white">Активность спикеров</h4>
         </div>
         
         {/* Переключатель интервала */}
-        <div className="flex gap-1 bg-white rounded-lg p-1 border border-gray-200">
+        <div className="flex gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
           <button
             onClick={() => setTimeInterval('30s')}
             className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
               timeInterval === '30s'
                 ? 'bg-emerald-500 text-white'
-                : 'text-gray-600 hover:bg-gray-100'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
             }`}
           >
             30с
@@ -136,7 +136,7 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
             className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
               timeInterval === '1m'
                 ? 'bg-emerald-500 text-white'
-                : 'text-gray-600 hover:bg-gray-100'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
             }`}
           >
             1м
@@ -146,7 +146,7 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
             className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
               timeInterval === '2m'
                 ? 'bg-emerald-500 text-white'
-                : 'text-gray-600 hover:bg-gray-100'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
             }`}
           >
             2м
@@ -214,7 +214,7 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
         </ResponsiveContainer>
       </div>
 
-      <p className="text-xs text-gray-500 mt-3 text-center">
+      <p className="text-xs text-gray-500 dark:text-gray-400 mt-3 text-center">
         Показано время речи каждого спикера в разрезе временных интервалов
       </p>
     </div>

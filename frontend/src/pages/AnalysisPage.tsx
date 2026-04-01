@@ -134,15 +134,15 @@ export const AnalysisPage = () => {
           )}
 
           {/* Полная транскрипция */}
-          <div 
+          <div
             ref={transcriptContainerRef}
-            className="bg-gradient-to-r from-slate-50 to-gray-50 rounded-2xl p-5 border border-gray-200"
+            className="bg-gradient-to-r from-slate-50 to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-2xl p-5 border border-gray-200 dark:border-gray-700"
           >
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-400 to-gray-500 flex items-center justify-center shadow-md">
                 <span className="text-lg">📝</span>
               </div>
-              <h4 className="text-lg font-bold text-gray-900">Детальная транскрипция</h4>
+              <h4 className="text-lg font-bold text-gray-900 dark:text-white">Детальная транскрипция</h4>
             </div>
             <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
               {segments.map((seg, idx) => (
