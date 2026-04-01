@@ -23,7 +23,7 @@ export const MeetingChat = ({ transcriptId }: MeetingChatProps) => {
   });
 
   const { mutate: sendMessage, isPending } = useMutation({
-    mutationFn: (question: string) => 
+    mutationFn: (question: string) =>
       ragApi.askQuestion(transcriptId, question),
     onSuccess: (data) => {
       queryClient.setQueryData(['chat', transcriptId], (old: ChatMessage[] = []) => [
@@ -52,24 +52,35 @@ export const MeetingChat = ({ transcriptId }: MeetingChatProps) => {
   const allMessages = [...(messages || []), ...localMessages];
 
   return (
-    <div className="flex flex-col h-[600px] border rounded-xl bg-white">
-      {/* Header */}
-      <div className="p-4 border-b bg-gray-50">
-        <h3 className="font-semibold text-gray-900">💬 Чат</h3>
-        <p className="text-sm text-gray-500">Задавайте вопросы о содержании встречи</p>
+    <div className="flex flex-col h-[600px] bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+      {/* Header с градиентом */}
+      <div className="bg-gradient-to-r from-violet-500 to-purple-600 p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
+            <span className="text-xl">🤖</span>
+          </div>
+          <div>
+            <h3 className="font-semibold text-white text-lg">AI Ассистент</h3>
+            <p className="text-sm text-white/80">Задавайте вопросы о встрече</p>
+          </div>
+        </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gradient-to-b from-gray-50 to-white">
         {isLoading && messages.length === 0 ? (
-          <div className="flex justify-center py-8">
+          <div className="flex justify-center py-12">
             <LoadingSpinner text="Загрузка истории..." size={'sm'} />
           </div>
         ) : error ? (
           <ErrorMessage message="Не удалось загрузить чат" />
         ) : allMessages.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">
-            Начните диалог, задав вопрос о встрече
+          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center mb-4">
+              <span className="text-3xl">💬</span>
+            </div>
+            <p className="text-gray-600 font-medium mb-1">Начните диалог</p>
+            <p className="text-sm text-gray-400">Задайте вопрос о содержании встречи</p>
           </div>
         ) : (
           allMessages.map((msg, idx) => (
@@ -78,25 +89,25 @@ export const MeetingChat = ({ transcriptId }: MeetingChatProps) => {
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[85%] p-3 rounded-2xl ${
+                className={`max-w-[85%] px-4 py-3 rounded-2xl shadow-sm ${
                   msg.role === 'user'
-                    ? 'bg-primary-600 text-white rounded-br-md'
-                    : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                    ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-br-md'
+                    : 'bg-white text-gray-800 rounded-bl-md border border-gray-200'
                 }`}
               >
-                <p className="whitespace-pre-wrap">{msg.content}</p>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
               </div>
             </div>
           ))
         )}
-        
+
         {isPending && (
           <div className="flex justify-start">
-            <div className="bg-gray-100 p-3 rounded-2xl rounded-bl-md">
-              <div className="flex gap-1">
-                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce animation-delay-100" />
-                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce animation-delay-200" />
+            <div className="bg-white border border-gray-200 px-4 py-3 rounded-2xl rounded-bl-md shadow-sm">
+              <div className="flex gap-1.5">
+                <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" />
+                <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce animation-delay-100" />
+                <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce animation-delay-200" />
               </div>
             </div>
           </div>
@@ -105,22 +116,22 @@ export const MeetingChat = ({ transcriptId }: MeetingChatProps) => {
       </div>
 
       {/* Input form */}
-      <form onSubmit={handleSubmit} className="p-4 border-t">
+      <form onSubmit={handleSubmit} className="p-4 bg-white border-t border-gray-200">
         <div className="flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Спросите о встрече..."
-            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="flex-1 border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all placeholder:text-gray-400"
             disabled={isPending}
           />
           <button
             type="submit"
             disabled={!input.trim() || isPending}
-            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-5 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl hover:from-violet-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
           >
-            ➤
+            <span className="text-lg">➤</span>
           </button>
         </div>
       </form>

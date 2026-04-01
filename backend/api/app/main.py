@@ -592,6 +592,28 @@ async def get_user_transcripts(
 
         # Преобразуем в список и сортируем по дате (сначала новые)
         transcripts_list = list(transcripts_map.values())
+        
+        # Добавляем длительность и количество спикеров
+        for transcript in transcripts_list:
+            parts = transcript.get("parts", [])
+            
+            # Количество уникальных спикеров
+            speakers = set()
+            for part in parts:
+                text = part.get("text", "")
+                if ":" in text:
+                    speaker = text.split(":")[0].strip()
+                    speakers.add(speaker)
+            transcript["speakers"] = list(speakers)
+            
+            # Длительность в минутах
+            if parts:
+                min_start = min(p.get("start_time", 0) for p in parts)
+                max_end = max(p.get("end_time", 0) for p in parts)
+                transcript["duration"] = (max_end - min_start) / 1000.0 / 60.0  # конвертируем в минуты
+            else:
+                transcript["duration"] = 0
+
         transcripts_list.sort(
             key=lambda x: x.get('created_at', ''),
             reverse=True
