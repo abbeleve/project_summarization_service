@@ -4,6 +4,7 @@ import { getSpeakerColor } from '@/utils/speakerColors';
 
 interface SpeakerHeatmapProps {
   segments: TranscriptSegment[];
+  onSegmentClick?: (segment: TranscriptSegment) => void;
 }
 
 interface HeatmapCell {
@@ -11,9 +12,10 @@ interface HeatmapCell {
   timeSlot: number;
   duration: number;
   intensity: number; // 0-1
+  segment?: TranscriptSegment; // Сегмент для клика
 }
 
-export const SpeakerHeatmap = ({ segments }: SpeakerHeatmapProps) => {
+export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps) => {
   // Группируем данные для heatmap
   const heatmapData = useMemo(() => {
     if (segments.length === 0) return { cells: [], speakers: [], timeSlots: [] };
@@ -38,19 +40,33 @@ export const SpeakerHeatmap = ({ segments }: SpeakerHeatmapProps) => {
     
     speakers.forEach(speaker => {
       timeSlots.forEach(timeSlot => {
-        // Считаем сколько секунд спикер говорил в этом интервале
+        // Находим сегменты спикера в этом интервале
+        const overlappingSegments = segments.filter(seg => {
+          if (seg.Speaker !== speaker) return false;
+          const overlap = Math.min(seg.stop, timeSlot + intervalSeconds) - Math.max(seg.start, timeSlot);
+          return overlap > 0;
+        });
+        
+        // Считаем общую длительность
         let duration = 0;
-        segments.forEach(seg => {
-          if (seg.Speaker === speaker) {
-            const overlap = Math.min(seg.stop, timeSlot + intervalSeconds) - Math.max(seg.start, timeSlot);
-            duration += Math.max(0, overlap);
-          }
+        overlappingSegments.forEach(seg => {
+          const overlap = Math.min(seg.stop, timeSlot + intervalSeconds) - Math.max(seg.start, timeSlot);
+          duration += Math.max(0, overlap);
         });
         
         const intensity = Math.min(1, duration / intervalSeconds);
         
+        // Находим ближайший сегмент для клика
+        const nearestSegment = overlappingSegments.length > 0
+          ? overlappingSegments.reduce((nearest, current) => {
+              const nearestOverlap = Math.min(nearest.stop, timeSlot + intervalSeconds) - Math.max(nearest.start, timeSlot);
+              const currentOverlap = Math.min(current.stop, timeSlot + intervalSeconds) - Math.max(current.start, timeSlot);
+              return currentOverlap > nearestOverlap ? current : nearest;
+            })
+          : undefined;
+        
         if (duration > 0) {
-          cells.push({ speaker, timeSlot, duration, intensity });
+          cells.push({ speaker, timeSlot, duration, intensity, segment: nearestSegment });
         }
       });
     });
@@ -152,14 +168,23 @@ export const SpeakerHeatmap = ({ segments }: SpeakerHeatmapProps) => {
                     return (
                       <div
                         key={`${speaker}-${timeSlot}`}
+                        onClick={() => {
+                          if (cell?.segment && onSegmentClick) {
+                            onSegmentClick(cell.segment);
+                          }
+                        }}
                         className={`flex-1 h-8 rounded transition-all ${
                           intensity > 0
-                            ? `${getIntensityColor(intensity, speaker)} hover:scale-110 cursor-pointer`
+                            ? `${getIntensityColor(intensity, speaker)} hover:scale-110 ${
+                                onSegmentClick && cell?.segment ? 'cursor-pointer hover:shadow-md' : 'cursor-default'
+                              }`
                             : 'bg-gray-100'
                         }`}
                         title={
                           cell
-                            ? `${speaker}: ${cell.duration.toFixed(1)} сек в ${formatTime(timeSlot)}`
+                            ? `${speaker}: ${cell.duration.toFixed(1)} сек в ${formatTime(timeSlot)}\n${
+                                onSegmentClick && cell.segment ? 'Кликните для перехода' : ''
+                              }`.trim()
                             : `${speaker}: нет активности`
                         }
                       />

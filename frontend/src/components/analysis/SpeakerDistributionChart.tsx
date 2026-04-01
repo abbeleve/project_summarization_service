@@ -7,9 +7,10 @@ import { SpeakerHeatmap } from './SpeakerHeatmap';
 
 interface SpeakerDistributionChartProps {
   segments: TranscriptSegment[];
+  onSegmentClick?: (segment: TranscriptSegment) => void;
 }
 
-export const SpeakerDistributionChart = ({ segments }: SpeakerDistributionChartProps) => {
+export const SpeakerDistributionChart = ({ segments, onSegmentClick }: SpeakerDistributionChartProps) => {
   const [view, setView] = useState<'distribution' | 'activity' | 'heatmap'>('distribution');
   const speakerTimes: Record<string, number> = {};
 
@@ -176,7 +177,7 @@ export const SpeakerDistributionChart = ({ segments }: SpeakerDistributionChartP
       ) : view === 'activity' ? (
         <SpeakerActivityChart segments={segments} />
       ) : (
-        <SpeakerHeatmap segments={segments} />
+        <SpeakerHeatmap segments={segments} onSegmentClick={onSegmentClick} />
       )}
     </div>
   );
