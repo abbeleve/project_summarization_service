@@ -234,52 +234,52 @@ export const AudioUploader = ({
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-400 to-gray-500 flex items-center justify-center shadow-md">
             <span className="text-lg">⚙️</span>
           </div>
-          <span className="text-lg text-gray-900">Настройки моделей</span>
-          <span className="ml-auto text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+          <span className="text-lg text-gray-900 dark:text-white">Настройки моделей</span>
+          <span className="ml-auto text-gray-400 dark:text-gray-500 group-open:rotate-180 transition-transform">▼</span>
         </summary>
         <div className="p-5 space-y-4">
           {/* Информационное сообщение */}
-          <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200 rounded-xl p-4">
+          <div className="bg-gradient-to-r from-rose-50 to-pink-50 dark:from-rose-900/20 dark:to-pink-900/20 border border-rose-200 dark:border-rose-800 rounded-xl p-4">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-400 to-pink-500 flex items-center justify-center flex-shrink-0 shadow-sm">
                 <span className="text-lg">💡</span>
               </div>
               <div className="flex-1">
-                <p className="font-semibold text-rose-800 mb-1">Важная информация</p>
-                <p className="text-sm text-rose-700 leading-relaxed">
-                  Выбирайте модели вручную только в редких случаях: если вас не устраивает результат транскрибации или язык записи отличается от русского. 
+                <p className="font-semibold text-rose-800 dark:text-rose-300 mb-1">Важная информация</p>
+                <p className="text-sm text-rose-700 dark:text-rose-400 leading-relaxed">
+                  Выбирайте модели вручную только в редких случаях: если вас не устраивает результат транскрибации или язык записи отличается от русского.
                   <span className="font-medium"> По умолчанию используются оптимальные настройки.</span>
                 </p>
               </div>
             </div>
           </div>
-          
+
           {/* Пояснения терминов */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="bg-gradient-to-br from-violet-50 to-purple-50 border border-violet-200 rounded-xl p-3">
+            <div className="bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 border border-violet-200 dark:border-violet-800 rounded-xl p-3">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">📝</span>
-                <span className="font-semibold text-violet-800 text-sm">Транскрибация</span>
+                <span className="font-semibold text-violet-800 dark:text-violet-300 text-sm">Транскрибация</span>
               </div>
-              <p className="text-xs text-violet-700 leading-relaxed">
+              <p className="text-xs text-violet-700 dark:text-violet-400 leading-relaxed">
                 Преобразование речи в текст. Модель «слышит» аудио и записывает слова.
               </p>
             </div>
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3">
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">👥</span>
-                <span className="font-semibold text-blue-800 text-sm">Диаризация</span>
+                <span className="font-semibold text-blue-800 dark:text-blue-300 text-sm">Диаризация</span>
               </div>
-              <p className="text-xs text-blue-700 leading-relaxed">
+              <p className="text-xs text-blue-700 dark:text-blue-400 leading-relaxed">
                 Разделение спикеров. Определяет кто и когда говорил (Спикер 1, Спикер 2 и т.д.).
               </p>
             </div>
-            <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3">
+            <div className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">🤖</span>
-                <span className="font-semibold text-amber-800 text-sm">LLM (суммаризация)</span>
+                <span className="font-semibold text-amber-800 dark:text-amber-300 text-sm">LLM (суммаризация)</span>
               </div>
-              <p className="text-xs text-amber-700 leading-relaxed">
+              <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
                 Нейросеть для создания краткого содержания. Превращает длинный текст в сжатый пересказ.
               </p>
             </div>
@@ -288,7 +288,7 @@ export const AudioUploader = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Транскрибация */}
           <div className="space-y-1">
-            <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
               <span className="w-1 h-4 bg-violet-500 rounded-full"></span>
               Библиотека транскрибации
             </label>
@@ -328,21 +328,20 @@ export const AudioUploader = ({
                 onChange={(e) => setSettings(s => ({ ...s, transcribeLib: e.target.value }))}
                 onMouseEnter={() => setActiveTooltip('transcribeLib')}
                 onMouseLeave={() => setActiveTooltip(null)}
-                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white hover:border-violet-300 cursor-help"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-violet-300 dark:hover:border-violet-600 cursor-help"
                 disabled={isProcessing}
               >
                 {Object.keys(TRANSCRIBE_CONFIG).map(lib => (
-                  <option key={lib} value={lib}>{lib}</option>
+                  <option key={lib} value={lib} className="dark:bg-gray-700 dark:text-white">{lib}</option>
                 ))}
               </select>
             </div>
           </div>
 
           <div className="space-y-1">
-            <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
               <span className="w-1 h-4 bg-violet-500 rounded-full"></span>
-              Модель транскрибации
-              <span className="text-xs text-gray-400 font-normal">(наведите для деталей)</span>
+              Модель транскрибации <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">(наведите для деталей)</span>
             </label>
             <div className="relative">
               <ModelTooltip
@@ -350,21 +349,20 @@ export const AudioUploader = ({
                 content={
                   <>
                     <div className="font-semibold text-white border-b border-gray-700 pb-2 mb-2">
-                      {settings.transcribeLib === 'gigaam'
-                        ? '🎯 GigaAM - Детали модели'
-                        : '🌍 Whisper - Детали модели'
-                      }
+                      Модели транскрибации
                     </div>
-                    <div className="text-gray-300 text-xs">
-                      {settings.transcribeLib === 'gigaam'
-                        ? TRANSCRIBE_MODEL_DESCRIPTIONS.gigaam.description
-                        : TRANSCRIBE_MODEL_DESCRIPTIONS.whisper.description
-                      }
-                    </div>
-                    <div className="space-y-1 text-xs mt-2">
-                      <div><span className="text-gray-400">Язык:</span> {settings.transcribeLib === 'gigaam' ? TRANSCRIBE_MODEL_DESCRIPTIONS.gigaam.language : TRANSCRIBE_MODEL_DESCRIPTIONS.whisper.language}</div>
-                      <div><span className="text-gray-400">Скорость:</span> {settings.transcribeLib === 'gigaam' ? TRANSCRIBE_MODEL_DESCRIPTIONS.gigaam.speed : TRANSCRIBE_MODEL_DESCRIPTIONS.whisper.speed}</div>
-                      <div><span className="text-gray-400">Размер:</span> {settings.transcribeLib === 'gigaam' ? TRANSCRIBE_MODEL_DESCRIPTIONS.gigaam.size : TRANSCRIBE_MODEL_DESCRIPTIONS.whisper.size}</div>
+                    <div className="space-y-2 text-xs">
+                      {Object.entries(TRANSCRIBE_MODEL_DESCRIPTIONS).map(([key, data]) => (
+                        <div key={key} className="bg-gray-800 p-2 rounded-lg">
+                          <div className="font-semibold text-blue-300">{data.name}</div>
+                          <div className="text-gray-300 mt-1">{data.description}</div>
+                          <div className="mt-2 space-y-1">
+                            <div>{data.language}</div>
+                            <div>{data.speed}</div>
+                            <div>{data.size}</div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </>
                 }
@@ -374,11 +372,11 @@ export const AudioUploader = ({
                 onChange={(e) => setSettings(s => ({ ...s, transcribeModel: e.target.value }))}
                 onMouseEnter={() => setActiveTooltip('transcribeModel')}
                 onMouseLeave={() => setActiveTooltip(null)}
-                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white hover:border-violet-300 cursor-help"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-violet-300 dark:hover:border-violet-600 cursor-help"
                 disabled={isProcessing}
               >
                 {getTranscribeModelsByLib(settings.transcribeLib).map(model => (
-                  <option key={model} value={model}>{model}</option>
+                  <option key={model} value={model} className="dark:bg-gray-700 dark:text-white">{model}</option>
                 ))}
               </select>
             </div>
@@ -386,7 +384,7 @@ export const AudioUploader = ({
 
           {/* Диаризация */}
           <div className="space-y-1">
-            <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
               <span className="w-1 h-4 bg-blue-500 rounded-full"></span>
               Библиотека диаризации
             </label>
@@ -414,21 +412,20 @@ export const AudioUploader = ({
                 onChange={(e) => setSettings(s => ({ ...s, diarizeLib: e.target.value }))}
                 onMouseEnter={() => setActiveTooltip('diarizeLib')}
                 onMouseLeave={() => setActiveTooltip(null)}
-                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white hover:border-blue-300 cursor-help"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-blue-300 dark:hover:border-blue-600 cursor-help"
                 disabled={isProcessing}
               >
                 {Object.keys(DIARIZATION_CONFIG).map(lib => (
-                  <option key={lib} value={lib}>{lib}</option>
+                  <option key={lib} value={lib} className="dark:bg-gray-700 dark:text-white">{lib}</option>
                 ))}
               </select>
             </div>
           </div>
 
           <div className="space-y-1">
-            <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
               <span className="w-1 h-4 bg-blue-500 rounded-full"></span>
-              Модель диаризации
-              <span className="text-xs text-gray-400 font-normal">(наведите для деталей)</span>
+              Модель диаризации <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">(наведите для деталей)</span>
             </label>
             <div className="relative">
               <ModelTooltip
@@ -453,11 +450,11 @@ export const AudioUploader = ({
                 onChange={(e) => setSettings(s => ({ ...s, diarizationModel: e.target.value }))}
                 onMouseEnter={() => setActiveTooltip('diarizationModel')}
                 onMouseLeave={() => setActiveTooltip(null)}
-                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white hover:border-blue-300 cursor-help"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-blue-300 dark:hover:border-blue-600 cursor-help"
                 disabled={isProcessing}
               >
                 {getDiarizationModelsByLib(settings.diarizeLib).map(model => (
-                  <option key={model} value={model}>{model}</option>
+                  <option key={model} value={model} className="dark:bg-gray-700 dark:text-white">{model}</option>
                 ))}
               </select>
             </div>
@@ -465,10 +462,9 @@ export const AudioUploader = ({
 
           {/* Суммаризация */}
           <div className="space-y-1 md:col-span-2">
-            <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
               <span className="w-1 h-4 bg-amber-500 rounded-full"></span>
-              Модель LLM
-              <span className="text-xs text-gray-400 font-normal">(наведите для деталей)</span>
+              Модель LLM <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">(наведите для деталей)</span>
             </label>
             <div className="relative">
               <ModelTooltip
@@ -493,16 +489,16 @@ export const AudioUploader = ({
                 onChange={(e) => setSettings(s => ({ ...s, llmModel: e.target.value }))}
                 onMouseEnter={() => setActiveTooltip('llmModel')}
                 onMouseLeave={() => setActiveTooltip(null)}
-                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all bg-white hover:border-amber-300 cursor-help"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-amber-300 dark:hover:border-amber-600 cursor-help"
                 disabled={isProcessing}
               >
                 {LLM_MODELS.map(model => (
-                  <option key={model} value={model}>{model}</option>
+                  <option key={model} value={model} className="dark:bg-gray-700 dark:text-white">{model}</option>
                 ))}
               </select>
             </div>
           </div>
-          </div>
+        </div>
         </div>
       </details>
 

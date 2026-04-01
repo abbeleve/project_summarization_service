@@ -110,40 +110,21 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
   };
 
   if (heatmapData.cells.length === 0) {
-    return (
-      <div className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-2xl p-5 border border-gray-200 dark:border-gray-700">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center shadow-md">
-            <span className="text-lg">🔥</span>
-          </div>
-          <h4 className="text-lg font-bold text-gray-900 dark:text-white">Тепловая карта активности</h4>
-        </div>
-        <div className="text-center text-gray-500 dark:text-gray-400 py-12">
-          Нет данных для отображения
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const { speakers, timeSlots, cells } = heatmapData;
 
   return (
     <div className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-2xl p-5 border border-gray-200 dark:border-gray-700">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center shadow-md">
-          <span className="text-lg">🔥</span>
-        </div>
-        <h4 className="text-lg font-bold text-gray-900 dark:text-white">Тепловая карта активности</h4>
-      </div>
-
       <div className="overflow-x-auto">
-        <div className="min-w-full">
+        <div className="min-w-max">
           {/* Заголовки времени */}
           <div className="flex mb-2 ml-20">
             {timeSlots.map((timeSlot, idx) => (
               <div
                 key={timeSlot}
-                className="flex-1 text-xs text-gray-500 dark:text-gray-400 text-center min-w-[30px]"
+                className="w-8 flex-shrink-0 text-xs text-gray-500 dark:text-gray-400 text-center"
               >
                 {formatTime(timeSlot)}
               </div>
@@ -158,13 +139,13 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
                 <div className="w-20 text-xs font-medium text-gray-700 dark:text-gray-300 truncate flex-shrink-0">
                   {speaker.replace('SPEAKER_', 'SP ')}
                 </div>
-                
+
                 {/* Ячейки heatmap */}
-                <div className="flex flex-1 gap-0.5">
+                <div className="flex gap-0.5">
                   {timeSlots.map(timeSlot => {
                     const cell = cells.find(c => c.speaker === speaker && c.timeSlot === timeSlot);
                     const intensity = cell ? cell.intensity : 0;
-                    
+
                     return (
                       <div
                         key={`${speaker}-${timeSlot}`}
@@ -173,12 +154,12 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
                             onSegmentClick(cell.segment);
                           }
                         }}
-                        className={`flex-1 h-8 rounded transition-all ${
+                        className={`w-8 h-8 flex-shrink-0 rounded transition-all relative group ${
                           intensity > 0
                             ? `${getIntensityColor(intensity, speaker)} hover:scale-110 ${
                                 onSegmentClick && cell?.segment ? 'cursor-pointer hover:shadow-md' : 'cursor-default'
                               }`
-                            : 'bg-gray-100'
+                            : 'bg-gray-100 dark:bg-gray-800'
                         }`}
                         title={
                           cell
@@ -187,7 +168,20 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
                               }`.trim()
                             : `${speaker}: нет активности`
                         }
-                      />
+                      >
+                        {/* Tooltip с уровнем активности */}
+                        {intensity > 0 && (
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 shadow-lg">
+                            {intensity >= 0.8 ? '🔥 Очень высокая' :
+                             intensity >= 0.6 ? '📈 Высокая' :
+                             intensity >= 0.4 ? '📊 Средняя' :
+                             intensity >= 0.2 ? '📉 Низкая' : '⏸️ Минимальная'}
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
+                              <div className="border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -199,11 +193,11 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
           <div className="flex items-center gap-2 mt-4 ml-20">
             <span className="text-xs text-gray-500 dark:text-gray-400">Активность:</span>
             <div className="flex gap-1">
-              <div className="w-6 h-3 rounded bg-gray-100 dark:bg-gray-700" title="Нет активности" />
-              <div className="w-6 h-3 rounded bg-blue-100 dark:bg-blue-900/30" title="Низкая" />
-              <div className="w-6 h-3 rounded bg-blue-300 dark:bg-blue-700" title="Средняя" />
-              <div className="w-6 h-3 rounded bg-blue-500" title="Высокая" />
-              <div className="w-6 h-3 rounded bg-blue-600" title="Очень высокая" />
+              <div className="w-8 h-3 rounded flex-shrink-0 bg-gray-100 dark:bg-gray-700" title="Нет активности" />
+              <div className="w-8 h-3 rounded flex-shrink-0 bg-blue-100 dark:bg-blue-900/30" title="Низкая" />
+              <div className="w-8 h-3 rounded flex-shrink-0 bg-blue-300 dark:bg-blue-700" title="Средняя" />
+              <div className="w-8 h-3 rounded flex-shrink-0 bg-blue-500" title="Высокая" />
+              <div className="w-8 h-3 rounded flex-shrink-0 bg-blue-600" title="Очень высокая" />
             </div>
           </div>
         </div>
