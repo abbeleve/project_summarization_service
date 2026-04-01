@@ -15,6 +15,11 @@ result.txt
 milvus_data/
 volumes/
 
+# Frontend
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+
 # C extensions
 *.so
 
