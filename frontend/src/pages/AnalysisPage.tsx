@@ -8,7 +8,6 @@ import { AudioPlayer } from '@/components/audio/AudioPlayer';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { type TranscriptSegment as TranscriptSegmentType } from '@/types/transcript';
 
 export const AnalysisPage = () => {
@@ -89,12 +88,12 @@ export const AnalysisPage = () => {
         <div className="lg:col-span-2 space-y-6">
           {/* Аудио плеер */}
           {segments.length > 0 && audioUrl && (
-            <Card className="p-4">
-              <AudioPlayer 
+            <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+              <AudioPlayer
                 src={audioUrl}
                 segments={segments}
               />
-            </Card>
+            </div>
           )}
 
           {/* Диаграмма распределения спикеров */}
@@ -103,9 +102,14 @@ export const AnalysisPage = () => {
           )}
 
           {/* Полная транскрипция */}
-          <Card className="p-4">
-            <h4 className="font-semibold text-gray-900 mb-4">📝 Детальная транскрипция</h4>
-            <div className="space-y-3 max-h-[600px] overflow-y-auto">
+          <div className="bg-gradient-to-r from-slate-50 to-gray-50 rounded-2xl p-5 border border-gray-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-400 to-gray-500 flex items-center justify-center shadow-md">
+                <span className="text-lg">📝</span>
+              </div>
+              <h4 className="text-lg font-bold text-gray-900">Детальная транскрипция</h4>
+            </div>
+            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
               {segments.map((seg, idx) => (
                 <TranscriptSegment
                   key={idx}
@@ -116,13 +120,13 @@ export const AnalysisPage = () => {
                 />
               ))}
             </div>
-          </Card>
+          </div>
         </div>
 
         {/* Правая колонка - чат */}
         <div className="lg:col-span-1">
-          <MeetingChat 
-            transcriptId={id} 
+          <MeetingChat
+            transcriptId={id}
             transcriptText={transcript.original_text}
           />
         </div>

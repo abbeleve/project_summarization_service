@@ -9,39 +9,54 @@ interface SummaryCardProps {
 }
 
 const MEETING_TYPE_COLORS: Record<string, string> = {
-  'Оперативное совещание': 'bg-blue-100 text-blue-800',
-  'Стратегическое совещание': 'bg-purple-100 text-purple-800',
-  'Финансовое совещание': 'bg-green-100 text-green-800',
-  'HR-совещание': 'bg-pink-100 text-pink-800',
-  'Обзор проекта': 'bg-orange-100 text-orange-800',
-  'Экстренное совещание': 'bg-red-100 text-red-800',
+  'Оперативное совещание': 'bg-blue-100 text-blue-800 border-blue-300',
+  'Стратегическое совещание': 'bg-purple-100 text-purple-800 border-purple-300',
+  'Финансовое совещание': 'bg-green-100 text-green-800 border-green-300',
+  'HR-совещание': 'bg-pink-100 text-pink-800 border-pink-300',
+  'Обзор проекта': 'bg-orange-100 text-orange-800 border-orange-300',
+  'Экстренное совещание': 'bg-red-100 text-red-800 border-red-300',
 };
 
 export const SummaryCard = ({ title, summary, keyPoints, meetingType }: SummaryCardProps) => {
-  const badgeClass = MEETING_TYPE_COLORS[meetingType] || 'bg-gray-100 text-gray-800';
+  const badgeClass = MEETING_TYPE_COLORS[meetingType] || 'bg-gray-100 text-gray-800 border-gray-300';
 
   return (
-    <Card className="space-y-4">
+    <Card className="space-y-6 p-6">
+      {/* Заголовок и тип совещания */}
       <div className="flex items-start justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-        <span className={`px-3 py-1 rounded-full text-xs font-medium ${badgeClass}`}>
+        <h3 className="text-xl font-bold text-gray-900">{title}</h3>
+        <span className={`px-3 py-1.5 rounded-full text-xs font-medium border ${badgeClass}`}>
           {meetingType}
         </span>
       </div>
-      
-      <div>
-        <h4 className="text-sm font-medium text-gray-700 mb-2">📋 Краткое содержание</h4>
-        <p className="text-gray-600 leading-relaxed">{summary}</p>
+
+      {/* Краткое содержание - красивая рамка */}
+      <div className="border-l-4 border-blue-500 bg-blue-50 rounded-lg p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-lg">📋</span>
+          <h4 className="text-sm font-semibold text-blue-900 uppercase tracking-wide">
+            Краткое содержание
+          </h4>
+        </div>
+        <p className="text-blue-900 leading-relaxed text-sm">
+          {summary}
+        </p>
       </div>
 
+      {/* Ключевые моменты - тоже в рамке */}
       {keyPoints.length > 0 && (
-        <div>
-          <h4 className="text-sm font-medium text-gray-700 mb-2">🔑 Ключевые моменты</h4>
+        <div className="border-l-4 border-amber-500 bg-amber-50 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-lg">🔑</span>
+            <h4 className="text-sm font-semibold text-amber-900 uppercase tracking-wide">
+              Ключевые моменты
+            </h4>
+          </div>
           <ul className="space-y-2">
             {keyPoints.map((point, idx) => (
               <li key={idx} className="flex items-start gap-2">
-                <span className="text-primary-600 mt-1">•</span>
-                <span className="text-gray-600">{point}</span>
+                <span className="text-amber-600 text-lg leading-none flex-shrink-0">•</span>
+                <span className="text-amber-900 text-sm leading-relaxed">{point}</span>
               </li>
             ))}
           </ul>

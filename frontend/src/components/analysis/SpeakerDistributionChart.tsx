@@ -1,16 +1,14 @@
 import { PieChart, Pie, ResponsiveContainer, Legend, Tooltip } from 'recharts';
-import { Card } from '@/components/ui/Card';
 import { type TranscriptSegment } from '@/types/transcript';
+import { getSpeakerColor } from '@/utils/speakerColors';
 
 interface SpeakerDistributionChartProps {
   segments: TranscriptSegment[];
 }
 
-const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
-
 export const SpeakerDistributionChart = ({ segments }: SpeakerDistributionChartProps) => {
   const speakerTimes: Record<string, number> = {};
-  
+
   segments.forEach(seg => {
     const speaker = seg.Speaker || 'UNKNOWN';
     const duration = seg.stop - seg.start;
@@ -22,10 +20,13 @@ export const SpeakerDistributionChart = ({ segments }: SpeakerDistributionChartP
 
   for (let idx = 0; idx < entries.length; idx++) {
     const [name, value] = entries[idx];
+    const color = getSpeakerColor(name);
+    // Конвертируем Tailwind цвет в hex для Recharts
+    const colorHex = getTailwindColorHex(color.bg.replace('bg-', ''));
     data.push({
       name,
       value,
-      fill: COLORS[idx % COLORS.length],
+      fill: colorHex,
       percent: '0'
     });
   }
@@ -48,9 +49,14 @@ export const SpeakerDistributionChart = ({ segments }: SpeakerDistributionChartP
   }
 
   return (
-    <Card className="p-4">
-      <h4 className="text-sm font-medium text-gray-700 mb-4">🗣️ Распределение времени по спикерам</h4>
-      
+    <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-2xl p-5 border border-gray-200">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-blue-500 flex items-center justify-center shadow-md">
+          <span className="text-lg">🗣️</span>
+        </div>
+        <h4 className="text-lg font-bold text-gray-900">Распределение времени по спикерам</h4>
+      </div>
+
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -58,30 +64,34 @@ export const SpeakerDistributionChart = ({ segments }: SpeakerDistributionChartP
               data={data}
               cx="50%"
               cy="50%"
-              innerRadius={40}
-              outerRadius={80}
-              paddingAngle={2}
+              innerRadius={60}
+              outerRadius={100}
+              paddingAngle={4}
               dataKey="value"
-              // label={({ name, percent }) => {
-              //   const displayPercent = percent !== undefined && percent > 0
-              //     ? (percent * 100).toFixed(1)
-              //     : '0';
-              //   return `${name} ${displayPercent}%`;
-              // }}
-              // labelLine={false}
+              strokeWidth={0}
             >
             </Pie>
-            <Tooltip 
+            <Tooltip
               formatter={(value: number | undefined) => `${value?.toFixed(1)} сек`}
               labelFormatter={(label) => `Спикер: ${label}`}
+              contentStyle={{
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+              }}
             />
-            <Legend />
+            <Legend 
+              verticalAlign="bottom" 
+              height={36}
+              iconType="circle"
+              iconSize={10}
+            />
           </PieChart>
         </ResponsiveContainer>
       </div>
 
       {/* Table view */}
-      <div className="mt-4">
+      <div className="mt-4 border-t border-gray-200 pt-4">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-gray-500">
@@ -92,21 +102,44 @@ export const SpeakerDistributionChart = ({ segments }: SpeakerDistributionChartP
           </thead>
           <tbody>
             {data.map((item, idx) => (
-              <tr key={idx} className="border-t">
-                <td className="py-2 flex items-center gap-2">
-                  <span 
-                    className="w-3 h-3 rounded-full" 
+              <tr key={idx} className="border-t border-gray-100 hover:bg-gray-50 transition-colors">
+                <td className="py-3 flex items-center gap-2">
+                  <span
+                    className="w-3 h-3 rounded-full shadow-sm"
                     style={{ backgroundColor: item.fill }}
                   />
-                  {item.name}
+                  <span className="font-medium text-gray-900">{item.name}</span>
                 </td>
-                <td className="py-2 text-right">{item.value.toFixed(1)} сек</td>
-                <td className="py-2 text-right">{((item.value / total) * 100).toFixed(1)}%</td>
+                <td className="py-3 text-right text-gray-700">{item.value.toFixed(1)} сек</td>
+                <td className="py-3 text-right font-medium text-gray-900">{item.percent}%</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </Card>
+    </div>
   );
+};
+
+// Helper function для конвертации Tailwind цветов в hex
+const getTailwindColorHex = (colorName: string): string => {
+  const colorMap: Record<string, string> = {
+    'blue-500': '#3B82F6',
+    'green-500': '#10B981',
+    'orange-500': '#F97316',
+    'purple-500': '#A855F7',
+    'pink-500': '#EC4899',
+    'indigo-500': '#6366F1',
+    'red-500': '#EF4444',
+    'yellow-500': '#EAB308',
+    'teal-500': '#14B8A6',
+    'cyan-500': '#06B6D4',
+    'rose-500': '#F43F5E',
+    'violet-500': '#8B5CF6',
+    'lime-500': '#84CC16',
+    'amber-500': '#F59E0B',
+    'emerald-500': '#10B981',
+    'sky-500': '#0EA5E9',
+  };
+  return colorMap[colorName] || '#3B82F6';
 };
