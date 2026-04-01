@@ -16,6 +16,64 @@ export const TRANSCRIBE_CONFIG: Record<string, string[]> = {
   ]
 };
 
+/** Описания моделей транскрипции для тултипов */
+export const TRANSCRIBE_MODEL_DESCRIPTIONS: Record<string, {
+  library: string;
+  description: string;
+  language: string;
+  speed: string;
+  size: string;
+}> = {
+  gigaam: {
+    library: 'gigaam',
+    description: 'Отечественная модель от Сбера. Отлично работает с русским языком.',
+    language: '🇷🇺 Русский (основной)',
+    speed: ' Быстрая',
+    size: ' Лёгкая'
+  },
+  whisper: {
+    library: 'whisper',
+    description: 'Модель от OpenAI. Отлично работает с иностранными языками.',
+    language: '🌍 Мультиязычная (EN, DE, FR, ES и др.)',
+    speed: '🐢 Медленнее gigaAM',
+    size: '🏋️ Тяжёлая (требует больше ресурсов)'
+  }
+};
+
+/** Описания моделей диаризации для тултипов */
+export const DIARIZATION_MODEL_DESCRIPTIONS: Record<string, {
+  library: string;
+  description: string;
+  accuracy: string;
+  speed: string;
+}> = {
+  'pyannote/speaker-diarization-community-1': {
+    library: 'pyannote',
+    description: 'Популярная модель для определения спикеров. Хороший баланс качества и скорости.',
+    accuracy: '⭐⭐⭐⭐ Высокое',
+    speed: '🚀 Средняя скорость'
+  },
+  'pyannote/speaker-diarization-community-2': {
+    library: 'pyannote',
+    description: 'Улучшенная версия с повышенной точностью определения спикеров.',
+    accuracy: '⭐⭐⭐⭐⭐ Очень высокое',
+    speed: '🐢 Немного медленнее'
+  }
+};
+
+/** Описания LLM моделей для тултипов */
+export const LLM_MODEL_DESCRIPTIONS: Record<string, {
+  description: string;
+  speed: string;
+  context: string;
+}> = {
+  'arcee-ai/trinity-mini:free': {
+    description: 'Лёгкая модель для суммаризации. Оптимальна для быстрых задач.',
+    speed: '🚀 Быстрая',
+    context: '📝 Стандартный контекст'
+  }
+};
+
 export const DIARIZATION_CONFIG: Record<string, string[]> = {
   pyannote: [
     'pyannote/speaker-diarization-community-1',

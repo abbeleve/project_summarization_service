@@ -231,7 +231,7 @@ export const HomePage = () => {
                         </span>
                         <span className="flex items-center gap-1.5 text-gray-600 bg-gray-50 px-3 py-1.5 rounded-lg">
                           <span className="text-violet-500">⏱️</span>
-                          <span className="font-medium">{(transcript.duration || 0 / 60).toFixed(1)} мин</span>
+                          <span className="font-medium">{(transcript.duration || 0).toFixed(1)} мин</span>
                         </span>
                       </div>
                     </div>
