@@ -11,6 +11,15 @@ export interface LoginCredentials {
   password: string;
 }
 
+export interface RegisterData {
+  username: string;
+  password: string;
+  surname: string;
+  name: string;
+  patronymic?: string;
+  email: string;
+}
+
 export interface AuthResponse {
   access_token: string;
   refresh_token: string;

@@ -148,6 +148,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL}
       - PYANNOTE_MODEL_PATH=${PYANNOTE_MODEL_PATH}
+    depends_on:
+      - audio-ml-whisper
     runtime: nvidia
     restart: unless-stopped
     networks:
@@ -214,10 +216,11 @@ services:
       - "8054:8054"
     volumes:
       - ./ML/whisper_transcription_service:/app
-      - ./whisper_transcription_service/models/whisper:/app/models/whisper
+      - ./ML/whisper_transcription_service/models/faster-whisper-large-v3:/app/models/faster-whisper-large-v3:ro
     environment:
       - PYTHONUNBUFFERED=1
-      - WHISPER_MODEL_PATH=${WHISPER_MODEL_PATH}
+      - HF_API_KEY=${HF_API_KEY}
+      - WHISPER_MODEL_PATH=/app/models/faster-whisper-large-v3
     runtime: nvidia
     restart: unless-stopped
     networks:
@@ -230,6 +233,12 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8054/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   denoiser:
     build:

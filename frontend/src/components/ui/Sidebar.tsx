@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/context/ThemeContext';
 import { clsx } from 'clsx';
@@ -19,6 +20,7 @@ export const Header = () => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const visibleItems = NAV_ITEMS.filter(item =>
     !item.adminOnly || user?.role === 'admin'
@@ -80,7 +82,7 @@ export const Header = () => {
             {/* Кнопка выхода */}
             <button
               onClick={() => {
-                logout();
+                logout(() => queryClient.clear());
                 navigate('/login');
               }}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 border border-red-200 dark:border-red-800 transition-all"

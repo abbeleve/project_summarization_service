@@ -98,7 +98,7 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
         
         summarize_data = {
             "input_text": transcription_text,
-            "llm_model": options.get("llm_model", "arcee-ai/trinity-mini:free")
+            "llm_model": options.get("llm_model", "gemini-2.5-flash")
         }
         
         summary_response = requests.post(

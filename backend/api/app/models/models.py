@@ -19,6 +19,14 @@ class LoginRequest(BaseModel):
     username: str = Field(..., description="Логин пользователя")
     password: str = Field(..., description="Пароль пользователя")
 
+class RegisterRequest(BaseModel):
+    username: str = Field(..., description="Логин пользователя")
+    password: str = Field(..., description="Пароль пользователя")
+    surname: str = Field(..., description="Фамилия")
+    name: str = Field(..., description="Имя")
+    patronymic: Optional[str] = Field(None, description="Отчество")
+    email: str = Field(..., description="Email")
+
 class TokenResponse(Token):
     refresh_token: Optional[str] = None
     user_id: str

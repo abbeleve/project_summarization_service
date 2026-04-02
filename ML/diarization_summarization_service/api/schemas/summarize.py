@@ -10,7 +10,7 @@ from typing import Optional, List, Dict, Any
 class SummarizeRequest(BaseModel):
     """Запрос на суммаризацию."""
     input_text: str = Field(..., description="Текст для суммаризации", min_length=1)
-    llm_model: str = Field(default="arcee-ai/trinity-mini:free", description="Модель LLM")
+    llm_model: str = Field(default="gemini-2.5-flash", description="Модель LLM")
 
 
 class SummarizeResponse(BaseModel):
@@ -26,7 +26,7 @@ class SummarizeResponse(BaseModel):
 class ClassifyRequest(BaseModel):
     """Запрос на классификацию типа совещания."""
     input_text: str = Field(..., description="Текст совещания", min_length=1)
-    llm_model: str = Field(default="arcee-ai/trinity-mini:free", description="Модель LLM")
+    llm_model: str = Field(default="gemini-2.5-flash", description="Модель LLM")
 
 
 class ClassifyResponse(BaseModel):
@@ -40,7 +40,7 @@ class AskRequest(BaseModel):
     """Запрос вопроса по транскрипции."""
     text: str = Field(..., description="Текст совещания", min_length=1)
     question: str = Field(..., description="Вопрос пользователя", min_length=1)
-    llm_model: str = Field(default="arcee-ai/trinity-mini:free", description="Модель LLM")
+    llm_model: str = Field(default="gemini-2.5-flash", description="Модель LLM")
 
 
 class AskResponse(BaseModel):
@@ -53,7 +53,7 @@ class AskResponse(BaseModel):
 class LLMPipelineRequest(BaseModel):
     """Запрос на полный пайплайн LLM."""
     input_text: str = Field(..., description="Текст совещания", min_length=1)
-    llm_model: str = Field(default="arcee-ai/trinity-mini:free", description="Модель LLM")
+    llm_model: str = Field(default="gemini-2.5-flash", description="Модель LLM")
     summarization_usage: bool = Field(default=True, description="Использовать суммаризацию")
     classification_usage: bool = Field(default=True, description="Использовать классификацию")
 

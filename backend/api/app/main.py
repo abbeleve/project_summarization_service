@@ -18,7 +18,7 @@ from alembic.config import Config
 from alembic import command
 
 
-from .models.models import User, Token, TokenData, LoginRequest, TokenResponse
+from .models.models import User, Token, TokenData, LoginRequest, TokenResponse, RegisterRequest
 from .db_service.gen_fake_data import gen_fake_data
 from .db_service.database import DataBaseManager
 from .auth_service.jwt import jwt_service
@@ -70,7 +70,14 @@ async def get_current_user(request: Request) -> Dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated"
         )
-    return request.state.user
+    user = request.state.user
+    if not user or not user.get("user_id"):
+        logger.error(f"Invalid user in request.state: {user}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user data in token"
+        )
+    return user
 
 # Для обратной совместимости с некоторыми эндпоинтами:
 async def get_current_active_user(current_user: Dict = Depends(get_current_user)):
@@ -142,6 +149,78 @@ async def login(
         raise
     except Exception as e:
         logger.error(f"Login error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+@app.post("/auth/register", response_model=TokenResponse)
+async def register(
+    register_data: RegisterRequest,
+    db: DataBaseManager = Depends(get_db)
+):
+    """Регистрация нового пользователя"""
+    try:
+        # Проверяем существует ли уже пользователь с таким логином
+        existing_users = db.select_staff()
+        if any(user['login'] == register_data.username for user in existing_users):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Пользователь с таким именем уже существует"
+            )
+
+        # Проверяем email
+        if any(user['email'] == register_data.email for user in existing_users):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Пользователь с таким email уже существует"
+            )
+
+        # Создаем нового пользователя
+        employee_id = db.insert_staff(
+            surname=register_data.surname,
+            name=register_data.name,
+            patronymic=register_data.patronymic,
+            email=register_data.email,
+            login=register_data.username,
+            password=register_data.password
+        )
+
+        if not employee_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Ошибка при создании пользователя"
+            )
+
+        # Создаем access token
+        access_token = jwt_service.create_access_token(
+            data={
+                "sub": register_data.username,
+                "user_id": str(employee_id),
+                "full_name": f"{register_data.surname} {register_data.name}"
+            }
+        )
+
+        # Создаем refresh token
+        refresh_token = jwt_service.create_refresh_token(
+            data={
+                "sub": register_data.username,
+                "user_id": str(employee_id)
+            }
+        )
+
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+            user_id=str(employee_id),
+            full_name=f"{register_data.surname} {register_data.name}"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Registration error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
@@ -258,7 +337,7 @@ async def process_audio(
             "diarization_model": diarization_model or "pyannote/speaker-diarization-community-1",
             "diarize_lib": diarize_lib or "pyannote",
             "transcribe_lib": transcribe_lib or "gigaam",
-            "llm_model": llm_model or "arcee-ai/trinity-mini:free",
+            "llm_model": llm_model or "gemini-2.5-flash",
             "noise_sup_bool": noise_sup_bool,
             "user_id": current_user["user_id"]
         }
@@ -405,7 +484,7 @@ async def proxy_ask_question(
     question: str = Form(...),
     current_user: dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db),
-    llm_model = Form("arcee-ai/trinity-mini:free"), #HARD CODED
+    llm_model = Form("gemini-2.5-flash"), #HARD CODED
 ):
     """
     Проксирует запрос к LLM в audio-ml сервис и сохраняет историю в БД.
@@ -553,14 +632,20 @@ async def get_user_transcripts(
 ):
     """Получить все транскрипции пользователя с пагинацией"""
     try:
+        logger.info(f"Fetching transcripts for user: {current_user}")
+        
         # Получаем части транскрипций, созданные пользователем
         user_parts = db.select_parts_transcription_by_employee_id(current_user["user_id"])
+        logger.info(f"Found {len(user_parts) if user_parts else 0} parts for user {current_user['user_id']}")
 
         # Группируем по transcript_id
         transcripts_map = {}
 
         for part in user_parts:
-            transcript_id_str = part['transcript_id']
+            transcript_id_str = part.get('transcript_id')
+            if not transcript_id_str:
+                logger.warning(f"Part missing transcript_id: {part.get('id')}")
+                continue
 
             if transcript_id_str not in transcripts_map:
                 # Получаем основную информацию о транскрипции
@@ -571,6 +656,7 @@ async def get_user_transcripts(
 
                 transcript_data = db.select_transcripts_by_id(transcript_uuid)
                 if not transcript_data:
+                    logger.warning(f"Transcript data not found for {transcript_uuid}")
                     continue
 
                 # Получаем суммаризацию
@@ -578,12 +664,12 @@ async def get_user_transcripts(
 
                 transcripts_map[transcript_id_str] = {
                     "transcript_id": transcript_id_str,
-                    "original_text": transcript_data.get('original_text', ''),
-                    "title": transcript_data.get('title', ''),
+                    "original_text": transcript_data.get('original_text') or '',
+                    "title": transcript_data.get('title') or f'Запись от {transcript_id_str[:8]}',
                     "created_at": transcript_data.get('created_at'),
                     "summary": summary_data.get('text') if summary_data else None,
                     "key_points": summary_data.get('key_points') if summary_data else None,
-                    "meeting_type": summary_data.get('meeting_type', "Не определено"),
+                    "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
                     "parts": []
                 }
 
@@ -631,7 +717,10 @@ async def get_user_transcripts(
         }
 
     except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
         logger.error(f"Error fetching user transcripts: {str(e)}")
+        logger.error(f"Traceback: {error_traceback}")
         raise HTTPException(500, f"Error fetching transcripts: {str(e)}")
 
 @app.get("/transcripts/{transcript_id}")
@@ -659,12 +748,12 @@ async def get_transcript(
         
         return {
             "transcript_id": transcript_id,
-            "original_text": transcript_data.get('original_text', ''),
-            "title": transcript_data.get('title', ''),
+            "original_text": transcript_data.get('original_text') or '',
+            "title": transcript_data.get('title') or f'Запись от {transcript_id[:8]}',
             "parts": parts,
             "summary": summary_data.get('text') if summary_data else None,
             "key_points": summary_data.get('key_points') if summary_data else None,
-            "meeting_type": summary_data.get('meeting_type', "Не определено")
+            "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено"
         }
         
     except HTTPException:

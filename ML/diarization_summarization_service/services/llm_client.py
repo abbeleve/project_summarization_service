@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 class LLMClient:
     """
     Клиент для работы с LLM моделями.
-    
-    Поддерживает OpenAI и OpenRouter API для суммаризации,
-    классификации и ответов на вопросы.
+
+    Поддерживает Gemini API и OpenAI-совместимые API
+    для суммаризации, классификации и ответов на вопросы.
     """
     
     def __init__(
@@ -163,7 +163,7 @@ class LLMClient:
                             "required": ["title", "summary", "key_points"]
                         }
                     },
-                    "plugins": [{"id": "response-healing"}]
+                    # "plugins": [{"id": "response-healing"}]
                 },
             )
             

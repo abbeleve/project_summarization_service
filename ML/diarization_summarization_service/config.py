@@ -27,17 +27,17 @@ class Settings(BaseSettings):
     # ===== LLM Настройки =====
     openai_api_key: str = Field(
         default_factory=lambda: os.getenv("OPENAI_API_KEY", ""),
-        description="API ключ для OpenAI/OpenRouter"
+        description="API ключ для LLM (Gemini/OpenAI)"
     )
     openai_base_url: str = Field(
-        default="https://openrouter.ai/api/v1",
-        description="Базовый URL для OpenAI-совместимого API"
+        default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"),
+        description="Базовый URL для LLM API (Gemini по умолчанию)"
     )
     allowed_llm_models: Set[str] = Field(
-        default={"arcee-ai/trinity-mini:free"},
+        default={"gemini-2.5-flash", "gemini-2.5-pro"},
         description="Разрешённые LLM модели"
     )
-    
+
     # ===== Аудио параметры =====
     sample_rate: int = Field(
         default=16000,
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     
     # ===== LLM параметры по умолчанию =====
     default_llm_model: str = Field(
-        default="arcee-ai/trinity-mini:free",
+        default="gemini-2.5-flash",
         description="Модель LLM по умолчанию"
     )
     llm_temperature: float = Field(

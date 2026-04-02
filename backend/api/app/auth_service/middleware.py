@@ -11,6 +11,7 @@ class AuthMiddleware:
         self.jwt_service = jwt_service
         self.public_paths = {
             "/auth/login",
+            "/auth/register",
             "/auth/refresh",
             "/health",
             "/docs",

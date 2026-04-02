@@ -88,7 +88,12 @@ async def transcribe(
             )
         elif transcribe_lib == "whisper":
             # Whisper сервис — создаём новый экземпляр (легковесный HTTP клиент)
-            transcriber = WhisperTranscription()
+            logger.info(f"Использование Whisper сервиса: {settings.whisper_service_url}")
+            transcriber = WhisperTranscription(
+                service_url=settings.whisper_service_url,
+                timeout=300
+            )
+            logger.info(f"Сегменты диаризации: {len(diarization_segments)}")
             transcribed_segments = transcriber.transcribe(
                 segments=diarization_segments,
                 audio_path=audio_path

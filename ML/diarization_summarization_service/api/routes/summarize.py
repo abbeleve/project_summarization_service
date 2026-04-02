@@ -29,7 +29,7 @@ router = APIRouter(tags=["LLM"])
 @router.post("/summarize", response_model=SummarizeResponse)
 async def summarize(
     input_text: str = Form(..., description="Текст для суммаризации"),
-    llm_model: str = Form("arcee-ai/trinity-mini:free", description="Модель LLM")
+    llm_model: str = Form("gemini-2.5-flash", description="Модель LLM")
 ):
     """
     Суммаризация текста совещания.
@@ -62,7 +62,7 @@ async def summarize(
 @router.post("/classify_meeting_type", response_model=ClassifyResponse)
 async def classify_meeting_type(
     input_text: str = Form(..., description="Текст совещания"),
-    llm_model: str = Form("arcee-ai/trinity-mini:free", description="Модель LLM")
+    llm_model: str = Form("gemini-2.5-flash", description="Модель LLM")
 ):
     """
     Классификация типа совещания.
@@ -90,7 +90,7 @@ async def classify_meeting_type(
 @router.post("/llm_pipeline", response_model=LLMPipelineResponse)
 async def llm_pipeline(
     input_text: str = Form(..., description="Текст совещания"),
-    llm_model: str = Form("arcee-ai/trinity-mini:free", description="Модель LLM"),
+    llm_model: str = Form("gemini-2.5-flash", description="Модель LLM"),
     summarization_usage: bool = Form(True, description="Использовать суммаризацию"),
     classification_usage: bool = Form(True, description="Использовать классификацию")
 ):

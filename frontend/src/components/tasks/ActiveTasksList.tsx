@@ -66,7 +66,7 @@ export const ActiveTasksList = ({ tasks, onRemove, onNavigate }: ActiveTasksList
     return (
       <div
         key={task.task_id}
-        className="p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+        className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
@@ -74,23 +74,23 @@ export const ActiveTasksList = ({ tasks, onRemove, onNavigate }: ActiveTasksList
               <div className={`w-2.5 h-2.5 rounded-full ${
                 task.status === 'processing' ? 'animate-pulse' : ''
               } ${getStatusColor()}`} />
-              <span className="font-medium text-gray-900 text-sm truncate">
+              <span className="font-medium text-gray-900 dark:text-gray-100 text-sm truncate">
                 {task.task_id.slice(0, 12)}...
               </span>
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
                 {formatTime(task.addedAt)}
               </span>
               <span className={`text-xs px-2 py-0.5 rounded-full ${
-                task.status === 'completed' ? 'bg-green-100 text-green-700' :
-                task.status === 'failed' ? 'bg-red-100 text-red-700' :
-                'bg-blue-100 text-blue-700'
+                task.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                task.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
               }`}>
                 {getStatusText()}
               </span>
             </div>
 
             {/* Progress bar */}
-            <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mb-2">
               <div
                 className={`h-1.5 rounded-full transition-all duration-500 ${getStatusColor()}`}
                 style={{ width: `${Math.min(displayProgress, 100)}%` }}
@@ -99,15 +99,15 @@ export const ActiveTasksList = ({ tasks, onRemove, onNavigate }: ActiveTasksList
 
             {/* Step info */}
             <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-600">
+              <span className="text-gray-600 dark:text-gray-400">
                 {task.step ? STEP_LABELS[task.step] || task.step : 'Обработка...'}
               </span>
-              <span className="text-gray-500">{Math.round(displayProgress)}%</span>
+              <span className="text-gray-500 dark:text-gray-400">{Math.round(displayProgress)}%</span>
             </div>
 
             {/* Error message */}
             {task.error && (
-              <p className="text-xs text-red-600 mt-1">
+              <p className="text-xs text-red-600 dark:text-red-400 mt-1">
                 ❌ {task.error}
               </p>
             )}
@@ -127,7 +127,7 @@ export const ActiveTasksList = ({ tasks, onRemove, onNavigate }: ActiveTasksList
 
           <button
             onClick={() => onRemove(task.task_id)}
-            className="text-gray-400 hover:text-red-600 transition-colors flex-shrink-0"
+            className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors flex-shrink-0"
             title="Закрыть"
           >
             ✕
@@ -140,10 +140,10 @@ export const ActiveTasksList = ({ tasks, onRemove, onNavigate }: ActiveTasksList
   return (
     <Card className="p-4 space-y-3">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold text-gray-900">
+        <h3 className="font-semibold text-gray-900 dark:text-gray-100">
           📋 Активные задачи ({tasks.length})
         </h3>
-        <span className="text-xs text-gray-500">
+        <span className="text-xs text-gray-500 dark:text-gray-400">
           Активных: {activeTasks.length} | Готово: {completedTasks.length}
         </span>
       </div>

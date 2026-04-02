@@ -1,11 +1,12 @@
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback } from 'react';
 import { jwtDecode } from 'jwt-decode';
 import { authApi } from '@/api/auth';
-import type { User, AuthState, LoginCredentials, TokenPayload } from '@/types/auth';
+import type { User, AuthState, LoginCredentials, RegisterData, TokenPayload } from '@/types/auth';
 
 interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>;
-  logout: () => void;
+  register: (data: RegisterData) => Promise<void>;
+  logout: (clearCache?: () => void) => void;
   refreshAccessToken: () => Promise<boolean>;
   isTokenExpired: (token: string) => boolean;
 }
@@ -70,13 +71,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = async (credentials: LoginCredentials) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
-    
+
     try {
       const response = await authApi.login(credentials);
-      
+
       localStorage.setItem('access_token', response.access_token);
       localStorage.setItem('refresh_token', response.refresh_token);
-      
+
       const payload = jwtDecode<TokenPayload>(response.access_token);
       const user: User = {
         user_id: response.user_id,
@@ -85,7 +86,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         email: '',
         role: payload.role === 'admin' ? 'admin' : 'user'
       };
-      
+
       setState({
         user,
         accessToken: response.access_token,
@@ -101,8 +102,42 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const logout = useCallback(() => {
+  const register = async (data: RegisterData) => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      const response = await authApi.register(data);
+
+      localStorage.setItem('access_token', response.access_token);
+      localStorage.setItem('refresh_token', response.refresh_token);
+
+      const payload = jwtDecode<TokenPayload>(response.access_token);
+      const user: User = {
+        user_id: response.user_id,
+        username: data.username,
+        full_name: `${data.surname} ${data.name}`,
+        email: data.email,
+        role: payload.role === 'admin' ? 'admin' : 'user'
+      };
+
+      setState({
+        user,
+        accessToken: response.access_token,
+        refreshToken: response.refresh_token,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Ошибка регистрации';
+      setState(prev => ({ ...prev, isLoading: false, error: message }));
+      throw error;
+    }
+  };
+
+  const logout = useCallback((clearCache?: () => void) => {
     authApi.logout();
+    clearCache?.();
     setState({
       user: null,
       accessToken: null,
@@ -137,6 +172,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     <AuthContext.Provider value={{
       ...state,
       login,
+      register,
       logout,
       refreshAccessToken,
       isTokenExpired

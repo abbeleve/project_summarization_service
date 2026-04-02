@@ -67,10 +67,10 @@ export const LLM_MODEL_DESCRIPTIONS: Record<string, {
   speed: string;
   context: string;
 }> = {
-  'arcee-ai/trinity-mini:free': {
-    description: 'Лёгкая модель для суммаризации. Оптимальна для быстрых задач.',
-    speed: '🚀 Быстрая',
-    context: '📝 Стандартный контекст'
+  'gemini-2.5-flash': {
+    description: 'Быстрая и эффективная модель от Google для суммаризации.',
+    speed: '🚀 Очень быстрая',
+    context: '📚 Большой контекст'
   }
 };
 
@@ -82,7 +82,7 @@ export const DIARIZATION_CONFIG: Record<string, string[]> = {
 };
 
 export const LLM_MODELS = [
-  'arcee-ai/trinity-mini:free',
+  'gemini-2.5-flash',
 ];
 
 export const MEETING_TYPES = [
@@ -101,7 +101,7 @@ export const DEFAULT_SETTINGS: ProcessingSettings = {
   diarizationModel: 'pyannote/speaker-diarization-community-1',
   diarizeLib: 'pyannote',
   transcribeLib: 'gigaam',
-  llmModel: 'arcee-ai/trinity-mini:free',
+  llmModel: 'gemini-2.5-flash',
   noiseSuppression: false
 };
 

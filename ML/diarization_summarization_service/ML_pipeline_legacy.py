@@ -234,17 +234,17 @@ class AudioRecognition():
 
   def summarize_with_openai(self, text: str = None,
                             file_path: str = None,
-                            model: str = "arcee-ai/trinity-mini:free",
-                            base_url: str = "https://openrouter.ai/api/v1",
+                            model: str = "gemini-2.5-pro",
+                            base_url: str = None,
                             temperature: float = 0.01,
                             max_tokens: int = 3000):
     """
-    Makes API call to openai services, summarizes given text
+    Makes API call to LLM services, summarizes given text
     Args:
         text(str): text from transcribition
         file_path(str): path to file with transcribed text
         model (str): Model name to use for summarization
-        base_url (str, optional): Custom base URL for OpenAI-compatible endpoints (e.g., for local LLMs)
+        base_url (str, optional): Custom base URL for LLM-compatible endpoints (e.g., for Gemini). Defaults to Gemini API.
     Returns:
         {
         "title": "...",
@@ -261,32 +261,12 @@ class AudioRecognition():
     if file_path:
       with open(file_path, mode='r', encoding='utf-8') as f:
         text = f.read()
-    # system_prompt = (
-    #     "Ты — точный и нейтральный ассистент по анализу деловых совещаний."
-    #     "Твоя задача — проанализировать предоставленный текст и вернуть ТОЛЬКО валидный JSON о названии совещания, о кратком содержании текста и о ключевых моментах совещания в следующем формате:\n"
-    #     "{\n"
-    #     '  "title": "Краткое название совещания (5–7 слов, описательное, без кавычек)",\n'
-    #     '  "summary": "Фактологическое краткое содержание (200–300 слов). Используй только информацию из текста. Не выдумывай. Нейтральный тон. Связный текст.",\n'
-    #     '  "key_points": [\n'
-    #     '    "Ключевой момент совещания 1",\n'
-    #     '    "Ключевой момент совещания 2",\n'
-    #     '    ...\n'
-    #     "  ]\n"
-    #     "}\n\n"
-    #     "Правила:\n"
-    #     "- Отвечать только на РУССКОМ ЯЗЫКЕ.\n"
-    #     "- Все поля обязательны.\n"
-    #     "- В key_points включай любые решения, назначения, согласованные действия или события, даже если они описаны в обобщённой форме (например: «было решено назначить», «установлено проводить встречи», «договорились внедрить», «планируется развивать»).\n"
-    #     "- Обращай внимание на глаголы: «решено», «назначено», «установлено», «согласовано», «планируется», «необходимо», «будет проводиться», «поручено», «принято» — такие фразы считаются решениями.\n"
-    #     "- Не требуй прямой речи или имён спикеров. Достаточно упоминания действия в контексте соглашения или плана.\n"
-    #     "- Игнорируй только общие рассуждения без намёка на действие (например: «курс важный», «нужно подумать»).\n"
-    #     "- Если и только если в тексте действительно отсутствуют какие-либо решения, назначения или согласованные действия — тогда key_points должен содержать одну строку: \"В обсуждении не было принято никаких решений или согласованных действий.\"\n"
-    #     "- Если текст пуст или бессодержателен — summary: \"Текст не содержит существенной информации для краткого содержания.\"\n"
-    #     "- Никакого дополнительного текста, пояснений, форматирования. Только JSON."
-    # )
+
     system_prompt = self.SYSTEM_SUMMARIZATION_JSON_PROMPT
 
     open_api_key = os.getenv(self.openai_api_key_envname)
+    if base_url is None:
+      base_url = os.getenv("OPENAI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
     client = OpenAI(api_key=open_api_key, base_url=base_url)
 
     try:
@@ -334,26 +314,21 @@ class AudioRecognition():
         logging.error(f"Error during OpenAI-compatible summarization: {e}")
         raise RuntimeError(f"Error during OpenAI-compatible summarization: {e}") from e
 
-  def classify_meeting_type_with_openai(self, text: str, 
-                                        model: str = "arcee-ai/trinity-mini:free", 
-                                        base_url: str = "https://openrouter.ai/api/v1",
+  def classify_meeting_type_with_openai(self, text: str,
+                                        model: str = "gemini-2.5-pro",
+                                        base_url: str = None,
                                         temperature: float = 0.001,
                                         max_tokens: int = 3000) -> str:
-    # system_prompt = (
-    #     "Ты — эксперт по анализу деловых совещаний. Используй онтологию ниже для определения типа совещания.\n\n"
-    #     f"{self.ontology_file_text}\n\n"
-    #     "Верни ТОЛЬКО название типа совещания из списка:\n"
-    #     '"Оперативное совещание", "Стратегическое совещание", "Финансовое совещание", '
-    #     '"HR-совещание", "Обзор проекта", "Экстренное совещание".\n'
-    #     "Никаких пояснений, только одно название."
-    # )
     system_prompt = self.prompts.format(
        "classification.system_template",
        ontology=self.ontology_file_text
     )
     if not system_prompt:
         raise RuntimeError("Prompt 'classification.system_template' not found in prompts file")
-    client = OpenAI(api_key=os.getenv(self.openai_api_key_envname), base_url=base_url)
+    open_api_key = os.getenv(self.openai_api_key_envname)
+    if base_url is None:
+      base_url = os.getenv("OPENAI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+    client = OpenAI(api_key=open_api_key, base_url=base_url)
     response = client.chat.completions.create(
         model=model,
         messages=[
@@ -394,28 +369,32 @@ class AudioRecognition():
     return "Не определено"
   
   def questions_with_openai(self, text: str = None,
-                            model: str = "openai/gpt-oss-20b",
-                            base_url: str = "https://openrouter.ai/api/v1",
+                            model: str = "gemini-2.5-pro",
+                            base_url: str = None,
                             temperature: float = 0.01,
                             max_tokens: int = 3000,
                             question: str = None):
     """
-    Makes API call to openai services, summarizes given text
+    Makes API call to LLM services, answers question on text
     Args:
         text(str): text from transcribition
-        file_path(str): path to file with transcribed text
-        model (str): Model name to use for summarization
-        base_url (str, optional): Custom base URL for OpenAI-compatible endpoints (e.g., for local LLMs)
+        model (str): Model name to use
+        base_url (str, optional): Custom base URL for LLM-compatible endpoints. Defaults to Gemini API.
+        temperature (float): Temperature for generation
+        max_tokens (int): Max tokens
+        question (str): Question to answer
     Returns:
-        summarization_results(str): summarization results
+        answer (str): Answer to the question
     """
     if text is None:
       raise ValueError("Please specify text")
 
     if question is None:
       raise ValueError("Please specify question")
-    
+
     open_api_key = os.getenv(self.openai_api_key_envname)
+    if base_url is None:
+      base_url = os.getenv("OPENAI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
     client = OpenAI(api_key=open_api_key, base_url=base_url)
     logging.info(f"{self.QUESTIONS_PROMPT}\n\n{text}\n\nА вот вопрос от пользователя: {question}")
     try:

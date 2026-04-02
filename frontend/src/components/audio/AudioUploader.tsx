@@ -59,7 +59,7 @@ export const AudioUploader = ({
     diarizationModel: 'pyannote/speaker-diarization-community-1',
     diarizeLib: 'pyannote',
     transcribeLib: 'gigaam',
-    llmModel: 'arcee-ai/trinity-mini:free',
+    llmModel: 'gemini-2.5-flash',
     noiseSuppression: false
   });
 

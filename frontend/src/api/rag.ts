@@ -8,9 +8,9 @@ export const ragApi = {
   },
 
   askQuestion: async (
-    transcriptId: string, 
+    transcriptId: string,
     question: string,
-    llmModel: string = 'arcee-ai/trinity-mini:free'
+    llmModel: string = 'gemini-2.5-flash'
   ): Promise<{ answer: string }> => {
     const formData = new FormData();
     formData.append('transcript_id', transcriptId);
