@@ -31,7 +31,8 @@ def gen_fake_data(db):
     for i in range(10):
         original_text = fake.text(max_nb_chars=500)
         clean_text = " ".join(original_text.split())  # немного «очищенный» текст
-        tr_id = db.insert_transcripts(original_text, clean_text)
+        employee_id = choice(staff_ids)
+        tr_id = db.insert_transcripts(original_text, clean_text, employee_id=employee_id)
         transcript_ids.append(tr_id)
 
 
@@ -47,9 +48,7 @@ def gen_fake_data(db):
             part_text = text
         start_time = randint(0, 300)
         end_time = start_time + randint(5, 30)
-        employee = choice(staff_ids)
         part_id = db.insert_parts_transcription(
-            employee_id=employee,
             transcript_id=tr_id,
             text=part_text,
             start_time=start_time,

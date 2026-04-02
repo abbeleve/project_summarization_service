@@ -59,6 +59,11 @@ export const transcriptsApi = {
     await apiClient.delete(`/transcripts/${id}`);
   },
 
+  rename: async (id: string, title: string): Promise<{ status: string; message: string; title: string }> => {
+    const response = await apiClient.put(`/transcripts/${id}/rename`, { title });
+    return response.data;
+  },
+
   applyNoiseSuppression: async (file: File): Promise<Blob> => {
     const formData = new FormData();
     formData.append('file', file);

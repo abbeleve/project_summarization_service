@@ -40,6 +40,7 @@ class Chunk(BaseModel):
     """Модель одного чанка (реплики спикера)"""
     text: str
     transcript_id: str
+    employee_id: str  # Добавлено для фильтрации по пользователю
     speaker: Optional[str] = None
     start_time: float
     end_time: float
@@ -55,6 +56,7 @@ class IndexRequest(BaseModel):
 class SearchRequest(BaseModel):
     """Запрос на поиск похожих чанков"""
     query: str
+    employee_id: str  # ID пользователя для фильтрации
     exclude_transcript_id: Optional[str] = None  # Исключить текущее совещание
     limit: int = 5
 
@@ -154,6 +156,7 @@ async def index_chunks(req: IndexRequest):
             {
                 "text": c.text,
                 "transcript_id": c.transcript_id,
+                "employee_id": c.employee_id,
                 "speaker": c.speaker or "UNKNOWN",
                 "start_time": c.start_time,
                 "end_time": c.end_time,
@@ -200,17 +203,20 @@ async def search_similar(req: SearchRequest):
         # Валидация
         if not req.query.strip():
             raise HTTPException(status_code=400, detail="Запрос не может быть пустым")
-        
-        print(f"🔍 Поиск по запросу: '{req.query}' (исключая transcript_id={req.exclude_transcript_id})")
-        
+        if not req.employee_id:
+            raise HTTPException(status_code=400, detail="employee_id обязателен")
+
+        print(f"🔍 Поиск по запросу: '{req.query}' (employee_id={req.employee_id}, исключая transcript_id={req.exclude_transcript_id})")
+
         # Генерация эмбеддинга запроса с префиксом для E5
         query_text = f"query: {req.query.strip()}"
         query_vector = embedder.encode([query_text], normalize_embeddings=True).tolist()[0]
-        
+
         # Поиск в векторной БД
         results = _vector_db.search(
             query_vector=query_vector,
             limit=req.limit,
+            employee_id=req.employee_id,
             exclude_transcript_id=req.exclude_transcript_id
         )
         

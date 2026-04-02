@@ -29,6 +29,9 @@ export const HomePage = () => {
   const { tasks, addTask, removeTask } = useActiveTasks();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [taskError, setTaskError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   // Проверяем завершённые задачи и показываем уведомление
   useEffect(() => {
@@ -76,6 +79,31 @@ export const HomePage = () => {
     } catch (err) {
       console.error('Delete error:', err);
     }
+  };
+
+  const startEditing = (id: string, currentTitle: string) => {
+    setEditingId(id);
+    setEditTitle(currentTitle);
+  };
+
+  const handleRename = async (id: string) => {
+    if (!editTitle.trim()) return;
+    
+    setSavingId(id);
+    try {
+      await transcriptsApi.rename(id, editTitle.trim());
+      await refetch();
+      setEditingId(null);
+    } catch (err) {
+      console.error('Rename error:', err);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditTitle('');
   };
 
   return (
@@ -233,31 +261,80 @@ export const HomePage = () => {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-4 mb-2">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
-                          {transcript.title}
-                        </h3>
-                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/analysis/${transcript.transcript_id}`);
-                            }}
-                            className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center text-white shadow-md hover:shadow-lg hover:scale-110 transition-all"
-                            title="Открыть"
-                          >
-                            <span className="text-lg">📊</span>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setConfirmDelete(transcript.transcript_id);
-                            }}
-                            className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-400 to-red-500 flex items-center justify-center text-white shadow-md hover:shadow-lg hover:scale-110 transition-all"
-                            title="Удалить"
-                          >
-                            <span className="text-lg">🗑️</span>
-                          </button>
-                        </div>
+                        {editingId === transcript.transcript_id ? (
+                          <div className="flex-1 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleRename(transcript.transcript_id);
+                                if (e.key === 'Escape') cancelEditing();
+                              }}
+                              className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                              placeholder="Новое название"
+                              autoFocus
+                            />
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRename(transcript.transcript_id);
+                              }}
+                              className="w-8 h-8 rounded-lg bg-green-500 hover:bg-green-600 text-white flex items-center justify-center transition-colors"
+                              title="Сохранить"
+                            >
+                              {savingId === transcript.transcript_id ? '...' : '💾'}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                cancelEditing();
+                              }}
+                              className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 flex items-center justify-center transition-colors"
+                              title="Отмена"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
+                              {transcript.title}
+                            </h3>
+                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/analysis/${transcript.transcript_id}`);
+                                }}
+                                className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center text-white shadow-md hover:shadow-lg hover:scale-110 transition-all"
+                                title="Открыть"
+                              >
+                                <span className="text-lg">📊</span>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startEditing(transcript.transcript_id, transcript.title);
+                                }}
+                                className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-blue-500 flex items-center justify-center text-white shadow-md hover:shadow-lg hover:scale-110 transition-all"
+                                title="Переименовать"
+                              >
+                                <span className="text-lg">✏️</span>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setConfirmDelete(transcript.transcript_id);
+                                }}
+                                className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-400 to-red-500 flex items-center justify-center text-white shadow-md hover:shadow-lg hover:scale-110 transition-all"
+                                title="Удалить"
+                              >
+                                <span className="text-lg">🗑️</span>
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 mb-3">

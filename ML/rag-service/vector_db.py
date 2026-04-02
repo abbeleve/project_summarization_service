@@ -26,7 +26,7 @@ class VectorDB(ABC):
         pass
     
     @abstractmethod
-    def search(self, query_vector: List[float], limit: int, exclude_transcript_id: Optional[str] = None):
+    def search(self, query_vector: List[float], limit: int, employee_id: str, exclude_transcript_id: Optional[str] = None):
         pass
 
 class QdrantVectorDB(VectorDB):
@@ -64,14 +64,20 @@ class QdrantVectorDB(VectorDB):
         self.client.upsert(collection_name=self.collection_name, wait=True, points=points)
         return len(points)
     
-    def search(self, query_vector: List[float], limit: int, exclude_transcript_id: Optional[str] = None):
+    def search(self, query_vector: List[float], limit: int, employee_id: str, exclude_transcript_id: Optional[str] = None):
+        """Поиск с фильтрацией по employee_id"""
+        # Фильтр: только чанки пользователя + исключение transcript_id
+        must_conditions = [
+            FieldCondition(key="employee_id", match=MatchValue(value=employee_id))
+        ]
         
-        query_filter = None
         if exclude_transcript_id:
-            query_filter = Filter(
-                must_not=[FieldCondition(key="transcript_id", match=MatchValue(value=exclude_transcript_id))]
+            must_conditions.append(
+                FieldCondition(key="transcript_id", match=MatchValue(value=exclude_transcript_id))
             )
         
+        query_filter = Filter(must=must_conditions) if must_conditions else None
+
         results = self.client.query_points(
             collection_name=self.collection_name,
             query=query_vector,
@@ -186,28 +192,32 @@ class MilvusVectorDB(VectorDB):
         self.collection.flush()
         return len(chunks)
     
-    def search(self, query_vector: List[float], limit: int, exclude_transcript_id: Optional[str] = None):
-        """Поиск по вектору"""
+    def search(self, query_vector: List[float], limit: int, employee_id: str, exclude_transcript_id: Optional[str] = None):
+        """Поиск с фильтрацией по employee_id"""
         if self.collection is None:
             raise RuntimeError("Коллекция не инициализирована. Вызовите init_collection() сначала.")
-        
-        expr = f'transcript_id != "{exclude_transcript_id}"' if exclude_transcript_id else None
-        
+
+        # Фильтр: только чанки пользователя + исключение transcript_id
+        expr = f'employee_id == "{employee_id}"'
+        if exclude_transcript_id:
+            expr += f' and transcript_id != "{exclude_transcript_id}"'
+
         results = self.collection.search(
             data=[query_vector],
             anns_field="vector",
             param={"metric_type": "COSINE", "params": {"nprobe": 10}},
             limit=limit,
             expr=expr,
-            output_fields=["text", "transcript_id", "speaker", "start_time", "end_time", "meeting_type", "title"]
+            output_fields=["text", "transcript_id", "employee_id", "speaker", "start_time", "end_time", "meeting_type", "title"]
         )
-        
+
         return [
             {
                 "score": hit.distance,
                 "payload": {
                     "text": hit.entity.get("text"),
                     "transcript_id": hit.entity.get("transcript_id"),
+                    "employee_id": hit.entity.get("employee_id"),
                     "speaker": hit.entity.get("speaker"),
                     "start_time": hit.entity.get("start_time"),
                     "end_time": hit.entity.get("end_time"),

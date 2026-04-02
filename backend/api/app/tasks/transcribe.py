@@ -139,7 +139,8 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
         # Вставляем транскрипцию
         transcript_id = db.insert_transcripts(
             text=original_text,
-            title=title
+            title=title,
+            employee_id=user_id
         )
         
         if not transcript_id:
@@ -153,7 +154,6 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
             end = segment.get("stop", segment.get("end_time", 0))
             
             db.insert_parts_transcription(
-                employee_id=user_id,
                 transcript_id=transcript_id,
                 text=f"{speaker}: {text}",
                 start_time=int(start * 1000),
@@ -183,7 +183,8 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
             transcript_meta = {
                 "id": transcript_id,
                 "title": title,
-                "meeting_type": meeting_type
+                "meeting_type": meeting_type,
+                "employee_id": user_id  # Добавляем employee_id для RAG фильтрации
             }
             
             # Функция split_into_chunks (нужно импортировать или скопировать)
@@ -231,34 +232,35 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
 def split_into_chunks(parts: list, transcript_meta: dict, max_length: int = 500) -> list:
     """
     Разбивает транскрипцию на чанки для RAG индексирования.
-    
+
     Args:
         parts: Список частей транскрипции из БД
-        transcript_meta: Метаданные транскрипции
+        transcript_meta: Метаданные транскрипции (включая employee_id)
         max_length: Максимальная длина чанка
-    
+
     Returns:
         Список чанков
     """
     chunks = []
-    
+
     for part in parts:
         text = part.get("text", "")
-        
+
         # Разбиваем текст на чанки если он слишком длинный
         if len(text) > max_length:
             words = text.split()
             current_chunk = []
             current_length = 0
-            
+
             for word in words:
                 current_chunk.append(word)
                 current_length += len(word) + 1
-                
+
                 if current_length >= max_length:
                     chunks.append({
                         "text": " ".join(current_chunk),
                         "transcript_id": str(transcript_meta["id"]),
+                        "employee_id": str(transcript_meta["employee_id"]),
                         "speaker": part.get("speaker", "UNKNOWN"),
                         "start_time": part.get("start_time", 0) / 1000.0,
                         "end_time": part.get("end_time", 0) / 1000.0,
@@ -267,11 +269,12 @@ def split_into_chunks(parts: list, transcript_meta: dict, max_length: int = 500)
                     })
                     current_chunk = []
                     current_length = 0
-            
+
             if current_chunk:
                 chunks.append({
                     "text": " ".join(current_chunk),
                     "transcript_id": str(transcript_meta["id"]),
+                    "employee_id": str(transcript_meta["employee_id"]),
                     "speaker": part.get("speaker", "UNKNOWN"),
                     "start_time": part.get("start_time", 0) / 1000.0,
                     "end_time": part.get("end_time", 0) / 1000.0,
@@ -282,11 +285,12 @@ def split_into_chunks(parts: list, transcript_meta: dict, max_length: int = 500)
             chunks.append({
                 "text": text,
                 "transcript_id": str(transcript_meta["id"]),
+                "employee_id": str(transcript_meta["employee_id"]),
                 "speaker": part.get("speaker", "UNKNOWN"),
                 "start_time": part.get("start_time", 0) / 1000.0,
                 "end_time": part.get("end_time", 0) / 1000.0,
                 "meeting_type": transcript_meta.get("meeting_type"),
                 "title": transcript_meta.get("title")
             })
-    
+
     return chunks

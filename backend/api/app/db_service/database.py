@@ -31,11 +31,6 @@ class Staff(Base):
     login: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
     password: Mapped[str] = mapped_column(String(100), nullable=False)
 
-    parts_transcriptions: Mapped[List["PartsTranscription"]] = relationship(
-        "PartsTranscription",
-        back_populates="employee",
-        cascade="all, delete-orphan"
-    )
     celery_tasks: Mapped[List["CeleryTask"]] = relationship(
         "CeleryTask",
         back_populates="employee",
@@ -59,6 +54,12 @@ class Staff(Base):
 
 class Transcript(Base):
     __tablename__ = 'Transcripts'
+    employee_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Staff.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
     title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[Any] = mapped_column(
@@ -87,6 +88,7 @@ class Transcript(Base):
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': str(self.id),
+            'employee_id': str(self.employee_id),
             'title': self.title,
             'text': self.text,
             'created_at': self.created_at.isoformat()
@@ -129,24 +131,16 @@ class ChatMessage(Base):
 
 class PartsTranscription(Base):
     __tablename__ = 'PartsTranscription'
-    employee_id: Mapped[Optional[UUID]] = mapped_column(
-        UUIDType(as_uuid=True),
-        ForeignKey('Staff.id', ondelete='SET NULL'),
-        nullable=True
-    )
     transcript_id: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey('Transcripts.id', ondelete='CASCADE'),
-        nullable=False
+        nullable=False,
+        index=True
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
     start_time: Mapped[int] = mapped_column(nullable=False)
     end_time: Mapped[int] = mapped_column(nullable=False)
 
-    employee: Mapped[Optional["Staff"]] = relationship(
-        "Staff",
-        back_populates="parts_transcriptions"
-    )
     transcript: Mapped["Transcript"] = relationship(
         "Transcript",
         back_populates="parts_transcriptions"
@@ -159,7 +153,6 @@ class PartsTranscription(Base):
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': str(self.id),
-            'employee_id': str(self.employee_id) if self.employee_id else None,
             'transcript_id': str(self.transcript_id),
             'text': self.text,
             'start_time': self.start_time,
@@ -421,12 +414,18 @@ class DataBaseManager:
                 return []
 
 
-    def insert_transcripts(self, text: str, title: Optional[str] = None) -> Optional[UUID]:
+    def insert_transcripts(self, text: str, title: Optional[str] = None, employee_id: Optional[UUID] = None) -> Optional[UUID]:
         with self.session_scope() as session:
             try:
+                # Конвертируем строку в UUID если нужно
+                if employee_id and isinstance(employee_id, str):
+                    from uuid import UUID
+                    employee_id = UUID(employee_id)
+                
                 transcript = Transcript(
                     title=title,
-                    text=text
+                    text=text,
+                    employee_id=employee_id
                 )
                 session.add(transcript)
                 session.flush()
@@ -484,7 +483,7 @@ class DataBaseManager:
                 return False
 
 
-    def insert_parts_transcription(self, employee_id: Optional[UUID], transcript_id: UUID, text: str,
+    def insert_parts_transcription(self, transcript_id: UUID, text: str,
                                   start_time: int, end_time: int) -> Optional[UUID]:
         with self.session_scope() as session:
             try:
@@ -492,13 +491,7 @@ class DataBaseManager:
                 if not transcript:
                     return None
 
-                if employee_id:
-                    staff = session.get(Staff, employee_id)
-                    if not staff:
-                        return None
-
                 part = PartsTranscription(
-                    employee_id=employee_id,
                     transcript_id=transcript_id,
                     text=text,
                     start_time=start_time,
@@ -540,15 +533,6 @@ class DataBaseManager:
                 return [part.to_dict() for part in parts]
             except SQLAlchemyError as e:
                 print(f"Ошибка при получении частей транскрипции: {e}")
-                return []
-
-    def select_parts_transcription_by_employee_id(self, employee_id: UUID) -> List[Dict[str, Any]]:
-        with self.session_scope() as session:
-            try:
-                parts = session.query(PartsTranscription).filter(PartsTranscription.employee_id == employee_id).all()
-                return [part.to_dict() for part in parts]
-            except SQLAlchemyError as e:
-                print(f"Ошибка при получении частей транскрипции сотрудника: {e}")
                 return []
 
     def update_parts_transcription(self, part_id: UUID, **kwargs) -> bool:

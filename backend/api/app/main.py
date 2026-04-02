@@ -511,8 +511,9 @@ async def proxy_ask_question(
                 "http://rag-service:8055/search",
                 json={
                     "query": question,
-                    "exclude_transcript_id": transcript_id, #исключаем текущее совещание
-                    "limit": 3 # HARD CODED LIMIT
+                    "employee_id": current_user["user_id"],  # Фильтрация по пользователю
+                    "exclude_transcript_id": transcript_id,  # Исключаем текущее совещание
+                    "limit": 3  # HARD CODED LIMIT
                 }
             )
             if rag_resp.status_code == 200:
@@ -659,17 +660,15 @@ async def search_transcripts(
         from sqlalchemy import text
         
         with db.session_scope() as session:
-            # Получаем transcript_id через JOIN с PartsTranscription
-            # чтобы найти только транскрипции текущего пользователя
             user_id = current_user["user_id"]
             query_lower = f"%{query.lower()}%"
             
             # SQL запрос с поиском по названию (case-insensitive)
+            # Теперь используем прямое поле employee_id в Transcripts
             sql = text("""
-                SELECT DISTINCT t.id, t.title, t.text, t.created_at
+                SELECT t.id, t.title, t.text, t.created_at, t.employee_id
                 FROM "Transcripts" t
-                INNER JOIN "PartsTranscription" pt ON t.id = pt.transcript_id
-                WHERE pt.employee_id = :user_id
+                WHERE t.employee_id = :user_id
                   AND LOWER(t.title) LIKE :query
                 ORDER BY t.created_at DESC
                 LIMIT :limit OFFSET :offset
@@ -683,10 +682,9 @@ async def search_transcripts(
             
             # Получаем общее количество для пагинации
             count_sql = text("""
-                SELECT COUNT(DISTINCT t.id)
+                SELECT COUNT(t.id)
                 FROM "Transcripts" t
-                INNER JOIN "PartsTranscription" pt ON t.id = pt.transcript_id
-                WHERE pt.employee_id = :user_id
+                WHERE t.employee_id = :user_id
                   AND LOWER(t.title) LIKE :query
             """)
             count_result = session.execute(count_sql, {"user_id": user_id, "query": query_lower})
@@ -757,84 +755,73 @@ async def get_user_transcripts(
     """Получить все транскрипции пользователя с пагинацией"""
     try:
         logger.info(f"Fetching transcripts for user: {current_user}")
+
+        from sqlalchemy import text
         
-        # Получаем части транскрипций, созданные пользователем
-        user_parts = db.select_parts_transcription_by_employee_id(current_user["user_id"])
-        logger.info(f"Found {len(user_parts) if user_parts else 0} parts for user {current_user['user_id']}")
+        with db.session_scope() as session:
+            user_id = current_user["user_id"]
+            
+            # Получаем транскрипции пользователя напрямую по employee_id
+            sql = text("""
+                SELECT t.id, t.title, t.text, t.created_at
+                FROM "Transcripts" t
+                WHERE t.employee_id = :user_id
+                ORDER BY t.created_at DESC
+                LIMIT :limit OFFSET :offset
+            """)
+            
+            result = session.execute(sql, {"user_id": user_id, "limit": limit, "offset": offset})
+            rows = result.fetchall()
+            
+            # Получаем общее количество
+            count_sql = text("""
+                SELECT COUNT(t.id)
+                FROM "Transcripts" t
+                WHERE t.employee_id = :user_id
+            """)
+            count_result = session.execute(count_sql, {"user_id": user_id})
+            total = count_result.scalar() or 0
 
-        # Группируем по transcript_id
-        transcripts_map = {}
-
-        for part in user_parts:
-            transcript_id_str = part.get('transcript_id')
-            if not transcript_id_str:
-                logger.warning(f"Part missing transcript_id: {part.get('id')}")
-                continue
-
-            if transcript_id_str not in transcripts_map:
-                # Получаем основную информацию о транскрипции
-                try:
-                    transcript_uuid = UUID(transcript_id_str)
-                except ValueError:
-                    continue
-
-                transcript_data = db.select_transcripts_by_id(transcript_uuid)
-                if not transcript_data:
-                    logger.warning(f"Transcript data not found for {transcript_uuid}")
-                    continue
-
-                # Получаем суммаризацию
-                summary_data = db.select_summaries_by_transcript_id(transcript_uuid)
-
-                transcripts_map[transcript_id_str] = {
-                    "transcript_id": transcript_id_str,
-                    "original_text": transcript_data.get('original_text') or '',
-                    "title": transcript_data.get('title') or f'Запись от {transcript_id_str[:8]}',
-                    "created_at": transcript_data.get('created_at'),
-                    "summary": summary_data.get('text') if summary_data else None,
-                    "key_points": summary_data.get('key_points') if summary_data else None,
-                    "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
-                    "parts": []
-                }
-
-            # Добавляем часть в список
-            transcripts_map[transcript_id_str]["parts"].append(part)
-
-        # Преобразуем в список и сортируем по дате (сначала новые)
-        transcripts_list = list(transcripts_map.values())
-        
-        # Добавляем длительность и количество спикеров
-        for transcript in transcripts_list:
-            parts = transcript.get("parts", [])
+        transcripts_list = []
+        for row in rows:
+            transcript_uuid = row[0]
+            
+            # Получаем части транскрипции
+            parts = db.select_parts_transcription_by_transcript_id(transcript_uuid)
+            
+            # Получаем суммаризацию
+            summary_data = db.select_summaries_by_transcript_id(transcript_uuid)
             
             # Количество уникальных спикеров
             speakers = set()
-            for part in parts:
-                text = part.get("text", "")
-                if ":" in text:
-                    speaker = text.split(":")[0].strip()
-                    speakers.add(speaker)
-            transcript["speakers"] = list(speakers)
-            
-            # Длительность в минутах
+            duration = 0
             if parts:
+                for part in parts:
+                    text_part = part.get("text", "")
+                    if ":" in text_part:
+                        speaker = text_part.split(":")[0].strip()
+                        speakers.add(speaker)
+                
                 min_start = min(p.get("start_time", 0) for p in parts)
                 max_end = max(p.get("end_time", 0) for p in parts)
-                transcript["duration"] = (max_end - min_start) / 1000.0 / 60.0  # конвертируем в минуты
-            else:
-                transcript["duration"] = 0
+                duration = (max_end - min_start) / 1000.0 / 60.0
 
-        transcripts_list.sort(
-            key=lambda x: x.get('created_at', ''),
-            reverse=True
-        )
-
-        # Применяем пагинацию
-        total = len(transcripts_list)
-        paginated = transcripts_list[offset:offset + limit]
+            transcript_obj = {
+                "transcript_id": str(transcript_uuid),
+                "original_text": row[2] or '',
+                "title": row[1] or f'Запись от {str(transcript_uuid)[:8]}',
+                "created_at": row[3].isoformat() if row[3] else None,
+                "summary": summary_data.get('text') if summary_data else None,
+                "key_points": summary_data.get('key_points') if summary_data else None,
+                "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
+                "speakers": list(speakers),
+                "duration": duration,
+                "parts": parts or []
+            }
+            transcripts_list.append(transcript_obj)
 
         return {
-            "items": paginated,
+            "items": transcripts_list,
             "total": total,
             "limit": limit,
             "offset": offset
@@ -843,7 +830,7 @@ async def get_user_transcripts(
     except Exception as e:
         import traceback
         error_traceback = traceback.format_exc()
-        logger.error(f"Error fetching user transcripts: {str(e)}")
+        logger.error(f"Error fetching transcripts: {str(e)}")
         logger.error(f"Traceback: {error_traceback}")
         raise HTTPException(500, f"Error fetching transcripts: {str(e)}")
 
@@ -899,20 +886,62 @@ async def delete_transcript(
             transcript_uuid = UUID(transcript_id)
         except ValueError:
             raise HTTPException(400, "Некорректный формат ID транскрипции")
-        
+
         success = db.delete_transcripts(transcript_uuid)
-           
+
         if success:
             return {"status": "success", "message": "Транскрипция удалена"}
         else:
             raise HTTPException(404, "Транскрипция не найдена")
-            
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"❌ Ошибка при удалении: {str(e)}")
         logger.error(f"Error deleting transcript: {str(e)}")
         raise HTTPException(500, f"Ошибка при удалении транскрипции: {str(e)}")
+
+
+@app.put("/transcripts/{transcript_id}/rename")
+async def rename_transcript(
+    transcript_id: str,
+    rename_data: Dict[str, str],
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Переименовать транскрипцию"""
+    try:
+        # Преобразуем строку в UUID
+        try:
+            transcript_uuid = UUID(transcript_id)
+        except ValueError:
+            raise HTTPException(400, "Некорректный формат ID транскрипции")
+
+        # Проверяем новое название
+        new_title = rename_data.get("title", "").strip()
+        if not new_title:
+            raise HTTPException(400, "Название не может быть пустым")
+        if len(new_title) > 500:
+            raise HTTPException(400, "Название слишком длинное (макс. 500 символов)")
+
+        # Проверяем, существует ли транскрипция и принадлежит ли пользователю
+        transcript_data = db.select_transcripts_by_id(transcript_uuid)
+        if not transcript_data:
+            raise HTTPException(404, "Транскрипция не найдена")
+
+        # Обновляем название
+        success = db.update_transcripts(transcript_uuid, title=new_title)
+
+        if success:
+            return {"status": "success", "message": "Транскрипция переименована", "title": new_title}
+        else:
+            raise HTTPException(500, "Ошибка при обновлении названия")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error renaming transcript: {str(e)}")
+        raise HTTPException(500, f"Ошибка при переименовании транскрипции: {str(e)}")
 
 @app.get("/admin/users")
 async def get_all_users(

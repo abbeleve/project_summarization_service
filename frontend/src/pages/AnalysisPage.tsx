@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useTranscripts } from '@/hooks/useTranscripts';
+import { transcriptsApi } from '@/api/transcripts';
 import { SummaryCard } from '@/components/analysis/SummaryCard';
 import { SpeakerDistributionChart } from '@/components/analysis/SpeakerDistributionChart';
 import { TranscriptSegment } from '@/components/analysis/TranscriptSegment';
@@ -15,8 +16,11 @@ export const AnalysisPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { getTranscript } = useTranscripts();
-  const { data: transcript, isLoading, error } = getTranscript(id || '');
+  const { data: transcript, isLoading, error, refetch } = getTranscript(id || '');
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   // Функция для прокрутки к нужному сегменту
   const handleSegmentClick = (segment: TranscriptSegmentType) => {
@@ -24,7 +28,7 @@ export const AnalysisPage = () => {
       // Находим элемент с нужным startTime в data-атрибуте
       const elements = transcriptContainerRef.current.querySelectorAll('[data-start-time]');
       let targetElement: Element | null = null;
-      
+
       // Ищем ближайший сегмент по времени
       for (const el of elements) {
         const startTime = parseFloat(el.getAttribute('data-start-time') || '0');
@@ -33,7 +37,7 @@ export const AnalysisPage = () => {
           break;
         }
       }
-      
+
       if (targetElement) {
         targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
         // Подсветим элемент
@@ -43,6 +47,27 @@ export const AnalysisPage = () => {
         }, 2000);
       }
     }
+  };
+
+  // Переименование транскрипции
+  const handleRename = async () => {
+    if (!id || !editTitle.trim()) return;
+    
+    setIsSaving(true);
+    try {
+      await transcriptsApi.rename(id, editTitle.trim());
+      await refetch();
+      setIsEditing(false);
+    } catch (err) {
+      console.error('Ошибка переименования:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const startEditing = () => {
+    setEditTitle(transcript?.title || '');
+    setIsEditing(true);
   };
 
   if (!id) {
@@ -91,13 +116,49 @@ export const AnalysisPage = () => {
         <Button variant="ghost" onClick={() => navigate('/')}>
           ← Назад
         </Button>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm">
-            📥 Скачать JSON
-          </Button>
-          <Button variant="secondary" size="sm">
-            📋 Скачать отчёт
-          </Button>
+        <div className="flex items-center gap-2">
+          {isEditing ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRename();
+                  if (e.key === 'Escape') setIsEditing(false);
+                }}
+                className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                placeholder="Новое название"
+                autoFocus
+              />
+              <Button
+                size="sm"
+                onClick={handleRename}
+                disabled={isSaving || !editTitle.trim()}
+              >
+                {isSaving ? '...' : '💾'}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setIsEditing(false)}
+              >
+                ✕
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Button variant="secondary" size="sm" onClick={startEditing}>
+                ✏️ Переименовать
+              </Button>
+              <Button variant="secondary" size="sm">
+                📥 Скачать JSON
+              </Button>
+              <Button variant="secondary" size="sm">
+                📋 Скачать отчёт
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
