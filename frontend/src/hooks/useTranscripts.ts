@@ -1,21 +1,28 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { transcriptsApi, type TranscriptsResponse } from '@/api/transcripts';
+import { transcriptsApi, type TranscriptsResponse, type SearchTranscriptsResponse } from '@/api/transcripts';
 import type { Transcript, ProcessingSettings, ProcessAudioResponse, TaskQueuedResponse } from '@/types/transcript';
 
 interface UseTranscriptsOptions {
   limit?: number;
   offset?: number;
+  searchQuery?: string;
+  searchType?: 'exact' | 'fuzzy';
 }
 
 export const useTranscripts = (options: UseTranscriptsOptions = {}) => {
   const queryClient = useQueryClient();
-  const { limit = 50, offset = 0 } = options;
+  const { limit = 50, offset = 0, searchQuery, searchType = 'exact' } = options;
 
-  const { data: transcriptsData, isLoading, error, refetch } = useQuery<TranscriptsResponse, Error>({
-    queryKey: ['transcripts', limit, offset],
-    queryFn: () => transcriptsApi.getAll(limit, offset),
+  const hasSearch = searchQuery && searchQuery.trim().length > 0;
+
+  const { data: transcriptsData, isLoading, error, refetch } = useQuery<TranscriptsResponse | SearchTranscriptsResponse, Error>({
+    queryKey: ['transcripts', limit, offset, searchQuery || 'all', searchType],
+    queryFn: () => hasSearch
+      ? transcriptsApi.search(searchQuery, searchType, limit, offset)
+      : transcriptsApi.getAll(limit, offset),
     staleTime: 5 * 60 * 1000,
-    retry: 1
+    retry: 1,
+    refetchOnWindowFocus: false
   });
 
   const processMutation = useMutation({

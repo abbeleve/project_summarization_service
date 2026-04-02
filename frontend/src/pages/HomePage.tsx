@@ -19,9 +19,12 @@ const TRANSCRIPTS_PER_PAGE = 20;
 export const HomePage = () => {
   const navigate = useNavigate();
   const [offset, setOffset] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [actualSearchQuery, setActualSearchQuery] = useState(''); // Для поиска по кнопке
   const { transcripts, isLoading, error, total, refetch, processAudio, deleteTranscript } = useTranscripts({
     limit: TRANSCRIPTS_PER_PAGE,
-    offset
+    offset,
+    searchQuery: actualSearchQuery || undefined
   });
   const { tasks, addTask, removeTask } = useActiveTasks();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -33,8 +36,10 @@ export const HomePage = () => {
     if (completedTask) {
       setTaskError(null);
       refetch();
+      // Удаляем задачу из списка после обновления
+      removeTask(completedTask.task_id);
     }
-  }, [tasks, refetch]);
+  }, [tasks.map(t => `${t.task_id}-${t.status}`).join(',')]); // Только при изменении статуса задач
 
   const handleProcess = async (file: File, settings: ProcessingSettings) => {
     try {
@@ -108,15 +113,61 @@ export const HomePage = () => {
 
       {/* History section */}
       <section className="mt-8">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-lg">
-            <span className="text-2xl">📋</span>
+        <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-lg">
+              <span className="text-2xl">📋</span>
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">История транскрипций</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {total > 0 ? `Всего ${total} транскрипций` : 'Пока пусто'}
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">История транскрипций</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {total > 0 ? `Всего ${total} транскрипций` : 'Пока пусто'}
-            </p>
+
+          {/* Поиск по названию */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setActualSearchQuery(searchQuery);
+                    setOffset(0);
+                  }
+                }}
+                placeholder="Поиск по названию..."
+                className="w-full px-4 py-2 pl-10 pr-10 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all"
+              />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                🔍
+              </span>
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setActualSearchQuery('');
+                    setOffset(0);
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <Button
+              onClick={() => {
+                setActualSearchQuery(searchQuery);
+                setOffset(0);
+              }}
+              size="sm"
+              className="whitespace-nowrap"
+            >
+              Найти
+            </Button>
           </div>
         </div>
 
@@ -142,7 +193,15 @@ export const HomePage = () => {
           <div>
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                Показано <span className="font-semibold text-gray-900 dark:text-white">{transcripts.length}</span> из <span className="font-semibold text-gray-900 dark:text-white">{total}</span> транскрипций
+                {searchQuery ? (
+                  <>
+                    Найдено <span className="font-semibold text-gray-900 dark:text-white">{transcripts.length}</span> из <span className="font-semibold text-gray-900 dark:text-white">{total}</span> транскрипций по запросу "<span className="font-medium text-violet-600 dark:text-violet-400">{searchQuery}</span>"
+                  </>
+                ) : (
+                  <>
+                    Показано <span className="font-semibold text-gray-900 dark:text-white">{transcripts.length}</span> из <span className="font-semibold text-gray-900 dark:text-white">{total}</span> транскрипций
+                  </>
+                )}
               </p>
             </div>
             <div className="grid gap-4">
@@ -155,19 +214,19 @@ export const HomePage = () => {
                   <div className="flex items-start gap-4">
                     {/* Иконка типа встречи */}
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm ${
-                      transcript.meeting_type.includes('Оперативное') ? 'bg-gradient-to-br from-blue-400 to-blue-500' :
-                      transcript.meeting_type.includes('Стратегическое') ? 'bg-gradient-to-br from-purple-400 to-purple-500' :
-                      transcript.meeting_type.includes('Финансовое') ? 'bg-gradient-to-br from-green-400 to-green-500' :
-                      transcript.meeting_type.includes('HR') ? 'bg-gradient-to-br from-pink-400 to-pink-500' :
-                      transcript.meeting_type.includes('Экстренное') ? 'bg-gradient-to-br from-red-400 to-red-500' :
+                      transcript.meeting_type?.includes('Оперативное') ? 'bg-gradient-to-br from-blue-400 to-blue-500' :
+                      transcript.meeting_type?.includes('Стратегическое') ? 'bg-gradient-to-br from-purple-400 to-purple-500' :
+                      transcript.meeting_type?.includes('Финансовое') ? 'bg-gradient-to-br from-green-400 to-green-500' :
+                      transcript.meeting_type?.includes('HR') ? 'bg-gradient-to-br from-pink-400 to-pink-500' :
+                      transcript.meeting_type?.includes('Экстренное') ? 'bg-gradient-to-br from-red-400 to-red-500' :
                       'bg-gradient-to-br from-orange-400 to-orange-500'
                     }`}>
                       <span className="text-lg">
-                        {transcript.meeting_type.includes('Оперативное') ? '📊' :
-                         transcript.meeting_type.includes('Стратегическое') ? '🎯' :
-                         transcript.meeting_type.includes('Финансовое') ? '💰' :
-                         transcript.meeting_type.includes('HR') ? '👥' :
-                         transcript.meeting_type.includes('Экстренное') ? '🚨' :
+                        {transcript.meeting_type?.includes('Оперативное') ? '📊' :
+                         transcript.meeting_type?.includes('Стратегическое') ? '🎯' :
+                         transcript.meeting_type?.includes('Финансовое') ? '💰' :
+                         transcript.meeting_type?.includes('HR') ? '👥' :
+                         transcript.meeting_type?.includes('Экстренное') ? '🚨' :
                          '📋'}
                       </span>
                     </div>
@@ -203,14 +262,14 @@ export const HomePage = () => {
 
                       <div className="flex flex-wrap items-center gap-2 mb-3">
                         <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                          transcript.meeting_type.includes('Оперативное') ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
-                          transcript.meeting_type.includes('Стратегическое') ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
-                          transcript.meeting_type.includes('Финансовое') ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
-                          transcript.meeting_type.includes('HR') ? 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300' :
-                          transcript.meeting_type.includes('Экстренное') ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
+                          transcript.meeting_type?.includes('Оперативное') ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
+                          transcript.meeting_type?.includes('Стратегическое') ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
+                          transcript.meeting_type?.includes('Финансовое') ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
+                          transcript.meeting_type?.includes('HR') ? 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300' :
+                          transcript.meeting_type?.includes('Экстренное') ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
                           'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
                         }`}>
-                          {transcript.meeting_type}
+                          {transcript.meeting_type || 'Не определено'}
                         </span>
                         <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 flex items-center gap-1">
                           <span>📅</span>

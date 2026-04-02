@@ -8,6 +8,11 @@ export interface TranscriptsResponse {
   offset: number;
 }
 
+export interface SearchTranscriptsResponse extends TranscriptsResponse {
+  query: string;
+  search_type: string;
+}
+
 export const transcriptsApi = {
   processAudio: async (
     file: File,
@@ -30,6 +35,18 @@ export const transcriptsApi = {
 
   getAll: async (limit: number = 50, offset: number = 0): Promise<TranscriptsResponse> => {
     const response = await apiClient.get<TranscriptsResponse>(`/transcripts?limit=${limit}&offset=${offset}`);
+    return response.data;
+  },
+
+  search: async (
+    query: string,
+    searchType: string = 'exact',
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<SearchTranscriptsResponse> => {
+    const response = await apiClient.get<SearchTranscriptsResponse>(
+      `/transcripts/search?query=${encodeURIComponent(query)}&search_type=${searchType}&limit=${limit}&offset=${offset}`
+    );
     return response.data;
   },
 

@@ -40,7 +40,7 @@ const saveTasksToStorage = (tasks: ActiveTask[]) => {
 export const useActiveTasks = (): UseActiveTasksReturn => {
   const [tasks, setTasks] = useState<ActiveTask[]>(loadTasksFromStorage);
 
-  // Обновляем статус задач каждые 5 секунд
+  // Обновляем статус задач каждые 10 секунд
   useEffect(() => {
     if (tasks.length === 0) return;
 
@@ -67,7 +67,7 @@ export const useActiveTasks = (): UseActiveTasksReturn => {
     };
 
     updateTasks();
-    const interval = setInterval(updateTasks, 5000);
+    const interval = setInterval(updateTasks, 10000); // 10 секунд вместо 5
     return () => clearInterval(interval);
   }, [tasks.map(t => t.task_id).join(',')]); // Обновляем при изменении списка ID
 

@@ -623,6 +623,130 @@ async def get_chat_history(
 
 
 
+@app.get("/transcripts/search")
+async def search_transcripts(
+    query: Optional[str] = None,
+    search_type: str = "exact",  # "exact" или "fuzzy" (для будущего расширения)
+    limit: int = 50,
+    offset: int = 0,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """
+    Поиск транскрипций по названию.
+    
+    Параметры:
+    - query: поисковый запрос (если пустой - возвращается пустой список)
+    - search_type: тип поиска ("exact" - точное совпадение, "fuzzy" - нечёткий поиск)
+    - limit: максимальное количество результатов
+    - offset: смещение для пагинации
+    """
+    try:
+        # Если запрос пустой - возвращаем пустой результат
+        if not query or not query.strip():
+            return {
+                "items": [],
+                "total": 0,
+                "limit": limit,
+                "offset": offset,
+                "query": query or "",
+                "search_type": search_type
+            }
+        
+        logger.info(f"Search transcripts for user {current_user['user_id']}: query='{query}', type='{search_type}'")
+
+        # Ищем транскрипции пользователя по названию через SQL LIKE
+        from sqlalchemy import text
+        
+        with db.session_scope() as session:
+            # Получаем transcript_id через JOIN с PartsTranscription
+            # чтобы найти только транскрипции текущего пользователя
+            user_id = current_user["user_id"]
+            query_lower = f"%{query.lower()}%"
+            
+            # SQL запрос с поиском по названию (case-insensitive)
+            sql = text("""
+                SELECT DISTINCT t.id, t.title, t.text, t.created_at
+                FROM "Transcripts" t
+                INNER JOIN "PartsTranscription" pt ON t.id = pt.transcript_id
+                WHERE pt.employee_id = :user_id
+                  AND LOWER(t.title) LIKE :query
+                ORDER BY t.created_at DESC
+                LIMIT :limit OFFSET :offset
+            """)
+            
+            result = session.execute(
+                sql,
+                {"user_id": user_id, "query": query_lower, "limit": limit, "offset": offset}
+            )
+            rows = result.fetchall()
+            
+            # Получаем общее количество для пагинации
+            count_sql = text("""
+                SELECT COUNT(DISTINCT t.id)
+                FROM "Transcripts" t
+                INNER JOIN "PartsTranscription" pt ON t.id = pt.transcript_id
+                WHERE pt.employee_id = :user_id
+                  AND LOWER(t.title) LIKE :query
+            """)
+            count_result = session.execute(count_sql, {"user_id": user_id, "query": query_lower})
+            total = count_result.scalar() or 0
+
+        transcripts_list = []
+        for row in rows:
+            transcript_uuid = row[0]
+            
+            # Получаем части транскрипции
+            parts = db.select_parts_transcription_by_transcript_id(transcript_uuid)
+            
+            # Получаем суммаризацию
+            summary_data = db.select_summaries_by_transcript_id(transcript_uuid)
+            
+            # Количество уникальных спикеров
+            speakers = set()
+            duration = 0
+            if parts:
+                for part in parts:
+                    text_part = part.get("text", "")
+                    if ":" in text_part:
+                        speaker = text_part.split(":")[0].strip()
+                        speakers.add(speaker)
+                
+                min_start = min(p.get("start_time", 0) for p in parts)
+                max_end = max(p.get("end_time", 0) for p in parts)
+                duration = (max_end - min_start) / 1000.0 / 60.0
+
+            transcript_obj = {
+                "transcript_id": str(transcript_uuid),
+                "original_text": row[2] or '',
+                "title": row[1] or f'Запись от {str(transcript_uuid)[:8]}',
+                "created_at": row[3].isoformat() if row[3] else None,
+                "summary": summary_data.get('text') if summary_data else None,
+                "key_points": summary_data.get('key_points') if summary_data else None,
+                "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
+                "speakers": list(speakers),
+                "duration": duration,
+                "parts": parts or []
+            }
+            transcripts_list.append(transcript_obj)
+
+        return {
+            "items": transcripts_list,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "query": query,
+            "search_type": search_type
+        }
+
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        logger.error(f"Error searching transcripts: {str(e)}")
+        logger.error(f"Traceback: {error_traceback}")
+        raise HTTPException(500, f"Error searching transcripts: {str(e)}")
+
+
 @app.get("/transcripts")
 async def get_user_transcripts(
     limit: int = 10,
