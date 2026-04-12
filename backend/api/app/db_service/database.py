@@ -145,6 +145,11 @@ class PartsTranscription(Base):
         "Transcript",
         back_populates="parts_transcriptions"
     )
+    annotations: Mapped[List["Annotation"]] = relationship(
+        "Annotation",
+        back_populates="part",
+        cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint("end_time > start_time"),
@@ -157,6 +162,46 @@ class PartsTranscription(Base):
             'text': self.text,
             'start_time': self.start_time,
             'end_time': self.end_time,
+        }
+
+
+class Annotation(Base):
+    __tablename__ = 'Annotations'
+    part_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('PartsTranscription.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
+    employee_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Staff.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
+    start_char: Mapped[int] = mapped_column(nullable=False)
+    end_char: Mapped[int] = mapped_column(nullable=False)
+    color: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    part: Mapped["PartsTranscription"] = relationship(
+        "PartsTranscription",
+        back_populates="annotations"
+    )
+
+    __table_args__ = (
+        CheckConstraint("end_char > start_char"),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'part_id': str(self.part_id),
+            'employee_id': str(self.employee_id),
+            'start_char': self.start_char,
+            'end_char': self.end_char,
+            'color': self.color,
+            'note': self.note,
         }
 
 
@@ -562,6 +607,100 @@ class DataBaseManager:
                 return True
             except SQLAlchemyError as e:
                 print(f"Ошибка при удалении части транскрипции: {e}")
+                return False
+
+
+    # ===== Annotations CRUD =====
+
+    def insert_annotation(self, part_id: UUID, employee_id: UUID, 
+                         start_char: int, end_char: int,
+                         color: Optional[str] = None, 
+                         note: Optional[str] = None) -> Optional[UUID]:
+        with self.session_scope() as session:
+            try:
+                annotation = Annotation(
+                    part_id=part_id,
+                    employee_id=employee_id,
+                    start_char=start_char,
+                    end_char=end_char,
+                    color=color,
+                    note=note
+                )
+                session.add(annotation)
+                session.flush()
+                return annotation.id
+            except SQLAlchemyError as e:
+                print(f"Ошибка при создании аннотации: {e}")
+                return None
+
+    def select_annotations_by_part_id(self, part_id: UUID) -> List[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                annotations = session.query(Annotation).filter(
+                    Annotation.part_id == part_id
+                ).all()
+                return [ann.to_dict() for ann in annotations]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении аннотаций: {e}")
+                return []
+
+    def select_annotations_by_employee_id(self, employee_id: UUID) -> List[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                annotations = session.query(Annotation).filter(
+                    Annotation.employee_id == employee_id
+                ).all()
+                return [ann.to_dict() for ann in annotations]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении аннотаций пользователя: {e}")
+                return []
+
+    def select_annotations_by_transcript_and_employee(self, transcript_id: UUID, employee_id: UUID) -> List[Dict[str, Any]]:
+        """Получить все аннотации пользователя для конкретной транскрипции (один SQL запрос)"""
+        with self.session_scope() as session:
+            try:
+                annotations = (
+                    session.query(Annotation)
+                    .join(PartsTranscription, Annotation.part_id == PartsTranscription.id)
+                    .filter(
+                        PartsTranscription.transcript_id == transcript_id,
+                        Annotation.employee_id == employee_id
+                    )
+                    .order_by(PartsTranscription.start_time, Annotation.start_char)
+                    .all()
+                )
+                return [ann.to_dict() for ann in annotations]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении аннотаций транскрипции: {e}")
+                return []
+
+    def update_annotation(self, annotation_id: UUID, **kwargs) -> bool:
+        with self.session_scope() as session:
+            try:
+                annotation = session.get(Annotation, annotation_id)
+                if not annotation:
+                    return False
+
+                for key, value in kwargs.items():
+                    if hasattr(annotation, key) and key not in ['id', 'part_id', 'employee_id']:
+                        setattr(annotation, key, value)
+
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при обновлении аннотации: {e}")
+                return False
+
+    def delete_annotation(self, annotation_id: UUID) -> bool:
+        with self.session_scope() as session:
+            try:
+                annotation = session.get(Annotation, annotation_id)
+                if not annotation:
+                    return False
+
+                session.delete(annotation)
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при удалении аннотации: {e}")
                 return False
 
 

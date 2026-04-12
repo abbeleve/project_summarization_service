@@ -13,6 +13,16 @@ export interface SearchTranscriptsResponse extends TranscriptsResponse {
   search_type: string;
 }
 
+export interface Annotation {
+  id: string;
+  part_id: string;
+  employee_id: string;
+  start_char: number;
+  end_char: number;
+  color?: string;
+  note?: string;
+}
+
 export const transcriptsApi = {
   processAudio: async (
     file: File,
@@ -74,5 +84,20 @@ export const transcriptsApi = {
       timeout: 120000
     });
     return response.data;
+  },
+
+  // Annotations
+  createAnnotation: async (data: { part_id: string; start_char: number; end_char: number; color?: string; note?: string }): Promise<Annotation> => {
+    const response = await apiClient.post('/annotations', data);
+    return response.data;
+  },
+
+  getAnnotations: async (transcriptId: string): Promise<Annotation[]> => {
+    const response = await apiClient.get(`/transcripts/${transcriptId}/annotations`);
+    return response.data.annotations;
+  },
+
+  deleteAnnotation: async (annotationId: string): Promise<void> => {
+    await apiClient.delete(`/annotations/${annotationId}`);
   }
 };

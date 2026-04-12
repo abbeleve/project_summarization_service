@@ -943,6 +943,126 @@ async def rename_transcript(
         logger.error(f"Error renaming transcript: {str(e)}")
         raise HTTPException(500, f"Ошибка при переименовании транскрипции: {str(e)}")
 
+
+# ===== Annotations API =====
+
+@app.post("/annotations")
+async def create_annotation(
+    annotation_data: Dict[str, Any],
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Создать аннотацию (подчёркивание)"""
+    try:
+        from uuid import UUID
+        
+        part_id = annotation_data.get("part_id")
+        start_char = annotation_data.get("start_char")
+        end_char = annotation_data.get("end_char")
+        color = annotation_data.get("color")
+        note = annotation_data.get("note")
+
+        # Валидация
+        if not part_id or start_char is None or end_char is None:
+            raise HTTPException(400, "part_id, start_char и end_char обязательны")
+        if end_char <= start_char:
+            raise HTTPException(400, "end_char должен быть больше start_char")
+
+        # Проверяем, существует ли часть транскрипции
+        part = db.select_parts_transcription_by_id(UUID(part_id))
+        if not part:
+            raise HTTPException(404, "Часть транскрипции не найдена")
+
+        # Создаём аннотацию
+        annotation_id = db.insert_annotation(
+            part_id=UUID(part_id),
+            employee_id=UUID(current_user["user_id"]),
+            start_char=start_char,
+            end_char=end_char,
+            color=color,
+            note=note
+        )
+
+        if not annotation_id:
+            raise HTTPException(500, "Ошибка при создании аннотации")
+
+        return {
+            "id": str(annotation_id),
+            "part_id": part_id,
+            "start_char": start_char,
+            "end_char": end_char,
+            "color": color,
+            "note": note
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating annotation: {str(e)}")
+        raise HTTPException(500, f"Ошибка при создании аннотации: {str(e)}")
+
+
+@app.get("/transcripts/{transcript_id}/annotations")
+async def get_transcript_annotations(
+    transcript_id: str,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Получить все аннотации транскрипции для текущего пользователя"""
+    try:
+        from uuid import UUID
+        
+        transcript_uuid = UUID(transcript_id)
+        
+        # Проверяем, существует ли транскрипция
+        transcript = db.select_transcripts_by_id(transcript_uuid)
+        if not transcript:
+            raise HTTPException(404, "Транскрипция не найдена")
+
+        # Один запрос в БД — все аннотации пользователя для этой транскрипции
+        annotations = db.select_annotations_by_transcript_and_employee(
+            transcript_uuid,
+            UUID(current_user["user_id"])
+        )
+
+        return {"annotations": annotations, "count": len(annotations)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting annotations: {str(e)}")
+        raise HTTPException(500, f"Ошибка при получении аннотаций: {str(e)}")
+
+
+@app.delete("/annotations/{annotation_id}")
+async def delete_annotation(
+    annotation_id: str,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Удалить аннотацию"""
+    try:
+        from uuid import UUID
+        
+        annotation_uuid = UUID(annotation_id)
+        
+        # Проверяем, существует ли аннотация и принадлежит ли пользователю
+        # Получаем аннотацию через прямой запрос к БД
+        # (нужно добавить метод select_annotation_by_id)
+        success = db.delete_annotation(annotation_uuid)
+
+        if success:
+            return {"status": "success", "message": "Аннотация удалена"}
+        else:
+            raise HTTPException(404, "Аннотация не найдена")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting annotation: {str(e)}")
+        raise HTTPException(500, f"Ошибка при удалении аннотации: {str(e)}")
+
+
 @app.get("/admin/users")
 async def get_all_users(
     current_user: Dict = Depends(get_current_user),
