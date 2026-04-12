@@ -2,6 +2,8 @@ import { memo } from 'react';
 import { clsx } from 'clsx';
 import { formatTime } from '@/utils/formatTime';
 import { getSpeakerColor } from '@/utils/speakerColors';
+import { AnnotatedText } from './AnnotatedText';
+import { type Annotation } from '@/api/transcripts';
 
 interface TranscriptSegmentProps {
   speaker: string;
@@ -9,6 +11,9 @@ interface TranscriptSegmentProps {
   startTime: number;
   endTime: number;
   isActive?: boolean;
+  partId?: string;
+  annotations?: Annotation[];
+  onAnnotationClick?: (annotation: Annotation) => void;
   onClick?: () => void;
 }
 
@@ -18,12 +23,16 @@ export const TranscriptSegment = memo(({
   startTime,
   endTime,
   isActive,
+  partId,
+  annotations = [],
+  onAnnotationClick,
   onClick
 }: TranscriptSegmentProps) => {
   const color = getSpeakerColor(speaker);
 
   return (
     <div
+      data-part-id={partId}
       onClick={onClick}
       className={clsx(
         'p-4 rounded-xl border transition-all cursor-pointer group',
@@ -55,7 +64,18 @@ export const TranscriptSegment = memo(({
               {formatTime(startTime)} – {formatTime(endTime)}
             </span>
           </div>
-          <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm">{text}</p>
+          <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm select-text">
+            {partId ? (
+              <AnnotatedText
+                text={text}
+                partId={partId}
+                annotations={annotations}
+                onAnnotationClick={onAnnotationClick}
+              />
+            ) : (
+              text
+            )}
+          </p>
         </div>
       </div>
     </div>

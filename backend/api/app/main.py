@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware import Middleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 import time
 import os
 import json
@@ -972,6 +972,20 @@ async def create_annotation(
         part = db.select_parts_transcription_by_id(UUID(part_id))
         if not part:
             raise HTTPException(404, "Часть транскрипции не найдена")
+
+        # Проверяем, нет ли уже аннотации с такими же параметрами (защита от дублирования)
+        existing_annotations = db.select_annotations_by_part_id(UUID(part_id))
+        for existing in existing_annotations:
+            if existing["employee_id"] != current_user["user_id"]:
+                continue
+            
+            # Проверка на пересечение диапазонов
+            if (start_char < existing["end_char"] and end_char > existing["start_char"]):
+                # Аннотация пересекается с существующей - не создаём
+                raise HTTPException(
+                    409, 
+                    "Аннотация уже существует для этого участка текста. Удалите существующую перед созданием новой."
+                )
 
         # Создаём аннотацию
         annotation_id = db.insert_annotation(
