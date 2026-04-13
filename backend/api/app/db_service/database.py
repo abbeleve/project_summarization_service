@@ -1100,7 +1100,13 @@ class DataBaseManager:
         meeting_url: str,
         provider: str,
         scheduled_at: datetime,
-        bot_name: Optional[str] = "Meeting Notetaker"
+        bot_name: Optional[str] = "Meeting Notetaker",
+        transcribe_model: Optional[str] = "v3_ctc",
+        diarization_model: Optional[str] = "pyannote/speaker-diarization-community-1",
+        diarize_lib: Optional[str] = "pyannote",
+        transcribe_lib: Optional[str] = "gigaam",
+        llm_model: Optional[str] = "gemini-2.5-flash",
+        noise_suppression: Optional[bool] = False
     ) -> Optional[UUID]:
         """
         Создаёт новую запись запланированного совещания.
@@ -1111,6 +1117,12 @@ class DataBaseManager:
             provider: Платформа (google, microsoft, zoom)
             scheduled_at: Время начала
             bot_name: Имя бота
+            transcribe_model: Модель транскрибации
+            diarization_model: Модель диаризации
+            diarize_lib: Библиотека диаризации
+            transcribe_lib: Библиотека транскрибации
+            llm_model: Модель LLM для суммаризации
+            noise_suppression: Использовать шумоподавление
 
         Returns:
             ID созданной записи или None
@@ -1123,7 +1135,13 @@ class DataBaseManager:
                     provider=provider,
                     scheduled_at=scheduled_at,
                     bot_name=bot_name,
-                    status="pending"
+                    status="pending",
+                    transcribe_model=transcribe_model,
+                    diarization_model=diarization_model,
+                    diarize_lib=diarize_lib,
+                    transcribe_lib=transcribe_lib,
+                    llm_model=llm_model,
+                    noise_suppression=noise_suppression
                 )
                 session.add(scheduled)
                 session.flush()
