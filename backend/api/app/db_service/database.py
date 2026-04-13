@@ -238,6 +238,93 @@ class Summary(Base):
         }
 
 
+class ScheduledMeeting(Base):
+    """
+    Модель для хранения запланированных совещаний.
+    """
+    __tablename__ = 'scheduled_meetings'
+
+    user_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Staff.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
+    meeting_url: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        comment="google, microsoft, zoom"
+    )
+    bot_name: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        default="Meeting Notetaker"
+    )
+    scheduled_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="pending"  # pending, processing, recording, completed, failed, cancelled
+    )
+    meeting_bot_task_id: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="ID задачи Celery для meeting-bot"
+    )
+    recording_url: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="URL записи из S3/MinIO"
+    )
+    result_transcript_id: Mapped[Optional[UUID]] = mapped_column(
+        UUIDType(as_uuid=True),
+        nullable=True,
+        comment="ID созданной транскрипции после обработки"
+    )
+    error: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True
+    )
+    created_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    updated_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
+
+    user: Mapped["Staff"] = relationship(
+        "Staff",
+        foreign_keys=[user_id]
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'user_id': str(self.user_id),
+            'meeting_url': self.meeting_url,
+            'provider': self.provider,
+            'bot_name': self.bot_name,
+            'scheduled_at': self.scheduled_at.isoformat(),
+            'status': self.status,
+            'meeting_bot_task_id': self.meeting_bot_task_id,
+            'recording_url': self.recording_url,
+            'result_transcript_id': str(self.result_transcript_id) if self.result_transcript_id else None,
+            'error': self.error,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
+        }
+
+
 class CeleryTask(Base):
     """
     Модель для хранения статуса задач Celery.
@@ -948,11 +1035,11 @@ class DataBaseManager:
     def get_user_celery_tasks(self, user_id: UUID, limit: int = 50) -> List[Dict[str, Any]]:
         """
         Получает список задач Celery пользователя.
-        
+
         Args:
             user_id: ID пользователя
             limit: Максимальное количество задач
-        
+
         Returns:
             Список задач
         """
@@ -967,3 +1054,122 @@ class DataBaseManager:
             except SQLAlchemyError as e:
                 print(f"Ошибка при получении задач Celery: {e}")
                 return []
+
+    # === Методы для работы с запланированными совещаниями ===
+
+    def insert_scheduled_meeting(
+        self,
+        user_id: UUID,
+        meeting_url: str,
+        provider: str,
+        scheduled_at: datetime,
+        bot_name: Optional[str] = "Meeting Notetaker"
+    ) -> Optional[UUID]:
+        """
+        Создаёт новую запись запланированного совещания.
+
+        Args:
+            user_id: ID пользователя
+            meeting_url: Ссылка на совещание
+            provider: Платформа (google, microsoft, zoom)
+            scheduled_at: Время начала
+            bot_name: Имя бота
+
+        Returns:
+            ID созданной записи или None
+        """
+        with self.session_scope() as session:
+            try:
+                scheduled = ScheduledMeeting(
+                    user_id=user_id,
+                    meeting_url=meeting_url,
+                    provider=provider,
+                    scheduled_at=scheduled_at,
+                    bot_name=bot_name,
+                    status="pending"
+                )
+                session.add(scheduled)
+                session.flush()
+                return scheduled.id
+            except SQLAlchemyError as e:
+                print(f"Ошибка при создании запланированного совещания: {e}")
+                return None
+
+    def select_scheduled_meeting(self, meeting_id: UUID) -> Optional[Dict[str, Any]]:
+        """Получить информацию о запланированном совещании."""
+        with self.session_scope() as session:
+            try:
+                meeting = session.get(ScheduledMeeting, meeting_id)
+                return meeting.to_dict() if meeting else None
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении запланированного совещания: {e}")
+                return None
+
+    def select_user_scheduled_meetings(self, user_id: UUID, limit: int = 50) -> List[Dict[str, Any]]:
+        """Получить список запланированных совещаний пользователя."""
+        with self.session_scope() as session:
+            try:
+                meetings = session.query(ScheduledMeeting)\
+                    .filter(ScheduledMeeting.user_id == user_id)\
+                    .order_by(ScheduledMeeting.scheduled_at.desc())\
+                    .limit(limit)\
+                    .all()
+                return [m.to_dict() for m in meetings]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении списка запланированных совещаний: {e}")
+                return []
+
+    def select_due_scheduled_meetings(self, grace_period_minutes: int = 2) -> List[Dict[str, Any]]:
+        """
+        Получить все совещания, которые должны начаться в ближайшее время.
+        Ищет совещания у которых scheduled_at <= now() + grace_period и status = 'pending'.
+        """
+        from sqlalchemy import text as sql_text
+
+        with self.session_scope() as session:
+            try:
+                # Находим все pending совещания, которые должны начаться в течение grace_period минут
+                meetings = session.query(ScheduledMeeting)\
+                    .filter(
+                        ScheduledMeeting.status == "pending",
+                        ScheduledMeeting.scheduled_at <= func.now() + text(f"INTERVAL '{grace_period_minutes} MINUTES'")
+                    )\
+                    .order_by(ScheduledMeeting.scheduled_at.asc())\
+                    .all()
+                return [m.to_dict() for m in meetings]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении due совещаний: {e}")
+                return []
+
+    def update_scheduled_meeting(self, meeting_id: UUID, **kwargs) -> bool:
+        """
+        Обновить запись запланированного совещания.
+        Можно обновить: status, meeting_bot_task_id, recording_url, result_transcript_id, error
+        """
+        with self.session_scope() as session:
+            try:
+                meeting = session.get(ScheduledMeeting, meeting_id)
+                if not meeting:
+                    return False
+
+                for key, value in kwargs.items():
+                    if hasattr(meeting, key) and key not in ['id', 'user_id', 'meeting_url', 'provider', 'scheduled_at']:
+                        setattr(meeting, key, value)
+
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при обновлении запланированного совещания: {e}")
+                return False
+
+    def delete_scheduled_meeting(self, meeting_id: UUID) -> bool:
+        """Удалить запись запланированного совещания."""
+        with self.session_scope() as session:
+            try:
+                meeting = session.get(ScheduledMeeting, meeting_id)
+                if not meeting:
+                    return False
+                session.delete(meeting)
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при удалении запланированного совещания: {e}")
+                return False
