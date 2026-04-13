@@ -18,7 +18,10 @@ from alembic.config import Config
 from alembic import command
 
 
-from .models.models import User, Token, TokenData, LoginRequest, TokenResponse, RegisterRequest
+from .models.models import (
+    User, Token, TokenData, LoginRequest, TokenResponse, RegisterRequest,
+    JoinMeetingRequest, ScheduleMeetingRequest, MeetingBotWebhookPayload
+)
 from .db_service.gen_fake_data import gen_fake_data
 from .db_service.database import DataBaseManager
 from .auth_service.jwt import jwt_service
@@ -1097,6 +1100,290 @@ async def get_all_users(
         ]
     except Exception as e:
         raise HTTPException(500, f"Error fetching users: {str(e)}")
+
+
+# ============================================================================
+# === MEETING BOT ENDPOINTS ===
+# ============================================================================
+
+@app.post("/meetings/join")
+async def join_meeting_now(
+    request: JoinMeetingRequest,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """
+    Немедленное подключение к совещанию.
+    Бот подключится к совещанию сразу после вызова.
+    """
+    from app.tasks.meetings import join_meeting_immediate
+
+    # Валидация provider
+    valid_providers = ["google", "microsoft", "zoom"]
+    if request.provider not in valid_providers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid provider: {request.provider}. Must be one of: {valid_providers}"
+        )
+
+    # Создаём запись в БД (для трекинга)
+    now = datetime.utcnow()
+    scheduled_id = db.insert_scheduled_meeting(
+        user_id=current_user["user_id"],
+        meeting_url=request.meeting_url,
+        provider=request.provider,
+        scheduled_at=now,
+        bot_name=request.bot_name
+    )
+
+    if not scheduled_id:
+        raise HTTPException(status_code=500, detail="Failed to create meeting record")
+
+    # Запускаем задачу немедленно
+    task = join_meeting_immediate.apply_async(
+        args=[str(scheduled_id), request.meeting_url, request.provider, current_user["user_id"]],
+        kwargs={"bot_name": request.bot_name}
+    )
+
+    # Сохраняем ID задачи
+    db.update_scheduled_meeting(scheduled_id, meeting_bot_task_id=str(task.id))
+
+    logger.info(f"Meeting join requested: {scheduled_id}, user: {current_user['user_id']}")
+
+    return {
+        "success": True,
+        "meeting_id": str(scheduled_id),
+        "task_id": str(task.id),
+        "status": "processing",
+        "message": "Meeting bot is joining the meeting now"
+    }
+
+
+@app.post("/meetings/schedule")
+async def schedule_meeting(
+    request: ScheduleMeetingRequest,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """
+    Запланировать подключение к совещанию.
+    Бот подключится в указанное время.
+    """
+    # Валидация provider
+    valid_providers = ["google", "microsoft", "zoom"]
+    if request.provider not in valid_providers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid provider: {request.provider}. Must be one of: {valid_providers}"
+        )
+
+    # Парсим время
+    try:
+        scheduled_at = datetime.fromisoformat(request.scheduled_at.replace("Z", "+00:00"))
+        # Убираем timezone info для сравнения с БД (БД хранит UTC)
+        scheduled_at = scheduled_at.replace(tzinfo=None)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid scheduled_at format. Use ISO 8601, e.g.: 2026-04-13T15:00:00"
+        )
+
+    # Проверяем что время в будущем
+    if scheduled_at <= datetime.utcnow():
+        raise HTTPException(
+            status_code=400,
+            detail="scheduled_at must be in the future"
+        )
+
+    # Создаём запись в БД
+    scheduled_id = db.insert_scheduled_meeting(
+        user_id=current_user["user_id"],
+        meeting_url=request.meeting_url,
+        provider=request.provider,
+        scheduled_at=scheduled_at,
+        bot_name=request.bot_name
+    )
+
+    if not scheduled_id:
+        raise HTTPException(status_code=500, detail="Failed to create meeting record")
+
+    logger.info(f"Meeting scheduled: {scheduled_id}, at: {scheduled_at}, user: {current_user['user_id']}")
+
+    return {
+        "success": True,
+        "meeting_id": str(scheduled_id),
+        "status": "scheduled",
+        "scheduled_at": scheduled_at.isoformat(),
+        "message": "Meeting has been scheduled. Bot will join at the scheduled time."
+    }
+
+
+@app.get("/meetings")
+async def get_user_meetings(
+    limit: int = 50,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Получить список запланированных совещаний пользователя."""
+    from uuid import UUID as UUID_obj
+
+    user_id = UUID_obj(current_user["user_id"])
+    meetings = db.select_user_scheduled_meetings(user_id, limit)
+
+    return {
+        "meetings": meetings,
+        "count": len(meetings)
+    }
+
+
+@app.get("/meetings/{meeting_id}")
+async def get_meeting_status(
+    meeting_id: str,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Получить статус конкретного запланированного совещания."""
+    from uuid import UUID as UUID_obj
+
+    meeting = db.select_scheduled_meeting(UUID_obj(meeting_id))
+
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    # Проверка прав доступа
+    if meeting["user_id"] != current_user["user_id"]:
+        if current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="No access to this meeting")
+
+    return meeting
+
+
+@app.delete("/meetings/{meeting_id}")
+async def cancel_meeting(
+    meeting_id: str,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Отменить запланированное совещание."""
+    from uuid import UUID as UUID_obj
+
+    meeting = db.select_scheduled_meeting(UUID_obj(meeting_id))
+
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    if meeting["user_id"] != current_user["user_id"]:
+        if current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="No access to this meeting")
+
+    # Можно отменить только pending или processing
+    if meeting["status"] in ("completed", "cancelled"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel meeting with status: {meeting['status']}"
+        )
+
+    db.update_scheduled_meeting(UUID_obj(meeting_id), status="cancelled")
+
+    return {
+        "success": True,
+        "meeting_id": meeting_id,
+        "status": "cancelled"
+    }
+
+
+@app.post("/meetings/webhook")
+async def meeting_bot_webhook(payload: MeetingBotWebhookPayload):
+    """
+    Webhook от meeting-bot. Вызывается когда запись совещания готова.
+    Этот эндпоинт НЕ требует аутентификации (meeting-bot не имеет JWT).
+    """
+    from app.tasks.meetings import process_recording_callback
+    from uuid import UUID
+
+    logger.info(f"Webhook received: recordingId={payload.recordingId}, status={payload.status}")
+
+    if payload.status == "failed":
+        # Запись не удалась, обновляем статус
+        # meeting_id в botId или recordingId
+        meeting_id = payload.recordingId  # Может потребоваться адаптация
+        db = DataBaseManager()
+        db.update_scheduled_meeting(
+            UUID(meeting_id),
+            status="failed",
+            error="Recording failed"
+        )
+        return {"status": "recorded", "message": "Failure recorded"}
+
+    # Запись готова, запускаем обработку
+    # meeting_id может быть в metadata.botId или recordingId
+    meeting_id = payload.metadata.get("botId") if payload.metadata else None
+    if not meeting_id:
+        meeting_id = payload.recordingId
+
+    user_id = payload.metadata.get("userId") if payload.metadata else None
+    if not user_id:
+        logger.warning(f"Webhook received without userId in metadata")
+        return {"status": "error", "message": "userId not found in metadata"}
+
+    recording_url = payload.blobUrl
+    if not recording_url:
+        logger.warning(f"Webhook received without blobUrl")
+        return {"status": "error", "message": "blobUrl not found"}
+
+    # Запускаем Celery задачу для обработки
+    task = process_recording_callback.apply_async(
+        args=[meeting_id, recording_url, user_id],
+        kwargs={"metadata": payload.metadata}
+    )
+
+    logger.info(f"Processing callback task: {task.id}")
+
+    return {
+        "status": "accepted",
+        "message": "Recording processing started",
+        "task_id": str(task.id)
+    }
+
+
+@app.post("/meetings/{meeting_id}/process-now")
+async def process_meeting_recording_now(
+    meeting_id: str,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """
+    Вручную запустить обработку записи для совещания.
+    Полезно если webhook не сработал и нужно перезапустить обработку.
+    """
+    from app.tasks.meetings import process_recording_callback
+    from uuid import UUID as UUID_obj
+
+    meeting = db.select_scheduled_meeting(UUID_obj(meeting_id))
+
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    if meeting["user_id"] != current_user["user_id"]:
+        if current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="No access to this meeting")
+
+    if not meeting.get("recording_url"):
+        raise HTTPException(status_code=400, detail="Recording URL not available yet")
+
+    # Запускаем обработку
+    task = process_recording_callback.apply_async(
+        args=[meeting_id, meeting["recording_url"], meeting["user_id"]]
+    )
+
+    db.update_scheduled_meeting(UUID_obj(meeting_id), status="processing")
+
+    return {
+        "success": True,
+        "task_id": str(task.id),
+        "message": "Processing started"
+    }
+
 
 @app.on_event("startup")
 async def startup_event():

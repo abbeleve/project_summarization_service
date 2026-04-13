@@ -3,6 +3,7 @@
 """
 import os
 from celery import Celery
+from celery.schedules import crontab
 
 # Получаем Redis URL из переменных окружения
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -12,7 +13,10 @@ celery_app = Celery(
     "meeting_analyzer",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["app.tasks.transcribe"]  # Модули с задачами
+    include=[
+        "app.tasks.transcribe",
+        "app.tasks.meetings"
+    ]  # Модули с задачами
 )
 
 # Конфигурация Celery
@@ -21,25 +25,34 @@ celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
-    
+
     # Таймауты
     task_ack_late=True,  # Подтверждать задачу после начала выполнения
     task_acks_on_failure_or_timeout=True,
-    
+
     # Retry логика
     task_autoretry_for=(Exception,),
     task_retry_backoff=60,  # Ждать 60 сек перед первой повторной попыткой
     task_retry_backoff_max=600,  # Максимум 10 минут между попытками
     task_max_retries=3,
-    
+
     # Очереди
     task_default_queue="celery",
     task_default_exchange="celery",
     task_default_routing_key="celery",
-    
+
     # Результаты
     result_expires=3600,  # Хранить результаты 1 час
     result_extended=True,  # Хранить дополнительную информацию
+
+    # === Celery Beat (периодические задачи) ===
+    beat_schedule={
+        'check-scheduled-meetings': {
+            'task': 'app.tasks.meetings.process_due_scheduled_meetings',
+            'schedule': 60.0,  # Каждую минуту
+        },
+    },
+    beat_scheduler="celery.beat:PersistentScheduler",
 )
 
 
