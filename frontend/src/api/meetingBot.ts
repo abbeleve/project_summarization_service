@@ -76,6 +76,9 @@ export const meetingBotApi = {
   cancelMeeting: (id: string) =>
     apiClient.delete<{ success: boolean; meeting_id: string; status: string }>(`/meetings/${id}`),
 
+  deleteMeetingPermanently: (id: string) =>
+    apiClient.delete<{ success: boolean; meeting_id: string; message: string }>(`/meetings/${id}/permanent`),
+
   processNow: (id: string) =>
     apiClient.post<{ success: boolean; task_id: string; message: string }>(`/meetings/${id}/process-now`),
 };

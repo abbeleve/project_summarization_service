@@ -1304,6 +1304,40 @@ async def cancel_meeting(
     }
 
 
+@app.delete("/meetings/{meeting_id}/permanent")
+async def delete_meeting_permanently(
+    meeting_id: str,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Полностью удалить запись о совещании из БД. Только для completed/cancelled/failed."""
+    from uuid import UUID as UUID_obj
+
+    meeting = db.select_scheduled_meeting(UUID_obj(meeting_id))
+
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    if meeting["user_id"] != current_user["user_id"]:
+        if current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="No access to this meeting")
+
+    # Удалять можно только завершённые, отменённые или с ошибкой
+    if meeting["status"] in ("pending", "processing", "recording"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete active meeting with status: {meeting['status']}"
+        )
+
+    db.delete_scheduled_meeting(UUID_obj(meeting_id))
+
+    return {
+        "success": True,
+        "meeting_id": meeting_id,
+        "message": "Meeting deleted"
+    }
+
+
 @app.post("/meetings/webhook")
 async def meeting_bot_webhook(payload: MeetingBotWebhookPayload):
     """
