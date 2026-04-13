@@ -16,7 +16,8 @@ class AuthMiddleware:
             "/health",
             "/docs",
             "/redoc",
-            "/openapi.json"
+            "/openapi.json",
+            "/meetings/webhook",  # Webhook от meeting-bot без JWT
         }
     
     async def __call__(self, request: Request, call_next):

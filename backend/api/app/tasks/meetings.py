@@ -7,8 +7,8 @@ import logging
 import os
 import requests
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
 from uuid import UUID
+from typing import Dict, Any, Optional
 
 from app.celery_app import celery_app
 from app.db_service.database import DataBaseManager
@@ -98,11 +98,15 @@ def join_meeting_immediate(
     """
     task_id = self.request.id
     db = DataBaseManager()
+    user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
 
     logger.info(f"[{task_id}] Подключение к совещанию {meeting_id}: {meeting_url}")
 
     try:
-        # Обновляем статус
+        # Вставляем задачу в БД чтобы update_task_status мог обновлять статус
+        db.insert_celery_task(task_id=task_id, user_id=user_uuid, status="processing")
+
+        # Обновляем статус встречи
         db.update_scheduled_meeting(meeting_id, status="processing")
         update_task_status(task_id, "processing", {"step": "joining", "percent": 10})
 
@@ -117,7 +121,8 @@ def join_meeting_immediate(
             "timezone": "UTC",
             "userId": str(user_id),
             "botId": str(meeting_id),
-            "bearerToken": os.getenv("MEETING_BOT_AUTH_TOKEN", "")  # Если нужна аутентификация
+            # meeting-bot требует непустой bearerToken для валидации
+            "bearerToken": os.getenv("MEETING_BOT_AUTH_TOKEN", "local-dev-token")
         }
 
         logger.info(f"[{task_id}] POST {full_url} with payload: {json.dumps(payload, ensure_ascii=False)}")
@@ -135,6 +140,8 @@ def join_meeting_immediate(
         bot_response = response.json()
         logger.info(f"[{task_id}] Meeting-bot response: {bot_response}")
 
+        # Обновляем статус встречи в БД на "recording" — бот подключился и начал запись
+        db.update_scheduled_meeting(meeting_id, status="recording")
         update_task_status(task_id, "processing", {"step": "recording", "percent": 30})
 
         # Совещание запущено, теперь ждём webhook от meeting-bot
@@ -152,7 +159,7 @@ def join_meeting_immediate(
         update_task_status(task_id, "failed", {"step": "failed", "error": str(exc)})
 
         # Retry через 30 секунд
-        raise self.retry(exc, countdown=30 * (2 ** (self.request.retries or 0)))
+        raise self.retry(exc=exc, countdown=30 * (2 ** (self.request.retries or 0)))
 
 
 @celery_app.task(bind=True, max_retries=3)
@@ -175,13 +182,17 @@ def process_recording_callback(
     """
     task_id = self.request.id
     db = DataBaseManager()
+    user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
 
     logger.info(f"[{task_id}] Обработка записи для совещания {meeting_id}")
 
     try:
-        # Обновляем статус
-        db.update_scheduled_meeting(meeting_id, status="recording", recording_url=recording_url)
+        # Вставляем задачу в БД чтобы update_task_status мог обновлять статус
+        db.insert_celery_task(task_id=task_id, user_id=user_uuid, status="processing")
         update_task_status(task_id, "processing", {"step": "downloading", "percent": 40})
+
+        # Обновляем статус встречи
+        db.update_scheduled_meeting(meeting_id, status="recording", recording_url=recording_url)
 
         # Скачиваем запись
         logger.info(f"[{task_id}] Скачивание записи из {recording_url}")
@@ -195,51 +206,49 @@ def process_recording_callback(
 
         update_task_status(task_id, "processing", {"step": "transcription", "percent": 50})
 
-        # Запускаем ML-пайплайн (переиспользуем существующую задачу)
+        # Получаем настройки моделей из БД
+        meeting = db.select_scheduled_meeting(UUID(meeting_id))
+        if not meeting:
+            raise RuntimeError(f"Meeting {meeting_id} not found in database")
+
+        # Запускаем ML-пайплайн с настройками из записи
         from app.tasks.transcribe import transcribe_and_summarize_task
 
         ml_options = {
-            "transcribe_model": "v3_ctc",
-            "diarization_model": "pyannote/speaker-diarization-community-1",
-            "diarize_lib": "pyannote",
-            "transcribe_lib": "gigaam",
-            "llm_model": "gemini-2.5-flash",
-            "noise_sup_bool": "false",
-            "user_id": user_id
+            "transcribe_model": meeting.get("transcribe_model") or "v3_ctc",
+            "diarization_model": meeting.get("diarization_model") or "pyannote/speaker-diarization-community-1",
+            "diarize_lib": meeting.get("diarize_lib") or "pyannote",
+            "transcribe_lib": meeting.get("transcribe_lib") or "gigaam",
+            "llm_model": meeting.get("llm_model") or "gemini-2.5-flash",
+            "noise_sup_bool": str(meeting.get("noise_suppression") or False).lower(),
+            "user_id": user_id,
+            "meeting_id": meeting_id,  # Передаём meeting_id для обновления статуса после завершения
         }
 
         ml_task = transcribe_and_summarize_task.delay(file_bytes, ml_options)
         ml_task_id = str(ml_task.id)
 
+        # Вставляем ML задачу в БД чтобы update_task_status мог обновлять статус
+        db.insert_celery_task(task_id=ml_task_id, user_id=user_uuid, status="pending")
+
+        # Сохраняем ml_task_id в запись встречи чтобы фронтенд мог поллить статус
+        db.update_scheduled_meeting(meeting_id, ml_task_id=ml_task_id)
+
         logger.info(f"[{task_id}] ML-пайплайн запущен: {ml_task_id}")
-        update_task_status(task_id, "processing", {"step": "ml_processing", "percent": 60})
 
-        # Ждём завершения ML-пайплайна (с таймаутом)
-        ml_result = ml_task.get(timeout=1800)  # 30 минут максимум
-
-        if ml_result.get("status") != "completed":
-            raise RuntimeError(f"ML pipeline failed: {ml_result}")
-
-        transcript_id = ml_result.get("transcript_id")
-
-        # Обновляем запись
-        db.update_scheduled_meeting(
-            meeting_id,
-            status="completed",
-            result_transcript_id=UUID(transcript_id)
-        )
         update_task_status(task_id, "completed", {
-            "step": "completed",
-            "percent": 100,
-            "transcript_id": transcript_id
+            "step": "ml_processing",
+            "percent": 70,
+            "ml_task_id": ml_task_id,
+            "message": "ML pipeline started, results will be saved when complete"
         })
 
-        logger.info(f"[{task_id}] Совещание обработано: transcript_id={transcript_id}")
+        logger.info(f"[{task_id}] Callback завершён, ML-пайплайн работает асинхронно")
 
         return {
-            "status": "completed",
+            "status": "ml_processing",
             "meeting_id": meeting_id,
-            "transcript_id": transcript_id
+            "ml_task_id": ml_task_id
         }
 
     except Exception as exc:
@@ -248,4 +257,5 @@ def process_recording_callback(
         db.update_scheduled_meeting(meeting_id, status="failed", error=str(exc))
         update_task_status(task_id, "failed", {"step": "failed", "error": str(exc)})
 
-        raise self.retry(exc, countdown=60 * (2 ** (self.request.retries or 0)))
+        # Retry with proper exception handling
+        raise self.retry(exc=exc, countdown=60 * (2 ** (self.request.retries or 0)))

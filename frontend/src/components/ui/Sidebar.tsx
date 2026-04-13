@@ -13,6 +13,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Главная', icon: '🏠', path: '/' },
+  { label: 'Meeting Bot', icon: '🤖', path: '/meeting-bot' },
   { label: 'Пользователи', icon: '👥', path: '/admin', adminOnly: true },
 ];
 

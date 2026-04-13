@@ -1133,7 +1133,13 @@ async def join_meeting_now(
         meeting_url=request.meeting_url,
         provider=request.provider,
         scheduled_at=now,
-        bot_name=request.bot_name
+        bot_name=request.bot_name,
+        transcribe_model=request.transcribe_model,
+        diarization_model=request.diarization_model,
+        diarize_lib=request.diarize_lib,
+        transcribe_lib=request.transcribe_lib,
+        llm_model=request.llm_model,
+        noise_suppression=request.noise_suppression
     )
 
     if not scheduled_id:
@@ -1201,7 +1207,13 @@ async def schedule_meeting(
         meeting_url=request.meeting_url,
         provider=request.provider,
         scheduled_at=scheduled_at,
-        bot_name=request.bot_name
+        bot_name=request.bot_name,
+        transcribe_model=request.transcribe_model,
+        diarization_model=request.diarization_model,
+        diarize_lib=request.diarize_lib,
+        transcribe_lib=request.transcribe_lib,
+        llm_model=request.llm_model,
+        noise_suppression=request.noise_suppression
     )
 
     if not scheduled_id:
@@ -1276,8 +1288,8 @@ async def cancel_meeting(
         if current_user.get("role") != "admin":
             raise HTTPException(status_code=403, detail="No access to this meeting")
 
-    # Можно отменить только pending или processing
-    if meeting["status"] in ("completed", "cancelled"):
+    # Можно отменить только pending, processing или failed
+    if meeting["status"] == "completed":
         raise HTTPException(
             status_code=400,
             detail=f"Cannot cancel meeting with status: {meeting['status']}"

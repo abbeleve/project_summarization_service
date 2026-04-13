@@ -275,7 +275,12 @@ class ScheduledMeeting(Base):
     meeting_bot_task_id: Mapped[Optional[str]] = mapped_column(
         String(100),
         nullable=True,
-        comment="ID задачи Celery для meeting-bot"
+        comment="ID задачи Celery для meeting-bot (join)"
+    )
+    ml_task_id: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="ID задачи Celery для ML пайплайна (транскрибация)"
     )
     recording_url: Mapped[Optional[str]] = mapped_column(
         Text,

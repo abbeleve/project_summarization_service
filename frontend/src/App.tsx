@@ -8,6 +8,7 @@ import { RegisterPage } from '@/pages/RegisterPage';
 import { HomePage } from '@/pages/HomePage';
 import { AnalysisPage } from '@/pages/AnalysisPage';
 import { AdminPage } from '@/pages/AdminPage';
+import MeetingBotPage from '@/pages/MeetingBotPage';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 export const queryClient = new QueryClient({
@@ -100,7 +101,15 @@ function AppContent() {
           </AppLayout>
         </AdminRoute>
       } />
-      
+
+      <Route path="/meeting-bot" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <MeetingBotPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

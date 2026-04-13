@@ -35,14 +35,24 @@ class TokenResponse(Token):
 
 # === Meeting Bot Models ===
 
-class JoinMeetingRequest(BaseModel):
+class MeetingModelSettings(BaseModel):
+    """Настройки моделей для ML пайплайна."""
+    transcribe_model: Optional[str] = Field("v3_ctc", description="Модель транскрибации")
+    diarization_model: Optional[str] = Field("pyannote/speaker-diarization-community-1", description="Модель диаризации")
+    diarize_lib: Optional[str] = Field("pyannote", description="Библиотека диаризации")
+    transcribe_lib: Optional[str] = Field("gigaam", description="Библиотека транскрибации")
+    llm_model: Optional[str] = Field("gemini-2.5-flash", description="Модель LLM для суммаризации")
+    noise_suppression: Optional[bool] = Field(False, description="Шумоподавление")
+
+
+class JoinMeetingRequest(MeetingModelSettings):
     """Запрос на немедленное подключение к совещанию."""
     meeting_url: str
     provider: str = Field(..., description="Платформа: google, microsoft, zoom")
     bot_name: Optional[str] = Field("Meeting Notetaker", description="Имя бота в совещании")
 
 
-class ScheduleMeetingRequest(BaseModel):
+class ScheduleMeetingRequest(MeetingModelSettings):
     """Запрос на планирование совещания."""
     meeting_url: str
     provider: str = Field(..., description="Платформа: google, microsoft, zoom")

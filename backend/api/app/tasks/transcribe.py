@@ -5,6 +5,7 @@ import io
 import json
 import logging
 import requests
+from uuid import UUID
 from typing import Dict, Any
 from app.celery_app import celery_app
 from app.db_service.database import DataBaseManager
@@ -200,8 +201,18 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
         except Exception as e:
             logger.warning(f"[{task_id}] Не удалось проиндексировать в RAG: {e}")
             # Не прерываем задачу, RAG indexing не критичен
-        
-        # === 5. Завершение ===
+
+        # === 5. Удаляем запись из scheduled_meetings ===
+        # Пайплайн завершён, результат сохранён в transcripts/summaries — временная запись больше не нужна
+        meeting_id = options.get("meeting_id")
+        if meeting_id:
+            try:
+                db.delete_scheduled_meeting(meeting_id)
+                logger.info(f"[{task_id}] Запись scheduled_meeting {meeting_id} удалена")
+            except Exception as e:
+                logger.warning(f"[{task_id}] Не удалось удалить scheduled_meeting: {e}")
+
+        # === 6. Завершение ===
         logger.info(f"[{task_id}] Задача завершена успешно")
         update_task_status(task_id, "completed", {
             "step": "completed",
@@ -215,18 +226,27 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
             "title": title,
             "meeting_type": meeting_type
         }
-        
+
     except Exception as exc:
         # === Обработка ошибок ===
         logger.error(f"[{task_id}] Ошибка обработки: {exc}")
-        
+
+        # Удаляем запись из scheduled_meetings при ошибке
+        meeting_id = options.get("meeting_id")
+        if meeting_id:
+            try:
+                db.delete_scheduled_meeting(meeting_id)
+                logger.info(f"[{task_id}] Запись scheduled_meeting {meeting_id} удалена (ошибка)")
+            except Exception:
+                pass
+
         update_task_status(task_id, "failed", {
             "step": "failed",
             "error": str(exc)
         })
-        
+
         # Retry через 60 секунд (exponential backoff)
-        raise self.retry(exc, countdown=60 * (2 ** (self.request.retries or 0)))
+        raise self.retry(exc=exc, countdown=60 * (2 ** (self.request.retries or 0)))
 
 
 def split_into_chunks(parts: list, transcript_meta: dict, max_length: int = 500) -> list:

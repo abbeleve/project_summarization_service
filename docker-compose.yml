@@ -209,6 +209,34 @@ services:
     networks:
       - meeting-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # ========================================================================
+  # MINIO-INIT - Create bucket for meeting recordings
+  # ========================================================================
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        echo '=== MinIO Bucket Initialization ===' &&
+        mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin} &&
+        echo 'Creating bucket: ${S3_BUCKET_NAME:-meeting-recordings}' &&
+        mc mb --ignore-existing myminio/${S3_BUCKET_NAME:-meeting-recordings} &&
+        echo 'Setting public read policy...' &&
+        mc anonymous set download myminio/${S3_BUCKET_NAME:-meeting-recordings} &&
+        echo '=== MinIO Initialization Complete ==='
+      "
+    networks:
+      - meeting-network
 
   # ========================================================================
   # MEETING-BOT - Playwright bot для подключения к Zoom/Google Meet/Teams
@@ -253,11 +281,15 @@ services:
       - SCREENAPP_BACKEND_SERVICE_API_KEY=
       - AUTH_BASE_URL_V2=
     depends_on:
-      - redis
-      - minio
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     networks:
       - meeting-network
-    restart: on-failure
+    restart: "no"
     # Нужно /dev/shm для Chrome и shm_size для Playwright
     shm_size: "2gb"
     # Xvfb нужен для headless браузера (уже есть в Dockerfile.production entrypoint)
