@@ -350,6 +350,12 @@ class ScheduledMeeting(Base):
             'meeting_bot_task_id': self.meeting_bot_task_id,
             'recording_url': self.recording_url,
             'result_transcript_id': str(self.result_transcript_id) if self.result_transcript_id else None,
+            'transcribe_model': self.transcribe_model,
+            'diarization_model': self.diarization_model,
+            'diarize_lib': self.diarize_lib,
+            'transcribe_lib': self.transcribe_lib,
+            'llm_model': self.llm_model,
+            'noise_suppression': self.noise_suppression,
             'error': self.error,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat()
