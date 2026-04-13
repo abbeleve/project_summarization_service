@@ -62,15 +62,16 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     volumes:
       - ./backend/api:/app
-  celery-worker:
+  celery-worker-default:
     build: ./backend/api
-    container_name: celery_worker
+    container_name: celery_worker_default
     command: >
       celery -A app.celery_app worker
       --loglevel=info
-      --concurrency=2
+      --concurrency=1
       --prefetch-multiplier=1
       --pool=solo
+      -Q default
     environment:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
@@ -78,12 +79,9 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       REDIS_URL: redis://redis:6379/0
-      CELERY_TASK_QUEUE: celery
       HF_API_KEY: ${HF_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL}
-      MEETING_BOT_URL: ${MEETING_BOT_URL:-http://meeting-bot:3000}
-      BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000}
       PYTHONUNBUFFERED: "1"
     depends_on:
       postgres:
@@ -96,6 +94,44 @@ services:
         condition: service_started
       denoiser:
         condition: service_started
+    networks:
+      - meeting-network
+    restart: on-failure
+    volumes:
+      - ./backend/api:/app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  celery-worker-meetings:
+    build: ./backend/api
+    container_name: celery_worker_meetings
+    command: >
+      celery -A app.celery_app worker
+      --loglevel=info
+      --concurrency=2
+      --prefetch-multiplier=1
+      --pool=prefork
+      -Q meetings
+    environment:
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      MEETING_BOT_URL: ${MEETING_BOT_URL:-http://meeting-bot:3000}
+      BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - meeting-network
     restart: on-failure
