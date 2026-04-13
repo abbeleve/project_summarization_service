@@ -232,3 +232,17 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Meeting Bot (nodejs/typescript)
+meeting-bot/node_modules/
+meeting-bot/test-results/
+meeting-bot/playwright-report/
+meeting-bot/blob-report/
+meeting-bot/playwright/.cache/
+meeting-bot/dist/
+meeting-bot/assets/videos
+meeting-bot/*.y4m
+meeting-bot/*.wav
+meeting-bot/assets/screenshots
+meeting-bot/debug-videos/
+meeting-bot/.env.native
+meeting-bot/gcp-key

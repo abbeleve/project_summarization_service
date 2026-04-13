@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB, TIMESTAMP
 
 # revision identifiers, used by Alembic.
 revision = '2026_scheduled_meetings'
-down_revision = 'e5f6g7h8i9j0_add_unique_constraint_annotations'
+down_revision = 'e5f6g7h8i9j0'
 branch_labels = None
 depends_on = None
 

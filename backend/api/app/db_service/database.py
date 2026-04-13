@@ -1,10 +1,11 @@
 from uuid import UUID, uuid4
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
-from sqlalchemy import create_engine, String, Text, ForeignKey, CheckConstraint, DateTime, func, JSON
+from sqlalchemy import create_engine, String, Text, ForeignKey, CheckConstraint, DateTime, func, JSON, text
 from sqlalchemy.dialects.postgresql import UUID as UUIDType, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
+from datetime import datetime
 import bcrypt
 import os
 from dotenv import load_dotenv
@@ -1124,15 +1125,15 @@ class DataBaseManager:
         Получить все совещания, которые должны начаться в ближайшее время.
         Ищет совещания у которых scheduled_at <= now() + grace_period и status = 'pending'.
         """
-        from sqlalchemy import text as sql_text
+        from datetime import timedelta
 
         with self.session_scope() as session:
             try:
-                # Находим все pending совещания, которые должны начаться в течение grace_period минут
+                cutoff_time = datetime.utcnow() + timedelta(minutes=grace_period_minutes)
                 meetings = session.query(ScheduledMeeting)\
                     .filter(
                         ScheduledMeeting.status == "pending",
-                        ScheduledMeeting.scheduled_at <= func.now() + text(f"INTERVAL '{grace_period_minutes} MINUTES'")
+                        ScheduledMeeting.scheduled_at <= cutoff_time
                     )\
                     .order_by(ScheduledMeeting.scheduled_at.asc())\
                     .all()

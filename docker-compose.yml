@@ -191,6 +191,77 @@ services:
     networks:
       - meeting-network
 
+  # ========================================================================
+  # MINIO - S3-compatible storage for meeting recordings
+  # ========================================================================
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web Console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - ./volumes/minio_data:/data
+    networks:
+      - meeting-network
+    restart: unless-stopped
+
+  # ========================================================================
+  # MEETING-BOT - Playwright bot для подключения к Zoom/Google Meet/Teams
+  # ========================================================================
+  meeting-bot:
+    build:
+      context: ./meeting-bot
+      dockerfile: Dockerfile.production
+    container_name: meeting_bot
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # Required at startup (dummy values, we use MinIO not GCP)
+      - GCP_DEFAULT_REGION=us-west-2
+      - GCP_MISC_BUCKET=meeting-recordings
+      # Recording settings
+      - MAX_RECORDING_DURATION_MINUTES=${MAX_RECORDING_DURATION_MINUTES:-180}
+      - MEETING_INACTIVITY_MINUTES=${MEETING_INACTIVITY_MINUTES:-2}
+      - INACTIVITY_DETECTION_START_DELAY_MINUTES=${INACTIVITY_DETECTION_START_DELAY_MINUTES:-5}
+      - JOIN_WAIT_TIME_MINUTES=${JOIN_WAIT_TIME_MINUTES:-2}
+      - RETRY_COUNT=${RETRY_COUNT:-2}
+      # Uploader → S3 (MinIO)
+      - UPLOADER_TYPE=s3
+      - UPLOADER_FILE_EXTENSION=.webm
+      - STORAGE_PROVIDER=s3
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minioadmin}
+      - S3_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-meeting-recordings}
+      - S3_REGION=us-west-2
+      - S3_USE_MINIO_COMPATIBILITY=true
+      # Redis (для очереди задач, но используем REST API)
+      - REDIS_CONSUMER_ENABLED=false
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Webhook → наш backend
+      - NOTIFY_WEBHOOK_ENABLED=true
+      - NOTIFY_WEBHOOK_URL=http://api:8000/meetings/webhook
+      - NOTIFY_WEBHOOK_SECRET=${MEETING_BOT_WEBHOOK_SECRET:-}
+      # Не используем ScreenApp backend
+      - SCREENAPP_BACKEND_SERVICE_API_KEY=
+      - AUTH_BASE_URL_V2=
+    depends_on:
+      - redis
+      - minio
+    networks:
+      - meeting-network
+    restart: on-failure
+    # Нужно /dev/shm для Chrome и shm_size для Playwright
+    shm_size: "2gb"
+    # Xvfb нужен для headless браузера (уже есть в Dockerfile.production entrypoint)
+
   audio-ml:
     build:
       context: ./ML/diarization_summarization_service
