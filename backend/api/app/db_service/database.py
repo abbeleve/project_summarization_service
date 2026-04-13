@@ -287,6 +287,36 @@ class ScheduledMeeting(Base):
         nullable=True,
         comment="ID созданной транскрипции после обработки"
     )
+    # Model preferences for ML pipeline
+    transcribe_model: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        default="v3_ctc"
+    )
+    diarization_model: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        default="pyannote/speaker-diarization-community-1"
+    )
+    diarize_lib: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        default="pyannote"
+    )
+    transcribe_lib: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        default="gigaam"
+    )
+    llm_model: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        default="gemini-2.5-flash"
+    )
+    noise_suppression: Mapped[Optional[bool]] = mapped_column(
+        nullable=True,
+        default=False
+    )
     error: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True
