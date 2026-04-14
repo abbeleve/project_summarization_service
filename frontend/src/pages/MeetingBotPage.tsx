@@ -13,6 +13,7 @@ import {
 } from "@/config/settings";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
+import { useActiveTasks } from "@/hooks/useActiveTasks";
 
 type MeetingMode = "join" | "schedule";
 
@@ -158,6 +159,18 @@ export default function MeetingBotPage() {
     queryFn: () => meetingBotApi.getMeetings(100),
     refetchInterval: 15000, // Poll every 15s
   });
+
+  // Auto-discover ML tasks from meetings and add to active tasks tracker
+  // so HomePage can show transcription progress
+  const { addTask } = useActiveTasks();
+  useEffect(() => {
+    const meetings = meetingsData?.data?.meetings || [];
+    for (const meeting of meetings) {
+      if (meeting.ml_task_id) {
+        addTask(meeting.ml_task_id);
+      }
+    }
+  }, [meetingsData, addTask]);
 
   const handleProviderChange = useCallback((value: string) => {
     setProvider(value);
@@ -719,6 +732,20 @@ export default function MeetingBotPage() {
                         isLoading={cancelMutation.isPending}
                       >
                         Отменить
+                      </Button>
+                    )}
+                    {meeting.status === "recording" && (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => {
+                          if (window.confirm("Отозвать бота из конференции?")) {
+                            handleCancel(meeting.id);
+                          }
+                        }}
+                        isLoading={cancelMutation.isPending}
+                      >
+                        ⏹ Отозвать бота
                       </Button>
                     )}
                     {meeting.status === "failed" && (

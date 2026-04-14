@@ -1276,7 +1276,7 @@ async def cancel_meeting(
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
-    """Отменить запланированное совещание."""
+    """Отменить запланированное совещание или отозвать бота из конференции."""
     from uuid import UUID as UUID_obj
 
     meeting = db.select_scheduled_meeting(UUID_obj(meeting_id))
@@ -1288,7 +1288,7 @@ async def cancel_meeting(
         if current_user.get("role") != "admin":
             raise HTTPException(status_code=403, detail="No access to this meeting")
 
-    # Можно отменить только pending, processing или failed
+    # completed нельзя отменить — он уже завершён
     if meeting["status"] == "completed":
         raise HTTPException(
             status_code=400,
@@ -1376,6 +1376,16 @@ async def meeting_bot_webhook(payload: MeetingBotWebhookPayload):
     if not recording_url:
         logger.warning(f"Webhook received without blobUrl")
         return {"status": "error", "message": "blobUrl not found"}
+
+    # Проверяем, не отменено ли совещание
+    if meeting_id:
+        try:
+            meeting = db.select_scheduled_meeting(UUID(meeting_id))
+            if meeting and meeting.get("status") == "cancelled":
+                logger.info(f"Meeting {meeting_id} was cancelled — skipping ML pipeline, ignoring recording")
+                return {"status": "ignored", "message": "Meeting was cancelled, recording discarded"}
+        except Exception as e:
+            logger.warning(f"Could not check meeting status: {e}")
 
     # Запускаем Celery задачу для обработки
     task = process_recording_callback.apply_async(
