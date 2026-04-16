@@ -26,7 +26,7 @@ def update_task_status(task_id: str, status: str, progress: Dict[str, Any] = Non
     db.update_celery_task_status(task_id, status, progress)
 
 
-@celery_app.task(bind=True, max_retries=3)
+@celery_app.task(bind=True, max_retries=1)
 def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, Any]):
     """
     Полный пайплайн обработки аудио:

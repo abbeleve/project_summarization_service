@@ -95,6 +95,10 @@ class Settings(BaseSettings):
         default="http://audio-ml-whisper:8054/transcribe",
         description="URL сервиса транскрибации Whisper"
     )
+    whisper_timeout_sec: int = Field(
+        default=1800,
+        description="Таймаут запроса к Whisper сервису (сек) — 30 мин для длинных аудио"
+    )
     
     class Config:
         env_file = ".env"

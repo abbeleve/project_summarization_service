@@ -3,6 +3,8 @@ import requests
 import json
 from typing import List, Dict, Any
 
+WHISPER_TIMEOUT = 1800  # 30 минут для длинных аудио
+
 def transcribe_with_whisper_service(
     diarization_results: List[Dict],
     input_audio_path: str,
@@ -10,7 +12,7 @@ def transcribe_with_whisper_service(
 ) -> List[Dict]:
     """
     Отправляет аудиофайл и сегменты диаризации на сервис транскрибации.
-    
+
     Args:
         diarization_results: список словарей вида {"start": float, "stop": float, "speaker": str}
         input_audio_path: путь к локальному .wav/.mp3 файлу (должен быть доступен в клиентском контейнере)
@@ -24,7 +26,7 @@ def transcribe_with_whisper_service(
         raise ValueError("diarization_results is empty")
     if not input_audio_path or not input_audio_path.endswith(('.wav', '.mp3', '.flac', '.ogg')):
         raise ValueError("Invalid audio file path")
-    
+
     response = None
 
     with open(input_audio_path, "rb") as audio_file:
@@ -34,7 +36,7 @@ def transcribe_with_whisper_service(
             "request": (None, json.dumps({"diarization_results": diarization_results}), "application/json")
         }
         try:
-            response = requests.post(whisper_service_url, files=files, timeout=300)
+            response = requests.post(whisper_service_url, files=files, timeout=WHISPER_TIMEOUT)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:

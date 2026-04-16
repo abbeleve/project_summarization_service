@@ -91,7 +91,7 @@ async def transcribe(
             logger.info(f"Использование Whisper сервиса: {settings.whisper_service_url}")
             transcriber = WhisperTranscription(
                 service_url=settings.whisper_service_url,
-                timeout=300
+                timeout=settings.whisper_timeout_sec
             )
             logger.info(f"Сегменты диаризации: {len(diarization_segments)}")
             transcribed_segments = transcriber.transcribe(

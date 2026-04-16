@@ -23,17 +23,17 @@ class WhisperTranscription(TranscriptionBase):
     def __init__(
         self,
         service_url: str = None,
-        timeout: int = 300
+        timeout: int = None
     ):
         """
         Инициализация транскрибации.
-        
+
         Args:
             service_url: URL Whisper сервиса
-            timeout: Таймаут запроса (сек)
+            timeout: Таймаут запроса (сек). По умолчанию 1800 (30 мин).
         """
         self.service_url = service_url or settings.whisper_service_url
-        self.timeout = timeout
+        self.timeout = timeout or settings.whisper_timeout_sec
     
     def transcribe(
         self,
