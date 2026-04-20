@@ -37,6 +37,11 @@ class Staff(Base):
         back_populates="employee",
         cascade="all, delete-orphan"
     )
+    transcript_accesses: Mapped[List["TranscriptAccess"]] = relationship(
+        "TranscriptAccess",
+        back_populates="employee",
+        cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint("email ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'"),
@@ -82,6 +87,11 @@ class Transcript(Base):
 
     chat_messages: Mapped[List["ChatMessage"]] = relationship(
         "ChatMessage",
+        back_populates="transcript",
+        cascade="all, delete-orphan"
+    )
+    access_list: Mapped[List["TranscriptAccess"]] = relationship(
+        "TranscriptAccess",
         back_populates="transcript",
         cascade="all, delete-orphan"
     )
@@ -135,6 +145,45 @@ class ChatMessage(Base):
             'role': self.role,
             'content': self.content,
             'created_at': self.created_at.isoformat()
+        }
+
+
+class TranscriptAccess(Base):
+    __tablename__ = 'TranscriptAccess'
+
+    transcript_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Transcripts.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
+    employee_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Staff.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
+    granted_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    transcript: Mapped["Transcript"] = relationship(
+        "Transcript",
+        back_populates="access_list"
+    )
+    employee: Mapped["Staff"] = relationship(
+        "Staff",
+        back_populates="transcript_accesses"
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'transcript_id': str(self.transcript_id),
+            'employee_id': str(self.employee_id),
+            'granted_at': self.granted_at.isoformat()
         }
 
 class PartsTranscription(Base):
@@ -632,6 +681,67 @@ class DataBaseManager:
                 return [t.to_dict() for t in transcripts]
             except SQLAlchemyError as e:
                 print(f"Ошибка при получении списка транскрипций: {e}")
+                return []
+
+    def insert_transcript_access(self, transcript_id: UUID, employee_id: UUID) -> bool:
+        with self.session_scope() as session:
+            try:
+                # Проверяем, нет ли уже такого доступа
+                exists = session.query(TranscriptAccess).filter(
+                    TranscriptAccess.transcript_id == transcript_id,
+                    TranscriptAccess.employee_id == employee_id
+                ).first()
+                if exists:
+                    return True
+
+                access = TranscriptAccess(
+                    transcript_id=transcript_id,
+                    employee_id=employee_id
+                )
+                session.add(access)
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при предоставлении доступа к транскрипции: {e}")
+                return False
+
+    def check_transcript_access(self, transcript_id: UUID, employee_id: UUID) -> bool:
+        with self.session_scope() as session:
+            try:
+                # Проверяем, является ли пользователь владельцем
+                transcript = session.get(Transcript, transcript_id)
+                if not transcript:
+                    return False
+                if transcript.employee_id == employee_id:
+                    return True
+
+                # Проверяем наличие записи в TranscriptAccess
+                access = session.query(TranscriptAccess).filter(
+                    TranscriptAccess.transcript_id == transcript_id,
+                    TranscriptAccess.employee_id == employee_id
+                ).first()
+                return access is not None
+            except SQLAlchemyError as e:
+                print(f"Ошибка при проверке доступа: {e}")
+                return False
+
+    def select_transcripts_for_employee(self, employee_id: UUID) -> List[Dict[str, Any]]:
+        with self.session_scope() as session:
+            try:
+                # Получаем транскрипции, где пользователь либо владелец, либо имеет доступ
+                from sqlalchemy import or_
+                query = session.query(Transcript).filter(
+                    or_(
+                        Transcript.employee_id == employee_id,
+                        Transcript.id.in_(
+                            session.query(TranscriptAccess.transcript_id)
+                            .filter(TranscriptAccess.employee_id == employee_id)
+                        )
+                    )
+                )
+                transcripts = query.all()
+                return [t.to_dict() for t in transcripts]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении списка доступных транскрипций: {e}")
                 return []
 
     def update_transcripts(self, transcript_id: UUID, **kwargs) -> bool:
