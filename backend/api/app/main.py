@@ -667,27 +667,29 @@ async def search_transcripts(
             query_lower = f"%{query.lower()}%"
             
             # SQL запрос с поиском по названию (case-insensitive)
-            # Теперь используем прямое поле employee_id в Transcripts
+            # Теперь ищем и свои, и расшаренные транскрипции
             sql = text("""
-                SELECT t.id, t.title, t.text, t.created_at, t.employee_id
+                SELECT DISTINCT t.id, t.title, t.text, t.created_at, t.employee_id
                 FROM "Transcripts" t
-                WHERE t.employee_id = :user_id
+                LEFT JOIN "TranscriptAccess" ta ON t.id = ta.transcript_id
+                WHERE (t.employee_id = :user_id OR ta.employee_id = :user_id)
                   AND LOWER(t.title) LIKE :query
                 ORDER BY t.created_at DESC
                 LIMIT :limit OFFSET :offset
             """)
-            
+
             result = session.execute(
                 sql,
                 {"user_id": user_id, "query": query_lower, "limit": limit, "offset": offset}
             )
             rows = result.fetchall()
-            
+
             # Получаем общее количество для пагинации
             count_sql = text("""
-                SELECT COUNT(t.id)
+                SELECT COUNT(DISTINCT t.id)
                 FROM "Transcripts" t
-                WHERE t.employee_id = :user_id
+                LEFT JOIN "TranscriptAccess" ta ON t.id = ta.transcript_id
+                WHERE (t.employee_id = :user_id OR ta.employee_id = :user_id)
                   AND LOWER(t.title) LIKE :query
             """)
             count_result = session.execute(count_sql, {"user_id": user_id, "query": query_lower})
@@ -763,24 +765,26 @@ async def get_user_transcripts(
         
         with db.session_scope() as session:
             user_id = current_user["user_id"]
-            
-            # Получаем транскрипции пользователя напрямую по employee_id
+
+            # Получаем транскрипции пользователя напрямую по employee_id или через таблицу доступа
             sql = text("""
-                SELECT t.id, t.title, t.text, t.created_at
+                SELECT DISTINCT t.id, t.title, t.text, t.created_at
                 FROM "Transcripts" t
-                WHERE t.employee_id = :user_id
+                LEFT JOIN "TranscriptAccess" ta ON t.id = ta.transcript_id
+                WHERE t.employee_id = :user_id OR ta.employee_id = :user_id
                 ORDER BY t.created_at DESC
                 LIMIT :limit OFFSET :offset
             """)
-            
+
             result = session.execute(sql, {"user_id": user_id, "limit": limit, "offset": offset})
             rows = result.fetchall()
-            
+
             # Получаем общее количество
             count_sql = text("""
-                SELECT COUNT(t.id)
+                SELECT COUNT(DISTINCT t.id)
                 FROM "Transcripts" t
-                WHERE t.employee_id = :user_id
+                LEFT JOIN "TranscriptAccess" ta ON t.id = ta.transcript_id
+                WHERE t.employee_id = :user_id OR ta.employee_id = :user_id
             """)
             count_result = session.execute(count_sql, {"user_id": user_id})
             total = count_result.scalar() or 0
@@ -856,9 +860,12 @@ async def get_transcript(
         if not transcript_data:
             raise HTTPException(404, "Транскрипция не найдена")
 
-        if current_user.get('user_id') != transcript_data.get('employee_id'):
-            raise HTTPException(404, "Пользователь не идентифицирован")
-
+        user_id = current_user.get('user_id')
+        # Если пользователь не владелец, проверяем доступ или автоматически предоставляем его (Вариант Б)
+        if transcript_data.get('employee_id') != user_id:
+            if not db.check_transcript_access(transcript_uuid, user_id):
+                # Автоматически добавляем пользователя в список доступа при переходе по ссылке
+                db.insert_transcript_access(transcript_uuid, user_id)
 
         parts = db.select_parts_transcription_by_transcript_id(transcript_uuid)
         
