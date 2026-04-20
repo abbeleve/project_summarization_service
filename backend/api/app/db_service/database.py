@@ -60,12 +60,6 @@ class Staff(Base):
 
 class Transcript(Base):
     __tablename__ = 'Transcripts'
-    employee_id: Mapped[UUID] = mapped_column(
-        UUIDType(as_uuid=True),
-        ForeignKey('Staff.id', ondelete='CASCADE'),
-        nullable=False,
-        index=True
-    )
     title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[Any] = mapped_column(
@@ -99,7 +93,6 @@ class Transcript(Base):
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': str(self.id),
-            'employee_id': str(self.employee_id),
             'title': self.title,
             'text': self.text,
             'created_at': self.created_at.isoformat()
@@ -163,6 +156,12 @@ class TranscriptAccess(Base):
         nullable=False,
         index=True
     )
+    role: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="shared",
+        comment="owner, shared"
+    )
     granted_at: Mapped[Any] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -183,6 +182,7 @@ class TranscriptAccess(Base):
             'id': str(self.id),
             'transcript_id': str(self.transcript_id),
             'employee_id': str(self.employee_id),
+            'role': self.role,
             'granted_at': self.granted_at.isoformat()
         }
 
@@ -651,14 +651,23 @@ class DataBaseManager:
                 if employee_id and isinstance(employee_id, str):
                     from uuid import UUID
                     employee_id = UUID(employee_id)
-                
+
                 transcript = Transcript(
                     title=title,
-                    text=text,
-                    employee_id=employee_id
+                    text=text
                 )
                 session.add(transcript)
                 session.flush()
+                
+                # Теперь создаем запись о владении в TranscriptAccess
+                if employee_id:
+                    access = TranscriptAccess(
+                        transcript_id=transcript.id,
+                        employee_id=employee_id,
+                        role="owner"
+                    )
+                    session.add(access)
+                
                 return transcript.id
             except SQLAlchemyError as e:
                 print(f"Ошибка при создании транскрипции: {e}")
@@ -683,7 +692,7 @@ class DataBaseManager:
                 print(f"Ошибка при получении списка транскрипций: {e}")
                 return []
 
-    def insert_transcript_access(self, transcript_id: UUID, employee_id: UUID) -> bool:
+    def insert_transcript_access(self, transcript_id: UUID, employee_id: UUID, role: str = "shared") -> bool:
         with self.session_scope() as session:
             try:
                 # Проверяем, нет ли уже такого доступа
@@ -692,11 +701,14 @@ class DataBaseManager:
                     TranscriptAccess.employee_id == employee_id
                 ).first()
                 if exists:
+                    # Если доступ уже есть, обновляем роль (например, с shared на owner, если нужно)
+                    exists.role = role
                     return True
 
                 access = TranscriptAccess(
                     transcript_id=transcript_id,
-                    employee_id=employee_id
+                    employee_id=employee_id,
+                    role=role
                 )
                 session.add(access)
                 return True
@@ -704,22 +716,21 @@ class DataBaseManager:
                 print(f"Ошибка при предоставлении доступа к транскрипции: {e}")
                 return False
 
-    def check_transcript_access(self, transcript_id: UUID, employee_id: UUID) -> bool:
+    def check_transcript_access(self, transcript_id: UUID, employee_id: UUID, required_role: Optional[str] = None) -> bool:
         with self.session_scope() as session:
             try:
-                # Проверяем, является ли пользователь владельцем
-                transcript = session.get(Transcript, transcript_id)
-                if not transcript:
-                    return False
-                if transcript.employee_id == employee_id:
-                    return True
-
-                # Проверяем наличие записи в TranscriptAccess
                 access = session.query(TranscriptAccess).filter(
                     TranscriptAccess.transcript_id == transcript_id,
                     TranscriptAccess.employee_id == employee_id
                 ).first()
-                return access is not None
+                
+                if not access:
+                    return False
+                
+                if required_role:
+                    return access.role == required_role or access.role == "owner"
+                
+                return True
             except SQLAlchemyError as e:
                 print(f"Ошибка при проверке доступа: {e}")
                 return False
@@ -727,18 +738,15 @@ class DataBaseManager:
     def select_transcripts_for_employee(self, employee_id: UUID) -> List[Dict[str, Any]]:
         with self.session_scope() as session:
             try:
-                # Получаем транскрипции, где пользователь либо владелец, либо имеет доступ
-                from sqlalchemy import or_
-                query = session.query(Transcript).filter(
-                    or_(
-                        Transcript.employee_id == employee_id,
-                        Transcript.id.in_(
-                            session.query(TranscriptAccess.transcript_id)
-                            .filter(TranscriptAccess.employee_id == employee_id)
-                        )
-                    )
-                )
+                # Получаем все транскрипции, к которым пользователь имеет любой доступ
+                query = session.query(Transcript).join(
+                    TranscriptAccess, Transcript.id == TranscriptAccess.transcript_id
+                ).filter(
+                    TranscriptAccess.employee_id == employee_id
+                ).order_by(Transcript.created_at.desc())
+                
                 transcripts = query.all()
+                
                 return [t.to_dict() for t in transcripts]
             except SQLAlchemyError as e:
                 print(f"Ошибка при получении списка доступных транскрипций: {e}")
@@ -758,6 +766,22 @@ class DataBaseManager:
                 return True
             except SQLAlchemyError as e:
                 print(f"Ошибка при обновлении транскрипции: {e}")
+                return False
+
+    def remove_transcript_access(self, transcript_id: UUID, employee_id: UUID) -> bool:
+        with self.session_scope() as session:
+            try:
+                access = session.query(TranscriptAccess).filter(
+                    TranscriptAccess.transcript_id == transcript_id,
+                    TranscriptAccess.employee_id == employee_id
+                ).first()
+                if not access:
+                    return False
+
+                session.delete(access)
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при удалении доступа к транскрипции: {e}")
                 return False
 
     def delete_transcripts(self, transcript_id: UUID) -> bool:

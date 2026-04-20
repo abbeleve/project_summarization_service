@@ -667,12 +667,12 @@ async def search_transcripts(
             query_lower = f"%{query.lower()}%"
             
             # SQL запрос с поиском по названию (case-insensitive)
-            # Теперь ищем и свои, и расшаренные транскрипции
+            # Теперь ищем только через таблицу доступа, так как employee_id удален из Transcripts
             sql = text("""
-                SELECT DISTINCT t.id, t.title, t.text, t.created_at, t.employee_id
+                SELECT DISTINCT t.id, t.title, t.text, t.created_at
                 FROM "Transcripts" t
-                LEFT JOIN "TranscriptAccess" ta ON t.id = ta.transcript_id
-                WHERE (t.employee_id = :user_id OR ta.employee_id = :user_id)
+                JOIN "TranscriptAccess" ta ON t.id = ta.transcript_id
+                WHERE ta.employee_id = :user_id
                   AND LOWER(t.title) LIKE :query
                 ORDER BY t.created_at DESC
                 LIMIT :limit OFFSET :offset
@@ -688,8 +688,8 @@ async def search_transcripts(
             count_sql = text("""
                 SELECT COUNT(DISTINCT t.id)
                 FROM "Transcripts" t
-                LEFT JOIN "TranscriptAccess" ta ON t.id = ta.transcript_id
-                WHERE (t.employee_id = :user_id OR ta.employee_id = :user_id)
+                JOIN "TranscriptAccess" ta ON t.id = ta.transcript_id
+                WHERE ta.employee_id = :user_id
                   AND LOWER(t.title) LIKE :query
             """)
             count_result = session.execute(count_sql, {"user_id": user_id, "query": query_lower})
@@ -761,44 +761,23 @@ async def get_user_transcripts(
     try:
         logger.info(f"Fetching transcripts for user: {current_user}")
 
-        from sqlalchemy import text
+        # Используем новый метод для получения всех доступных транскрипций (своих и расшаренных)
+        all_transcripts = db.select_transcripts_for_employee(current_user["user_id"])
         
-        with db.session_scope() as session:
-            user_id = current_user["user_id"]
-
-            # Получаем транскрипции пользователя напрямую по employee_id или через таблицу доступа
-            sql = text("""
-                SELECT DISTINCT t.id, t.title, t.text, t.created_at
-                FROM "Transcripts" t
-                LEFT JOIN "TranscriptAccess" ta ON t.id = ta.transcript_id
-                WHERE t.employee_id = :user_id OR ta.employee_id = :user_id
-                ORDER BY t.created_at DESC
-                LIMIT :limit OFFSET :offset
-            """)
-
-            result = session.execute(sql, {"user_id": user_id, "limit": limit, "offset": offset})
-            rows = result.fetchall()
-
-            # Получаем общее количество
-            count_sql = text("""
-                SELECT COUNT(DISTINCT t.id)
-                FROM "Transcripts" t
-                LEFT JOIN "TranscriptAccess" ta ON t.id = ta.transcript_id
-                WHERE t.employee_id = :user_id OR ta.employee_id = :user_id
-            """)
-            count_result = session.execute(count_sql, {"user_id": user_id})
-            total = count_result.scalar() or 0
+        # Пагинация на уровне Python
+        total = len(all_transcripts)
+        rows = all_transcripts[offset : offset + limit]
 
         transcripts_list = []
-        for row in rows:
-            transcript_uuid = row[0]
-            
+        for transcript_data in rows:
+            transcript_uuid = UUID(transcript_data['id'])
+
             # Получаем части транскрипции
             parts = db.select_parts_transcription_by_transcript_id(transcript_uuid)
-            
+
             # Получаем суммаризацию
             summary_data = db.select_summaries_by_transcript_id(transcript_uuid)
-            
+
             # Количество уникальных спикеров
             speakers = set()
             duration = 0
@@ -808,16 +787,16 @@ async def get_user_transcripts(
                     if ":" in text_part:
                         speaker = text_part.split(":")[0].strip()
                         speakers.add(speaker)
-                
+
                 min_start = min(p.get("start_time", 0) for p in parts)
                 max_end = max(p.get("end_time", 0) for p in parts)
                 duration = (max_end - min_start) / 1000.0 / 60.0
 
             transcript_obj = {
                 "transcript_id": str(transcript_uuid),
-                "original_text": row[2] or '',
-                "title": row[1] or f'Запись от {str(transcript_uuid)[:8]}',
-                "created_at": row[3].isoformat() if row[3] else None,
+                "original_text": transcript_data.get('text') or '',
+                "title": transcript_data.get('title') or f'Запись от {str(transcript_uuid)[:8]}',
+                "created_at": transcript_data.get('created_at'),
                 "summary": summary_data.get('text') if summary_data else None,
                 "key_points": summary_data.get('key_points') if summary_data else None,
                 "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
@@ -861,11 +840,10 @@ async def get_transcript(
             raise HTTPException(404, "Транскрипция не найдена")
 
         user_id = current_user.get('user_id')
-        # Если пользователь не владелец, проверяем доступ или автоматически предоставляем его (Вариант Б)
-        if transcript_data.get('employee_id') != user_id:
-            if not db.check_transcript_access(transcript_uuid, user_id):
-                # Автоматически добавляем пользователя в список доступа при переходе по ссылке
-                db.insert_transcript_access(transcript_uuid, user_id)
+        # Проверяем доступ через новую систему (владелец или расшарено)
+        if not db.check_transcript_access(transcript_uuid, user_id):
+            # Вариант Б: Автоматически предоставляем доступ при посещении ссылки
+            db.insert_transcript_access(transcript_uuid, user_id)
 
         parts = db.select_parts_transcription_by_transcript_id(transcript_uuid)
         
@@ -893,7 +871,7 @@ async def delete_transcript(
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
-    """Удалить транскрипцию"""
+    """Удалить транскрипцию из списка пользователя (отмена доступа)"""
     try:
         # Преобразуем строку в UUID
         try:
@@ -901,12 +879,13 @@ async def delete_transcript(
         except ValueError:
             raise HTTPException(400, "Некорректный формат ID транскрипции")
 
-        success = db.delete_transcripts(transcript_uuid)
+        # Просто удаляем запись о доступе текущего пользователя к этой транскрипции
+        success = db.remove_transcript_access(transcript_uuid, current_user["user_id"])
 
         if success:
-            return {"status": "success", "message": "Транскрипция удалена"}
+            return {"status": "success", "message": "Транскрипция удалена из вашего списка"}
         else:
-            raise HTTPException(404, "Транскрипция не найдена")
+            raise HTTPException(404, "Запись о доступе не найдена или транскрипция не существует")
 
     except HTTPException:
         raise
