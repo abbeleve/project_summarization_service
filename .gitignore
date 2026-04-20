@@ -246,3 +246,4 @@ meeting-bot/assets/screenshots
 meeting-bot/debug-videos/
 meeting-bot/.env.native
 meeting-bot/gcp-key
+.aider*
