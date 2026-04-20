@@ -97,15 +97,21 @@ class Transcript(Base):
 
 class ChatMessage(Base):
     __tablename__ = 'ChatMessages'
-    
+
     transcript_id: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey('Transcripts.id', ondelete='CASCADE'),
         nullable=False,
         index=True
     )
+    employee_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Staff.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
     role: Mapped[str] = mapped_column(
-        String(20), 
+        String(20),
         nullable=False,
         comment="user или assistant"
     )
@@ -115,16 +121,17 @@ class ChatMessage(Base):
         server_default=func.now(),
         nullable=False
     )
-    
+
     transcript: Mapped["Transcript"] = relationship(
         "Transcript",
         back_populates="chat_messages"
     )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': str(self.id),
             'transcript_id': str(self.transcript_id),
+            'employee_id': str(self.employee_id),
             'role': self.role,
             'content': self.content,
             'created_at': self.created_at.isoformat()
@@ -925,7 +932,7 @@ class DataBaseManager:
                 print(f"Ошибка при удалении резюме: {e}")
                 return False
             
-    def insert_chat_message(self, transcript_id: UUID, role: str, content: str) -> Optional[UUID]:
+    def insert_chat_message(self, transcript_id: UUID, employee_id: UUID, role: str, content: str) -> Optional[UUID]:
         with self.session_scope() as session:
             try:
                 transcript = session.get(Transcript, transcript_id)
@@ -934,6 +941,7 @@ class DataBaseManager:
 
                 message = ChatMessage(
                     transcript_id=transcript_id,
+                    employee_id=employee_id,
                     role=role,
                     content=content
                 )
@@ -943,12 +951,15 @@ class DataBaseManager:
             except SQLAlchemyError as e:
                 print(f"Ошибка при сохранении сообщения чата: {e}")
                 return None
-            
-    def select_chat_messages_by_transcript_id(self, transcript_id: UUID) -> List[Dict[str, Any]]:
+
+    def select_chat_messages_by_transcript_id(self, transcript_id: UUID, employee_id: UUID) -> List[Dict[str, Any]]:
         with self.session_scope() as session:
             try:
                 messages = session.query(ChatMessage)\
-                    .filter(ChatMessage.transcript_id == transcript_id)\
+                    .filter(
+                        ChatMessage.transcript_id == transcript_id,
+                        ChatMessage.employee_id == employee_id
+                    )\
                     .order_by(ChatMessage.created_at)\
                     .all()
                 return [msg.to_dict() for msg in messages]

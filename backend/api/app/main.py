@@ -574,8 +574,8 @@ async def proxy_ask_question(
         raise HTTPException(status_code=500, detail=f"Внутренняя ошибка: {str(e)}")
 
     # 5. Сохраняем историю в БД (ваша новая таблица ChatMessages)
-    db.insert_chat_message(transcript_id, "user", question)
-    db.insert_chat_message(transcript_id, "assistant", response_data.get("answer", ""))
+    db.insert_chat_message(transcript_id, current_user["user_id"], "user", question)
+    db.insert_chat_message(transcript_id, current_user["user_id"], "assistant", response_data.get("answer", ""))
 
     # 6. Возвращаем ответ фронтенду
     return JSONResponse(content=response_data)
@@ -615,8 +615,8 @@ async def get_chat_history(
         raise HTTPException(status_code=404, detail="Транскрипция не найдена")
 
     # Загружаем сообщения
-    messages = db.select_chat_messages_by_transcript_id(transcript_id)
-    
+    messages = db.select_chat_messages_by_transcript_id(transcript_id, current_user["user_id"])
+
     return {
         "transcript_id": transcript_id,
         "messages": [
@@ -850,12 +850,16 @@ async def get_transcript(
             transcript_uuid = UUID(transcript_id)
         except ValueError:
             raise HTTPException(400, "Некорректный формат ID транскрипции")
-        
+
         transcript_data = db.select_transcripts_by_id(transcript_uuid)
 
         if not transcript_data:
             raise HTTPException(404, "Транскрипция не найдена")
-        
+
+        if current_user.get('user_id') != transcript_data.get('employee_id'):
+            raise HTTPException(404, "Пользователь не идентифицирован")
+
+
         parts = db.select_parts_transcription_by_transcript_id(transcript_uuid)
         
         summary_data = db.select_summaries_by_transcript_id(transcript_uuid)
