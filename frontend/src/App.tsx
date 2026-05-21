@@ -8,6 +8,7 @@ import { RegisterPage } from '@/pages/RegisterPage';
 import { HomePage } from '@/pages/HomePage';
 import { AnalysisPage } from '@/pages/AnalysisPage';
 import { AdminPage } from '@/pages/AdminPage';
+import { ProfilePage } from '@/pages/ProfilePage';
 import MeetingBotPage from '@/pages/MeetingBotPage';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
@@ -106,6 +107,14 @@ function AppContent() {
         <ProtectedRoute>
           <AppLayout>
             <MeetingBotPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/profile" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <ProfilePage />
           </AppLayout>
         </ProtectedRoute>
       } />

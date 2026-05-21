@@ -21,7 +21,12 @@ class AuthMiddleware:
         }
     
     async def __call__(self, request: Request, call_next):
+        # Публичные пути без JWT
         if request.url.path in self.public_paths or request.url.path.startswith("/docs"):
+            return await call_next(request)
+
+        # GET /users/me/avatar — публичный (для <img>), остальные методы требуют JWT
+        if request.method == "GET" and request.url.path == "/users/me/avatar":
             return await call_next(request)
         
         auth_header = request.headers.get("Authorization")

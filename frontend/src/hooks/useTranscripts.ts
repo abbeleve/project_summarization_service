@@ -7,19 +7,21 @@ interface UseTranscriptsOptions {
   offset?: number;
   searchQuery?: string;
   searchType?: 'exact' | 'fuzzy';
+  startDate?: string;
+  endDate?: string;
 }
 
 export const useTranscripts = (options: UseTranscriptsOptions = {}) => {
   const queryClient = useQueryClient();
-  const { limit = 50, offset = 0, searchQuery, searchType = 'exact' } = options;
+  const { limit = 50, offset = 0, searchQuery, searchType = 'exact', startDate, endDate } = options;
 
   const hasSearch = searchQuery && searchQuery.trim().length > 0;
 
   const { data: transcriptsData, isLoading, error, refetch } = useQuery<TranscriptsResponse | SearchTranscriptsResponse, Error>({
-    queryKey: ['transcripts', limit, offset, searchQuery || 'all', searchType],
+    queryKey: ['transcripts', limit, offset, searchQuery || 'all', searchType, startDate, endDate],
     queryFn: () => hasSearch
       ? transcriptsApi.search(searchQuery, searchType, limit, offset)
-      : transcriptsApi.getAll(limit, offset),
+      : transcriptsApi.getAll(limit, offset, startDate, endDate),
     staleTime: 5 * 60 * 1000,
     retry: 1,
     refetchOnWindowFocus: false

@@ -28,21 +28,26 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<ApiError>) => {
     const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
-    
+
+    // Не пытаемся обновлять токен, если ошибка произошла при попытке входа в систему
+    if (originalRequest.url?.includes('/auth/login')) {
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
-      
+
       try {
         const refreshToken = localStorage.getItem('refresh_token');
         if (!refreshToken) throw new Error('No refresh token');
-        
+
         const response = await axios.post(`${API_URL}/auth/refresh`, {
           refresh_token: refreshToken
         });
-        
+
         const newToken = response.data.access_token;
         localStorage.setItem('access_token', newToken);
-        
+
         if (originalRequest.headers) {
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
         }
@@ -54,7 +59,7 @@ apiClient.interceptors.response.use(
         return Promise.reject(error);
       }
     }
-    
+
     return Promise.reject(error);
   }
 );

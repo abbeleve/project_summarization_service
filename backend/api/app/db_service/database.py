@@ -31,6 +31,11 @@ class Staff(Base):
     email: Mapped[str] = mapped_column(String(70), unique=True)
     login: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
     password: Mapped[str] = mapped_column(String(100), nullable=False)
+    avatar_key: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Ключ объекта в MinIO (avatars/{user_id})"
+    )
 
     celery_tasks: Mapped[List["CeleryTask"]] = relationship(
         "CeleryTask",
@@ -54,7 +59,8 @@ class Staff(Base):
             'name': self.name,
             'patronymic': self.patronymic,
             'email': self.email,
-            'login': self.login
+            'login': self.login,
+            'avatar_key': self.avatar_key
         }
 
 
@@ -735,7 +741,7 @@ class DataBaseManager:
                 print(f"Ошибка при проверке доступа: {e}")
                 return False
 
-    def select_transcripts_for_employee(self, employee_id: UUID) -> List[Dict[str, Any]]:
+    def select_transcripts_for_employee(self, employee_id: UUID, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> List[Dict[str, Any]]:
         with self.session_scope() as session:
             try:
                 # Получаем все транскрипции, к которым пользователь имеет любой доступ
@@ -743,10 +749,17 @@ class DataBaseManager:
                     TranscriptAccess, Transcript.id == TranscriptAccess.transcript_id
                 ).filter(
                     TranscriptAccess.employee_id == employee_id
-                ).order_by(Transcript.created_at.desc())
-                
+                )
+
+                if start_date:
+                    query = query.filter(Transcript.created_at >= start_date)
+                if end_date:
+                    query = query.filter(Transcript.created_at <= end_date)
+
+                query = query.order_by(Transcript.created_at.desc())
+
                 transcripts = query.all()
-                
+
                 return [t.to_dict() for t in transcripts]
             except SQLAlchemyError as e:
                 print(f"Ошибка при получении списка доступных транскрипций: {e}")

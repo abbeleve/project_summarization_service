@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Request, Form, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Request, Form, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware import Middleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -24,8 +24,10 @@ from .models.models import (
 )
 from .db_service.gen_fake_data import gen_fake_data
 from .db_service.database import DataBaseManager
+from .db_service.minio_client import MinioClient
 from .auth_service.jwt import jwt_service
 from .auth_service.middleware import AuthMiddleware
+from .voice.router import router as voice_router
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -56,12 +58,24 @@ async def auth_middleware_wrapper(request: Request, call_next):
         return await call_next(request)
     return await auth_middleware(request, call_next)
 
+# Include routers
+app.include_router(voice_router)
+
 # Функция для получения БД
 def get_db():
     """Зависимость для получения экземпляра БД"""
     db = DataBaseManager()
     try:
         yield db
+    finally:
+        pass
+
+# Зависимость для получения MinIO клиента
+def get_minio():
+    """Зависимость для получения экземпляра MinIO клиента"""
+    client = MinioClient()
+    try:
+        yield client
     finally:
         pass
 
@@ -307,6 +321,173 @@ async def read_users_me(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
         )
+
+
+# ----- Users / Profile Endpoints -----
+
+class UpdateProfileRequest(BaseModel):
+    surname: Optional[str] = None
+    name: Optional[str] = None
+    patronymic: Optional[str] = None
+    email: Optional[str] = None
+
+
+@app.get("/users/me")
+async def get_current_user_profile(
+    request: Request,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db),
+):
+    """Получить полный профиль текущего пользователя."""
+    from uuid import UUID as UUIDType
+    user_id = UUIDType(current_user["user_id"])
+    user_data = db.select_staff_by_id(user_id)
+
+    if not user_data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Если есть аватарка — возвращаем ссылку на публичный эндпоинт
+    avatar_url = None
+    if user_data.get("avatar_key"):
+        avatar_url = f"{request.base_url}users/me/avatar?user_id={current_user['user_id']}"
+
+    return {
+        "user_id": user_data["id"],
+        "username": user_data["login"],
+        "surname": user_data["surname"],
+        "name": user_data["name"],
+        "patronymic": user_data.get("patronymic", ""),
+        "full_name": f"{user_data['surname']} {user_data['name']}".strip(),
+        "email": user_data["email"],
+        "avatar_url": avatar_url,
+    }
+
+
+@app.put("/users/me")
+async def update_current_user_profile(
+    request: Request,
+    profile_data: UpdateProfileRequest,
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db),
+):
+    """Обновить профиль текущего пользователя."""
+    from uuid import UUID as UUIDType
+    user_id = UUIDType(current_user["user_id"])
+
+    update_kwargs = {}
+    if profile_data.surname is not None:
+        update_kwargs["surname"] = profile_data.surname
+    if profile_data.name is not None:
+        update_kwargs["name"] = profile_data.name
+    if profile_data.patronymic is not None:
+        update_kwargs["patronymic"] = profile_data.patronymic
+    if profile_data.email is not None:
+        update_kwargs["email"] = profile_data.email
+
+    if not update_kwargs:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    success = db.update_staff(user_id, **update_kwargs)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update profile")
+
+    user_data = db.select_staff_by_id(user_id)
+    avatar_url = f"{request.base_url}users/me/avatar?user_id={current_user['user_id']}" if user_data.get("avatar_key") else None
+
+    return {
+        "user_id": user_data["id"],
+        "username": user_data["login"],
+        "surname": user_data["surname"],
+        "name": user_data["name"],
+        "patronymic": user_data.get("patronymic", ""),
+        "full_name": f"{user_data['surname']} {user_data['name']}".strip(),
+        "email": user_data["email"],
+        "avatar_url": avatar_url,
+    }
+
+
+# ----- Avatar Endpoints -----
+
+MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5 MB
+ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
+
+@app.post("/users/me/avatar")
+async def upload_avatar(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db),
+    minio: MinioClient = Depends(get_minio),
+):
+    """Загрузить или заменить аватарку."""
+    from uuid import UUID as UUIDType
+    user_id = UUIDType(current_user["user_id"])
+
+    # Валидация типа файла
+    if file.content_type not in ALLOWED_AVATAR_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Неподдерживаемый формат. Разрешены: {', '.join(ALLOWED_AVATAR_TYPES)}"
+        )
+
+    # Валидация размера
+    data = await file.read()
+    if len(data) > MAX_AVATAR_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Файл слишком большой. Максимум 5 МБ."
+        )
+
+    # Загружаем в MinIO
+    avatar_key = minio.upload_avatar(user_id, data, file.content_type)
+
+    # Сохраняем ключ в БД
+    db.update_staff(user_id, avatar_key=avatar_key)
+
+    return {
+        "avatar_url": f"{request.base_url}users/me/avatar?user_id={current_user['user_id']}",
+        "message": "Аватарка загружена"
+    }
+
+
+@app.delete("/users/me/avatar")
+async def delete_avatar(
+    current_user: Dict = Depends(get_current_user),
+    db: DataBaseManager = Depends(get_db),
+    minio: MinioClient = Depends(get_minio),
+):
+    """Удалить аватарку."""
+    from uuid import UUID as UUIDType
+    user_id = UUIDType(current_user["user_id"])
+
+    # Удаляем из MinIO
+    minio.delete_avatar(user_id)
+
+    # Очищаем ключ в БД
+    db.update_staff(user_id, avatar_key=None)
+
+    return {"message": "Аватарка удалена"}
+
+
+@app.get("/users/me/avatar")
+async def get_avatar(
+    user_id: str = Query(..., description="UUID пользователя"),
+    minio: MinioClient = Depends(get_minio),
+):
+    """Получить файл аватарки пользователя.
+
+    Публичный эндпоинт (без JWT) — для прямого использования в <img>.
+    """
+    from uuid import UUID as UUIDType
+    uid = UUIDType(user_id)
+
+    result = minio.get_avatar_data(uid)
+    if not result:
+        raise HTTPException(status_code=404, detail="Аватарка не найдена")
+
+    data, content_type = result
+    return Response(content=data, media_type=content_type)
 
 
 @app.post("/process")
@@ -754,6 +935,8 @@ async def search_transcripts(
 async def get_user_transcripts(
     limit: int = 10,
     offset: int = 0,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db)
 ):
@@ -761,13 +944,27 @@ async def get_user_transcripts(
     try:
         logger.info(f"Fetching transcripts for user: {current_user}")
 
+        # Парсим даты если они предоставлены
+        parsed_start_date = None
+        parsed_end_date = None
+        try:
+            if start_date:
+                parsed_start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            if end_date:
+                parsed_end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+
         # Используем новый метод для получения всех доступных транскрипций (своих и расшаренных)
-        all_transcripts = db.select_transcripts_for_employee(current_user["user_id"])
-        
+        all_transcripts = db.select_transcripts_for_employee(
+            current_user["user_id"], 
+            start_date=parsed_start_date, 
+            end_date=parsed_end_date
+        )
+
         # Пагинация на уровне Python
         total = len(all_transcripts)
         rows = all_transcripts[offset : offset + limit]
-
         transcripts_list = []
         for transcript_data in rows:
             transcript_uuid = UUID(transcript_data['id'])

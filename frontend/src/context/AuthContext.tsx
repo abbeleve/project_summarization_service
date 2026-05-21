@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback } from 'react';
 import { jwtDecode } from 'jwt-decode';
+import axios from 'axios';
 import { authApi } from '@/api/auth';
+import { usersApi } from '@/api/voice';
 import type { User, AuthState, LoginCredentials, RegisterData, TokenPayload } from '@/types/auth';
 
 interface AuthContextType extends AuthState {
@@ -32,21 +34,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  const enrichUserWithAvatar = useCallback(async (user: User): Promise<User> => {
+    try {
+      const profile = await usersApi.getProfile();
+      return { ...user, avatar_url: profile.avatar_url ?? null };
+    } catch {
+      return user;
+    }
+  }, []);
+
   const checkAuth = useCallback(async () => {
     const accessToken = localStorage.getItem('access_token');
     const refreshToken = localStorage.getItem('refresh_token');
-    
+
     if (accessToken && !isTokenExpired(accessToken)) {
       try {
         const payload = jwtDecode<TokenPayload>(accessToken);
-        const user: User = {
+        let user: User = {
           user_id: payload.user_id,
           username: payload.sub,
           full_name: payload.full_name || '',
           email: '',
           role: payload.role === 'admin' ? 'admin' : 'user'
         };
-        
+
+        user = await enrichUserWithAvatar(user);
+
         setState({
           user,
           accessToken,
@@ -61,9 +74,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         localStorage.removeItem('refresh_token');
       }
     }
-    
+
     setState(prev => ({ ...prev, isLoading: false }));
-  }, [isTokenExpired]);
+  }, [isTokenExpired, enrichUserWithAvatar]);
 
   useEffect(() => {
     checkAuth();
@@ -79,13 +92,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem('refresh_token', response.refresh_token);
 
       const payload = jwtDecode<TokenPayload>(response.access_token);
-      const user: User = {
+      let user: User = {
         user_id: response.user_id,
         username: credentials.username,
         full_name: response.full_name,
         email: '',
         role: payload.role === 'admin' ? 'admin' : 'user'
       };
+
+      user = await enrichUserWithAvatar(user);
 
       setState({
         user,
@@ -96,7 +111,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         error: null
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Ошибка авторизации';
+      let message = 'Ошибка авторизации';
+      if (axios.isAxiosError(error)) {
+        const detail = error.response?.data?.detail;
+        if (Array.isArray(detail)) {
+          message = detail.map(err => err.msg).join(', ');
+        } else if (typeof detail === 'string') {
+          message = detail;
+        } else {
+          message = error.message;
+        }
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
       setState(prev => ({ ...prev, isLoading: false, error: message }));
       throw error;
     }
@@ -112,13 +139,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem('refresh_token', response.refresh_token);
 
       const payload = jwtDecode<TokenPayload>(response.access_token);
-      const user: User = {
+      let user: User = {
         user_id: response.user_id,
         username: data.username,
         full_name: `${data.surname} ${data.name}`,
         email: data.email,
         role: payload.role === 'admin' ? 'admin' : 'user'
       };
+
+      user = await enrichUserWithAvatar(user);
 
       setState({
         user,
@@ -129,7 +158,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         error: null
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Ошибка регистрации';
+      let message = 'Ошибка регистрации';
+      if (axios.isAxiosError(error)) {
+        const detail = error.response?.data?.detail;
+        if (Array.isArray(detail)) {
+          message = detail.map(err => err.msg).join(', ');
+        } else if (typeof detail === 'string') {
+          message = detail;
+        } else {
+          message = error.message;
+        }
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
       setState(prev => ({ ...prev, isLoading: false, error: message }));
       throw error;
     }

@@ -13,6 +13,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Главная', icon: '🏠', path: '/' },
+  { label: 'Профиль', icon: '👤', path: '/profile' },
   { label: 'Meeting Bot', icon: '🤖', path: '/meeting-bot' },
   { label: 'Пользователи', icon: '👥', path: '/admin', adminOnly: true },
 ];
@@ -61,10 +62,18 @@ export const Header = () => {
 
             {/* Инфо о пользователе */}
             <div className="hidden md:flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-md">
-                <span className="text-sm font-bold text-white">
-                  {user?.full_name?.charAt(0).toUpperCase() || 'U'}
-                </span>
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-md overflow-hidden">
+                {user?.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt="Avatar"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-sm font-bold text-white">
+                    {user?.full_name?.charAt(0).toUpperCase() || 'U'}
+                  </span>
+                )}
               </div>
               <div className="flex flex-col">
                 <p className="text-sm font-semibold text-gray-900 dark:text-white whitespace-nowrap">

@@ -20,12 +20,12 @@ class LoginRequest(BaseModel):
     password: str = Field(..., description="Пароль пользователя")
 
 class RegisterRequest(BaseModel):
-    username: str = Field(..., description="Логин пользователя")
-    password: str = Field(..., description="Пароль пользователя")
+    username: str = Field(..., min_length=3, description="Логин пользователя")
+    password: str = Field(..., min_length=6, description="Пароль пользователя")
     surname: str = Field(..., description="Фамилия")
     name: str = Field(..., description="Имя")
     patronymic: Optional[str] = Field(None, description="Отчество")
-    email: str = Field(..., description="Email")
+    email: str = Field(..., pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", description="Email")
 
 class TokenResponse(Token):
     refresh_token: Optional[str] = None

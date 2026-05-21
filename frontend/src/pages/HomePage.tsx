@@ -21,10 +21,17 @@ export const HomePage = () => {
   const [offset, setOffset] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [actualSearchQuery, setActualSearchQuery] = useState(''); // Для поиска по кнопке
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [actualStartDate, setActualStartDate] = useState('');
+  const [actualEndDate, setActualEndDate] = useState('');
+
   const { transcripts, isLoading, error, total, refetch, processAudio, deleteTranscript } = useTranscripts({
     limit: TRANSCRIPTS_PER_PAGE,
     offset,
-    searchQuery: actualSearchQuery || undefined
+    searchQuery: actualSearchQuery || undefined,
+    startDate: actualStartDate || undefined,
+    endDate: actualEndDate || undefined
   });
   const { tasks, addTask, removeTask } = useActiveTasks();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -154,47 +161,69 @@ export const HomePage = () => {
             </div>
           </div>
 
-          {/* Поиск по названию */}
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="relative flex-1 sm:w-64">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    setActualSearchQuery(searchQuery);
-                    setOffset(0);
-                  }
-                }}
-                placeholder="Поиск по названию..."
-                className="w-full px-4 py-2 pl-10 pr-10 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all"
-              />
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                🔍
-              </span>
-              {searchQuery && (
-                <button
-                  onClick={() => {
-                    setSearchQuery('');
-                    setActualSearchQuery('');
-                    setOffset(0);
+          {/* Поиск по названию и фильтрация по дате */}
+          <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 sm:w-64">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setActualSearchQuery(searchQuery);
+                      setActualStartDate(startDate);
+                      setActualEndDate(endDate);
+                      setOffset(0);
+                    }
                   }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  ✕
-                </button>
-              )}
+                  placeholder="Поиск по названию..."
+                  className="w-full px-4 py-2 pl-10 pr-10 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all"
+                />
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                  🔍
+                </span>
+                {searchQuery && (
+                  <button
+                    onClick={() => {
+                      setSearchQuery('');
+                      setActualSearchQuery('');
+                      setOffset(0);
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all text-sm"
+                />
+                <span className="text-gray-400">—</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all text-sm"
+                />
+              </div>
             </div>
             <Button
               onClick={() => {
                 setActualSearchQuery(searchQuery);
+                setActualStartDate(startDate);
+                setActualEndDate(endDate);
                 setOffset(0);
               }}
               size="sm"
               className="whitespace-nowrap"
             >
-              Найти
+              Применить
             </Button>
           </div>
         </div>

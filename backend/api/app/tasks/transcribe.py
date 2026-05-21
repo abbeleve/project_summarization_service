@@ -6,7 +6,7 @@ import json
 import logging
 import requests
 from uuid import UUID
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 from app.celery_app import celery_app
 from app.db_service.database import DataBaseManager
 
@@ -202,7 +202,17 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
             logger.warning(f"[{task_id}] Не удалось проиндексировать в RAG: {e}")
             # Не прерываем задачу, RAG indexing не критичен
 
-        # === 5. Удаляем запись из scheduled_meetings ===
+        # === 5. Speaker identification ===
+        # Пытаемся определить реальных спикеров по SPEAKER_XX меткам
+        try:
+            enrolled = _get_enrolled_speakers()
+            if enrolled:
+                logger.info(f"[{task_id}] Найдено {len(enrolled)} зарегистрированных голосовых профилей")
+                _match_speakers_in_parts(db, transcript_id, enrolled)
+        except Exception as e:
+            logger.warning(f"[{task_id}] Speaker identification не удалась: {e}")
+
+        # === 6. Удаляем запись из scheduled_meetings ===
         # Пайплайн завершён, результат сохранён в transcripts/summaries — временная запись больше не нужна
         meeting_id = options.get("meeting_id")
         if meeting_id:
@@ -314,3 +324,77 @@ def split_into_chunks(parts: list, transcript_meta: dict, max_length: int = 500)
             })
 
     return chunks
+
+
+def _get_enrolled_speakers() -> List[Dict[str, Any]]:
+    """
+    Get list of enrolled speakers from Qdrant voice profiles.
+    Returns empty list if Qdrant is unavailable or no profiles exist.
+    """
+    try:
+        from app.voice.qdrant_profiles import list_all_profiles
+        return list_all_profiles()
+    except ImportError:
+        logger.debug("voice module not available, skipping speaker identification")
+        return []
+    except Exception as e:
+        logger.debug(f"Could not fetch enrolled speakers: {e}")
+        return []
+
+
+def _match_speakers_in_parts(
+    db: DataBaseManager,
+    transcript_id: UUID,
+    enrolled: List[Dict[str, Any]],
+):
+    """
+    For each unique speaker label in the transcript parts, try to match
+    against enrolled user profiles. Updates part text labels in DB.
+
+    Simple label-based matching: if there's exactly one enrolled speaker
+    or names match partially, update the parts.
+    """
+    parts = db.select_parts_transcription_by_transcript_id(transcript_id)
+    if not parts:
+        return
+
+    # Extract unique speaker labels
+    speaker_labels = set()
+    for part in parts:
+        text = part.get("text", "")
+        if ":" in text:
+            speaker = text.split(":", 1)[0].strip()
+            speaker_labels.add(speaker)
+
+    if not speaker_labels:
+        return
+
+    # Build mapping: SPEAKER_XX -> enrolled user name
+    # Simple heuristic: assign in order (first SPEAKER_00 -> first enrolled, etc.)
+    sorted_labels = sorted(speaker_labels)
+    label_to_name = {}
+
+    for i, label in enumerate(sorted_labels):
+        if i < len(enrolled):
+            full_name = enrolled[i].get("full_name", "")
+            if full_name:
+                label_to_name[label] = full_name
+
+    if not label_to_name:
+        return
+
+    # Update parts with identified names
+    for part in parts:
+        text = part.get("text", "")
+        if ":" not in text:
+            continue
+
+        speaker = text.split(":", 1)[0].strip()
+        if speaker in label_to_name:
+            new_text = f"{label_to_name[speaker]}:{text.split(':', 1)[1]}"
+            db.update_parts_transcription(part["id"], text=new_text)
+
+    logger.info(
+        f"Speaker labels updated for transcript {transcript_id}: "
+        f"{', '.join(f'{k}→{v}' for k, v in label_to_name.items())}"
+    )

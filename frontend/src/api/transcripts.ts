@@ -43,8 +43,16 @@ export const transcriptsApi = {
     return response.data;
   },
 
-  getAll: async (limit: number = 50, offset: number = 0): Promise<TranscriptsResponse> => {
-    const response = await apiClient.get<TranscriptsResponse>(`/transcripts?limit=${limit}&offset=${offset}`);
+  getAll: async (
+    limit: number = 50,
+    offset: number = 0,
+    startDate?: string,
+    endDate?: string
+  ): Promise<TranscriptsResponse> => {
+    let url = `/transcripts?limit=${limit}&offset=${offset}`;
+    if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+    if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+    const response = await apiClient.get<TranscriptsResponse>(url);
     return response.data;
   },
 

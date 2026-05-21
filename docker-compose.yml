@@ -50,6 +50,11 @@ services:
       JWT_ALGORITHM: ${JWT_ALGORITHM}
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES}
       JWT_REFRESH_TOKEN_EXPIRE_DAYS: ${JWT_REFRESH_TOKEN_EXPIRE_DAYS}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      AVATAR_BUCKET_NAME: ${AVATAR_BUCKET_NAME:-avatars}
+      MINIO_PUBLIC_ENDPOINT: localhost:9000
       PYTHONUNBUFFERED: "1"
     depends_on:
       postgres:
@@ -231,7 +236,8 @@ services:
         mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin} &&
         echo 'Creating bucket: ${S3_BUCKET_NAME:-meeting-recordings}' &&
         mc mb --ignore-existing myminio/${S3_BUCKET_NAME:-meeting-recordings} &&
-        echo 'Setting public read policy...' &&
+        echo 'Creating bucket: ${AVATAR_BUCKET_NAME:-avatars}' &&
+        mc mb --ignore-existing myminio/${AVATAR_BUCKET_NAME:-avatars} &&
         mc anonymous set download myminio/${S3_BUCKET_NAME:-meeting-recordings} &&
         echo '=== MinIO Initialization Complete ==='
       "
