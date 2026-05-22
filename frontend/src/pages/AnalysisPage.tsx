@@ -122,11 +122,6 @@ export const AnalysisPage = () => {
     }
   };
 
-  const startEditing = () => {
-    setEditTitle(transcript?.title || '');
-    setIsEditing(true);
-  };
-
   // Обработка выделения текста
   const handleTextSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -312,51 +307,68 @@ export const AnalysisPage = () => {
         <Button variant="ghost" onClick={() => navigate('/')}>
           ← Назад
         </Button>
+      </div>
+
+      {/* Заголовок транскрипции с мета-информацией */}
+      <div className="space-y-1">
         <div className="flex items-center gap-2">
           {isEditing ? (
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleRename();
-                  if (e.key === 'Escape') setIsEditing(false);
-                }}
-                className="px-3 py-1.5 border border-gray-300 dark:border-dark-base-600 rounded-lg bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:outline-none"
-                placeholder="Новое название"
-                autoFocus
-              />
-              <Button
-                size="sm"
-                onClick={handleRename}
-                disabled={isSaving || !editTitle.trim()}
-              >
-                {isSaving ? '...' : '💾'}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setIsEditing(false)}
-              >
-                ✕
-              </Button>
-            </div>
+            <input
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleRename();
+                if (e.key === 'Escape') setIsEditing(false);
+              }}
+              onBlur={() => setIsEditing(false)}
+              className="text-3xl font-bold text-blue-600 dark:text-blue-400 bg-transparent border-b-2 border-blue-500 focus:outline-none px-1 py-0.5"
+              autoFocus
+            />
           ) : (
-            <>
-              <Button variant="secondary" size="sm" onClick={startEditing}>
-                ✏️ Переименовать
-              </Button>
-              <Button variant="secondary" size="sm">
-                📥 Скачать JSON
-              </Button>
-              <Button variant="secondary" size="sm">
-                📋 Скачать отчёт
-              </Button>
-            </>
+            <h1 className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+              {transcript.title}
+            </h1>
           )}
+          <button
+            onClick={() => { setEditTitle(transcript.title); setIsEditing(v => !v); }}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors cursor-pointer flex-shrink-0"
+            title="Переименовать"
+            type="button"
+          >
+            ✏️
+          </button>
+        </div>
+        <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
+          <span>🗣 {transcript.speakers?.length || new Set(segments.map(s => s.Speaker)).size} спикеров</span>
+          <span>⏱ {(() => { const s = transcript.duration ? transcript.duration * 60 : (segments[segments.length - 1]?.stop || 0); return new Date(s * 1000).toISOString().slice(11, 19); })()}</span>
+          <span>🔑 {transcript.key_points?.length || 0} ключ. моментов</span>
+          <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-dark-base-800 text-gray-600 dark:text-gray-300 text-xs font-medium">
+            {transcript.meeting_type}
+          </span>
+          <span className="flex items-center gap-1.5 ml-auto">
+            <Button variant="secondary" size="sm" onClick={() => { navigator.clipboard.writeText(window.location.origin + '/analysis/' + id); showToast('🔗 Ссылка скопирована!', 'success'); }}>
+              🔗 Поделиться
+            </Button>
+            <Button variant="secondary" size="sm">
+              📥 Скачать JSON
+            </Button>
+            <Button variant="secondary" size="sm">
+              📋 Скачать отчёт
+            </Button>
+          </span>
         </div>
       </div>
+
+      {/* Аудиоплеер над транскрипцией и графиками */}
+      {audioUrl && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+          <AudioPlayer
+            src={audioUrl}
+            segments={segments}
+          />
+        </div>
+      )}
 
       {/* Основная раскладка: транскрипция слева, суммаризация + ключевые моменты справа */}
       <div className="flex flex-col lg:flex-row">
@@ -370,7 +382,7 @@ export const AnalysisPage = () => {
             style={{ height: 'calc(100vh - 200px)' }}
           >
             <div className="flex items-center justify-between mb-3 flex-shrink-0">
-              <h3 className="text-3xl font-bold text-blue-600 dark:text-blue-400">{transcript.title}</h3>
+              <h3 className="text-xl font-bold text-blue-600 dark:text-blue-400">Детальная транскрипция</h3>
             </div>
             <div className="space-y-0 overflow-y-auto pr-2 flex-1 min-h-0">
               {segments.map((seg, idx) => (
@@ -539,13 +551,6 @@ export const AnalysisPage = () => {
                     <SpeakerDistributionChart
                       segments={segments}
                       onSegmentClick={handleSegmentClick}
-                    />
-                  )}
-
-                  {segments.length > 0 && audioUrl && (
-                    <AudioPlayer
-                      src={audioUrl}
-                      segments={segments}
                     />
                   )}
                 </div>

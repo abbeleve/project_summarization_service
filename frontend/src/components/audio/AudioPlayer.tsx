@@ -67,7 +67,7 @@ export const AudioPlayer = ({ src, title, segments, onTimeUpdate }: AudioPlayerP
       <div className="flex items-center gap-3">
         <button
           onClick={togglePlay}
-          className="p-2.5 rounded-full bg-violet-600 text-white hover:bg-violet-700 active:bg-violet-800 transition-colors shadow-sm"
+          className="p-2.5 rounded-full bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 transition-colors shadow-sm"
           title={isPlaying ? 'Пауза' : 'Воспроизвести'}
         >
           {isPlaying ? (
@@ -89,7 +89,7 @@ export const AudioPlayer = ({ src, title, segments, onTimeUpdate }: AudioPlayerP
             max={duration || 100}
             value={currentTime}
             onChange={handleSeek}
-            className="flex-1 accent-violet-600 h-2 rounded-full cursor-pointer"
+            className="flex-1 accent-blue-600 h-2 rounded-full cursor-pointer"
           />
           <span className="text-xs text-gray-500 dark:text-gray-400 w-10 text-right tabular-nums">{formatTime(duration)}</span>
         </div>
@@ -104,7 +104,7 @@ export const AudioPlayer = ({ src, title, segments, onTimeUpdate }: AudioPlayerP
             return (
               <div
                 key={idx}
-                className="absolute top-0 h-full bg-violet-200 dark:bg-violet-900/50 border-l border-violet-400 dark:border-violet-700"
+                className="absolute top-0 h-full bg-blue-200 dark:bg-blue-900/50 border-l border-blue-400 dark:border-blue-700"
                 style={{ left: `${left}%`, width: `${width}%` }}
                 title={`${seg.Speaker}: ${seg.Text.slice(0, 50)}...`}
               />

@@ -302,7 +302,7 @@ export const TranscriptionHistoryPanel = () => {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') applyFilters(); }}
                   placeholder="Поиск..."
-                  className="w-full pl-8 pr-8 py-2 text-sm rounded-xl border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all"
+                  className="w-full pl-8 pr-8 py-2 text-sm rounded-xl border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
                 {searchQuery && (
@@ -324,7 +324,7 @@ export const TranscriptionHistoryPanel = () => {
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
                     placeholder="дд/мм/гггг"
-                    className="w-full pl-7 pr-2 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all"
+                    className="w-full pl-7 pr-2 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
                   <button
                     type="button"
@@ -347,7 +347,7 @@ export const TranscriptionHistoryPanel = () => {
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
                     placeholder="дд/мм/гггг"
-                    className="w-full pl-7 pr-2 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all"
+                    className="w-full pl-7 pr-2 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
                   <button
                     type="button"
@@ -365,7 +365,7 @@ export const TranscriptionHistoryPanel = () => {
                 </div>
                 <button
                   onClick={applyFilters}
-                  className="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-violet-500 hover:bg-violet-600 text-white transition-colors flex-shrink-0 cursor-pointer"
+                  className="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-colors flex-shrink-0 cursor-pointer"
                   type="button"
                 >
                   OK
@@ -375,7 +375,7 @@ export const TranscriptionHistoryPanel = () => {
               {/* Active filters indicator & clear */}
               {hasFilters && (
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-violet-600 dark:text-violet-400 font-medium">
+                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">
                     Фильтр активен
                   </span>
                   <button
@@ -416,7 +416,7 @@ export const TranscriptionHistoryPanel = () => {
               </div>
             ) : !allTranscripts.length ? (
               <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-100 to-purple-100 dark:from-violet-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-3">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-3">
                   <span className="text-2xl">📝</span>
                 </div>
                 <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
@@ -430,7 +430,7 @@ export const TranscriptionHistoryPanel = () => {
                 {hasFilters && (
                   <button
                     onClick={clearFilters}
-                    className="mt-3 px-3 py-1.5 text-xs font-medium rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 hover:bg-violet-200 dark:hover:bg-violet-900/50 transition-colors cursor-pointer"
+                    className="mt-3 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors cursor-pointer"
                     type="button"
                   >
                     Сбросить фильтры
@@ -460,7 +460,7 @@ export const TranscriptionHistoryPanel = () => {
                             key={t.transcript_id}
                             className={`group relative px-4 py-3 transition-colors cursor-pointer border-l-2 ${
                               isActive
-                                ? 'bg-violet-50 dark:bg-violet-900/15 border-l-violet-500'
+                                ? 'bg-blue-50 dark:bg-blue-900/15 border-l-blue-500'
                                 : 'border-l-transparent hover:bg-gray-50 dark:hover:bg-dark-base-800/60'
                             } ${isDeleting ? 'opacity-50' : ''}`}
                             onClick={() => handleTranscriptClick(t.transcript_id)}
@@ -489,7 +489,7 @@ export const TranscriptionHistoryPanel = () => {
                                         if (e.key === 'Enter') handleRename(t.transcript_id);
                                         if (e.key === 'Escape') setEditingId(null);
                                       }}
-                                      className="flex-1 min-w-0 px-1.5 py-0.5 text-xs border border-gray-300 dark:border-dark-base-600 rounded bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                                      className="flex-1 min-w-0 px-1.5 py-0.5 text-xs border border-gray-300 dark:border-dark-base-600 rounded bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                                       autoFocus
                                     />
                                     <button onClick={(e) => { e.stopPropagation(); handleRename(t.transcript_id); }} className="w-5 h-5 rounded bg-green-500 hover:bg-green-600 text-white flex items-center justify-center flex-shrink-0 transition-colors text-[9px]" title="Сохранить" type="button">{isSaving ? '…' : '✓'}</button>
@@ -497,7 +497,7 @@ export const TranscriptionHistoryPanel = () => {
                                   </div>
                                 ) : (
                                   <div className="flex items-start justify-between gap-1">
-                                    <h4 className={`text-sm leading-tight truncate ${isActive ? 'font-semibold text-violet-700 dark:text-violet-300' : 'font-medium text-gray-900 dark:text-white'}`}>{t.title}</h4>
+                                    <h4 className={`text-sm leading-tight truncate ${isActive ? 'font-semibold text-blue-700 dark:text-blue-300' : 'font-medium text-gray-900 dark:text-white'}`}>{t.title}</h4>
                                     <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                                       <button onClick={(e) => { e.stopPropagation(); setEditingId(t.transcript_id); setEditTitle(t.title); }} className="w-5 h-5 rounded hover:bg-gray-200 dark:hover:bg-dark-base-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex items-center justify-center transition-colors text-[10px]" title="Переименовать" type="button">✏️</button>
                                       <button onClick={(e) => { e.stopPropagation(); setDeletingId(t.transcript_id); }} className="w-5 h-5 rounded hover:bg-gray-200 dark:hover:bg-dark-base-700 text-gray-400 hover:text-red-500 flex items-center justify-center transition-colors text-[10px]" title="Удалить" type="button">🗑️</button>
@@ -539,10 +539,10 @@ export const TranscriptionHistoryPanel = () => {
         <div className="relative flex-shrink-0 border-t border-gray-200 dark:border-dark-base-700" ref={profileRef}>
           <button
             onClick={() => setProfileOpen(v => !v)}
-            className="flex items-center gap-2 w-full px-4 py-3 bg-white dark:bg-dark-base-900 hover:bg-gray-50 dark:hover:bg-dark-base-800 transition-colors cursor-pointer"
+            className="flex items-center gap-2 w-full px-4 py-3 pb-5 bg-white dark:bg-dark-base-900 hover:bg-gray-50 dark:hover:bg-dark-base-800 transition-colors cursor-pointer"
             type="button"
           >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-md overflow-hidden flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center shadow-md overflow-hidden flex-shrink-0">
               {user?.avatar_url ? (
                 <img src={user.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
