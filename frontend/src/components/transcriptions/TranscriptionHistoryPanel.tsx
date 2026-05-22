@@ -268,10 +268,10 @@ export const TranscriptionHistoryPanel = () => {
         {/* Header — click to collapse/expand list */}
         <div
           onClick={() => setListExpanded(v => !v)}
-          className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-dark-base-700 flex-shrink-0 cursor-pointer select-none hover:bg-gray-50 dark:hover:bg-dark-base-800/60 transition-colors"
+          className="flex items-center justify-between pl-7 pr-4 py-2.5 flex-shrink-0 cursor-pointer select-none hover:bg-gray-50 dark:hover:bg-dark-base-800/60 transition-colors"
         >
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white">История</h3>
+            <h3 className="text-base font-bold text-gray-900 dark:text-white">История</h3>
             <span
               className={`text-xs text-gray-400 transition-transform duration-300 ${
                 listExpanded ? '' : 'rotate-180'
@@ -289,15 +289,11 @@ export const TranscriptionHistoryPanel = () => {
           </div>
         </div>
 
-        {/* Collapsible content: search, filters, transcript list */}
-        <div
-          className={`transition-all duration-300 ${
-            listExpanded ? 'flex flex-col flex-1 min-h-0' : 'max-h-0 overflow-hidden flex-none'
-          }`}
-        >
-          {/* Search & Filters — only show when expanded */}
+        {/* Collapsible content wrapper — always takes flex-1 to keep profile at bottom */}
+        <div className={`flex-1 min-h-0 flex flex-col ${listExpanded ? '' : 'overflow-hidden'}`}>
+          {/* Search & Filters */}
           {listExpanded && (
-            <div className="px-3 py-2 border-b border-gray-200 dark:border-dark-base-700 flex-shrink-0 space-y-2">
+            <div className="px-3 py-2 flex-shrink-0 space-y-2">
               {/* Search */}
               <div className="relative">
                 <input
@@ -395,6 +391,7 @@ export const TranscriptionHistoryPanel = () => {
           )}
 
           {/* Transcript list */}
+          {listExpanded && (
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
@@ -447,7 +444,7 @@ export const TranscriptionHistoryPanel = () => {
                   if (items.length === 0) return null;
                   return (
                     <div key={groupKey}>
-                      <div className="sticky top-0 z-10 px-4 py-2 bg-white/90 dark:bg-dark-base-900/90 backdrop-blur-sm border-b border-gray-100 dark:border-dark-base-800">
+                      <div className="sticky top-0 z-10 px-4 py-2 bg-white/90 dark:bg-dark-base-900/90 backdrop-blur-sm">
                         <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           {GROUP_LABELS[groupKey]}
                         </span>
@@ -535,6 +532,7 @@ export const TranscriptionHistoryPanel = () => {
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Bottom: profile */}
