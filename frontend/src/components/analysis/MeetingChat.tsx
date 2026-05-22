@@ -52,7 +52,7 @@ export const MeetingChat = ({ transcriptId }: MeetingChatProps) => {
   const allMessages = [...(messages || []), ...localMessages];
 
   return (
-    <div className="flex flex-col h-[600px] bg-white dark:bg-dark-base-800 rounded-2xl shadow-lg border border-gray-200 dark:border-dark-base-700 overflow-hidden">
+    <div className="flex flex-col h-full bg-white dark:bg-dark-base-800 rounded-xl border border-gray-200 dark:border-dark-base-700 overflow-hidden">
       {/* Header с градиентом */}
       <div className="bg-gradient-to-r from-violet-500 to-purple-600 p-5">
         <div className="flex items-center gap-3">

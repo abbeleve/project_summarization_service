@@ -5,7 +5,6 @@ import { useAnnotations } from '@/hooks/useAnnotations';
 import { transcriptsApi } from '@/api/transcripts';
 import { voiceApi, usersApi } from '@/api/voice';
 import { getDominantColorsMap } from '@/utils/dominantColor';
-import { SummaryCard } from '@/components/analysis/SummaryCard';
 import { SpeakerDistributionChart } from '@/components/analysis/SpeakerDistributionChart';
 import { TranscriptSegment } from '@/components/analysis/TranscriptSegment';
 import { AnnotatedText } from '@/components/analysis/AnnotatedText';
@@ -37,7 +36,8 @@ export const AnalysisPage = () => {
   const [showAnnotationPopup, setShowAnnotationPopup] = useState(false);
   const [selectedColor, setSelectedColor] = useState('yellow');
   const [annotationNote, setAnnotationNote] = useState('');
-  const [showAnnotationsPanel, setShowAnnotationsPanel] = useState(false);
+  const [rightTab, setRightTab] = useState<'summary' | 'charts' | 'chat' | 'annotations'>('summary');
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -221,21 +221,18 @@ export const AnalysisPage = () => {
 
   // Клик по аннотации в тексте
   const handleAnnotationClick = (annotation: Annotation) => {
-    // Открываем панель если закрыта
-    setShowAnnotationsPanel(true);
+    // Переключаем на вкладку аннотаций
+    setRightTab('annotations');
 
-    // Прокручиваем к нужной аннотации в панели
+    // Прокручиваем к нужной аннотации
     setTimeout(() => {
-      const panel = document.querySelector('.annotations-panel');
+      const panel = document.querySelector(`[data-annotation-id="${annotation.id}"]`);
       if (panel) {
-        const annotationElement = panel.querySelector(`[data-annotation-id="${annotation.id}"]`);
-        if (annotationElement) {
-          annotationElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          annotationElement.classList.add('ring-2', 'ring-violet-500');
-          setTimeout(() => {
-            annotationElement.classList.remove('ring-2', 'ring-violet-500');
-          }, 2000);
-        }
+        panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        panel.classList.add('ring-2', 'ring-violet-500');
+        setTimeout(() => {
+          panel.classList.remove('ring-2', 'ring-violet-500');
+        }, 2000);
       }
     }, 100);
   };
@@ -309,26 +306,13 @@ export const AnalysisPage = () => {
     : '');
 
   return (
-    <div className="space-y-6">
+    <div className="-mx-6 px-6 space-y-6">
       {/* Шапка с кнопками навигации */}
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={() => navigate('/')}>
           ← Назад
         </Button>
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setShowAnnotationsPanel(!showAnnotationsPanel)}
-            className="relative"
-          >
-            📌 Аннотации
-            {annotations.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                {annotations.length}
-              </span>
-            )}
-          </Button>
           {isEditing ? (
             <div className="flex items-center gap-2">
               <input
@@ -374,56 +358,21 @@ export const AnalysisPage = () => {
         </div>
       </div>
 
-      {/* Карточка резюме */}
-      {transcript.summary && (
-        <SummaryCard
-          title={transcript.title}
-          summary={transcript.summary}
-          keyPoints={transcript.key_points || []}
-          meetingType={transcript.meeting_type}
-        />
-      )}
-
-      {/* Двухколоночная раскладка */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Левая колонка - транскрипция */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Диаграмма распределения спикеров */}
-          {segments.length > 0 && (
-            <SpeakerDistributionChart
-              segments={segments}
-              onSegmentClick={handleSegmentClick}
-            />
-          )}
-
-          {/* Аудио плеер — между графиками и детальной транскрипцией */}
-          {segments.length > 0 && audioUrl && (
-            <div className="bg-white dark:bg-dark-base-800 rounded-xl border border-gray-200 dark:border-dark-base-700 p-4 shadow-sm">
-              <AudioPlayer
-                src={audioUrl}
-                segments={segments}
-              />
-            </div>
-          )}
-
+      {/* Основная раскладка: транскрипция слева, суммаризация + ключевые моменты справа */}
+      <div className="flex flex-col lg:flex-row">
+        {/* Левая часть — транскрипция */}
+        <div className="flex-[6] min-w-0">
           {/* Полная транскрипция */}
           <div
             ref={transcriptContainerRef}
             onMouseUp={handleTextSelection}
-            className="bg-gradient-to-r from-slate-50 to-gray-50 dark:from-dark-base-800 dark:to-dark-base-900 rounded-2xl p-5 border border-gray-200 dark:border-dark-base-700"
+            className="bg-gray-100/30 dark:bg-dark-base-950/30 rounded-xl border border-gray-200/20 dark:border-dark-base-700/20 p-4 flex flex-col"
+            style={{ height: 'calc(100vh - 200px)' }}
           >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-400 to-gray-500 flex items-center justify-center shadow-md">
-                  <span className="text-lg">📝</span>
-                </div>
-                <h4 className="text-lg font-bold text-gray-900 dark:text-white">Детальная транскрипция</h4>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 italic">
-                💡 Выделите текст чтобы создать аннотацию
-              </p>
+            <div className="flex items-center justify-between mb-3 flex-shrink-0">
+              <h3 className="text-3xl font-bold text-blue-600 dark:text-blue-400">{transcript.title}</h3>
             </div>
-            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+            <div className="space-y-0 overflow-y-auto pr-2 flex-1 min-h-0">
               {segments.map((seg, idx) => (
                 <div key={idx} data-start-time={seg.start}>
                   <TranscriptSegment
@@ -445,12 +394,236 @@ export const AnalysisPage = () => {
           </div>
         </div>
 
-        {/* Правая колонка - чат */}
-        <div className="lg:col-span-1">
-          <MeetingChat
-            transcriptId={id}
-            transcriptText={transcript.original_text}
-          />
+        {/* Вертикальный разделитель */}
+        <div className="hidden lg:block w-px bg-gray-300 dark:bg-dark-base-600 self-stretch mx-6" />
+
+        {/* Правая часть — вкладки: сводка / графики / чат */}
+        <div className="flex-[4] min-w-0">
+          <div className="bg-gray-100/30 dark:bg-dark-base-950/30 rounded-xl border border-gray-200/20 dark:border-dark-base-700/20 p-4 flex flex-col"
+            style={{ height: 'calc(100vh - 200px)' }}>
+            {/* Кнопки вкладок */}
+            <div className="flex gap-1 mb-4 pb-3 border-b border-gray-200/30 dark:border-dark-base-700/30 flex-shrink-0">
+              <button
+                onClick={() => setRightTab('summary')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  rightTab === 'summary'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/50 dark:hover:bg-dark-base-800/50'
+                }`}
+              >
+                📋 Сводка
+              </button>
+              <button
+                onClick={() => setRightTab('charts')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  rightTab === 'charts'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/50 dark:hover:bg-dark-base-800/50'
+                }`}
+              >
+                📊 Графики
+              </button>
+              <button
+                onClick={() => setRightTab('chat')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  rightTab === 'chat'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/50 dark:hover:bg-dark-base-800/50'
+                }`}
+              >
+                💬 Чат
+              </button>
+              <button
+                onClick={() => setRightTab('annotations')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors relative ${
+                  rightTab === 'annotations'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200/50 dark:hover:bg-dark-base-800/50'
+                }`}
+              >
+                📌 Аннотации
+                {annotations.length > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
+                    {annotations.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Контент вкладок — заполняет оставшееся место */}
+            <div className="flex-1 overflow-hidden min-h-0">
+              {rightTab === 'summary' && (
+                <div className="h-full overflow-y-auto space-y-6 pr-2">
+                  {/* Суммаризация — сворачиваемая */}
+                  <button
+                    onClick={() => setSummaryExpanded(!summaryExpanded)}
+                    className="w-full flex items-center gap-2 text-left"
+                  >
+                    <span className="text-lg">📋</span>
+                    <h4 className="text-2xl font-bold text-blue-600 dark:text-blue-400 flex-1">
+                      Краткое содержание
+                    </h4>
+                  </button>
+                  {transcript.summary && (
+                    <div
+                      className={`border-l-4 rounded-lg shadow-sm transition-all ease-out ${
+                        summaryExpanded
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                          : 'border-blue-500/40 bg-blue-50/50 dark:bg-blue-900/10 cursor-pointer'
+                      }`}
+                      style={{ transitionDuration: summaryExpanded ? '500ms' : '300ms' }}
+                      onClick={() => { if (!summaryExpanded) setSummaryExpanded(true); }}
+                    >
+                      <div
+                        className="overflow-hidden transition-all ease-out"
+                        style={{
+                          maxHeight: summaryExpanded ? '2000px' : '3.6rem',
+                          transitionDuration: summaryExpanded ? '500ms' : '300ms'
+                        }}
+                      >
+                        <p className={`leading-relaxed text-sm p-4 pb-1 transition-all ${
+                          summaryExpanded
+                            ? 'text-blue-900 dark:text-blue-100'
+                            : 'text-blue-900/60 dark:text-blue-100/60'
+                        }`}
+                        style={{ transitionDuration: summaryExpanded ? '400ms' : '200ms' }}>
+                          {transcript.summary}
+                        </p>
+                      </div>
+                      <div className={`flex justify-center pb-1.5 transition-all duration-200 ${
+                        summaryExpanded ? 'opacity-100' : 'opacity-60'
+                      }`}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setSummaryExpanded(!summaryExpanded); }}
+                          className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-0.5 text-xs"
+                          title={summaryExpanded ? 'Свернуть' : 'Развернуть'}
+                        >
+                          {summaryExpanded ? '▲' : '▼'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ключевые моменты — каждый в отдельном блоке */}
+                  {(transcript.key_points || []).length > 0 && (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🔑</span>
+                        <h4 className="text-2xl font-bold text-amber-900 dark:text-amber-300">
+                          Ключевые моменты
+                        </h4>
+                      </div>
+                      {(transcript.key_points || []).map((point, idx) => (
+                        <div
+                          key={idx}
+                          className="border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 shadow-md"
+                        >
+                          <div className="flex items-start gap-3">
+                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">
+                              {idx + 1}
+                            </span>
+                            <p className="text-amber-900 dark:text-amber-100 text-sm leading-relaxed">
+                              {point}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  </div>
+                )}
+
+              {rightTab === 'charts' && (
+                <div className="h-full overflow-y-auto space-y-6 pr-2">
+                  {segments.length > 0 && (
+                    <SpeakerDistributionChart
+                      segments={segments}
+                      onSegmentClick={handleSegmentClick}
+                    />
+                  )}
+
+                  {segments.length > 0 && audioUrl && (
+                    <AudioPlayer
+                      src={audioUrl}
+                      segments={segments}
+                    />
+                  )}
+                </div>
+              )}
+
+              {rightTab === 'chat' && (
+                <MeetingChat
+                  transcriptId={id}
+                  transcriptText={transcript.original_text}
+                />
+              )}
+
+              {rightTab === 'annotations' && (
+                <div className="h-full flex flex-col">
+                  <div className="flex items-center gap-2 mb-4 flex-shrink-0">
+                    <span className="text-lg">📌</span>
+                    <h4 className="text-2xl font-bold text-gray-900 dark:text-white">
+                      Аннотации
+                    </h4>
+                    {annotations.length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium">
+                        {annotations.length}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                    {annotations.length === 0 ? (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">
+                        Нет аннотаций. Выделите текст в транскрипции чтобы создать.
+                      </p>
+                    ) : (
+                      annotations.map((annotation) => {
+                        const part = (transcript.parts as any[])?.find(p => p.id === annotation.part_id);
+                        const fullText = part?.text || '';
+                        const textWithoutSpeaker = fullText.includes(':')
+                          ? fullText.split(':').slice(1).join(':').trim()
+                          : fullText;
+                        const highlightedText = textWithoutSpeaker.slice(annotation.start_char, annotation.end_char) || '';
+                        const colorConfig = ANNOTATION_COLORS.find(c => c.name === annotation.color);
+
+                        return (
+                          <div
+                            key={annotation.id}
+                            data-annotation-id={annotation.id}
+                            className={`group relative p-3 rounded-lg border transition-all cursor-pointer ${colorConfig?.bg || 'bg-yellow-200 dark:bg-yellow-900/40'} border-gray-200 dark:border-dark-base-700 hover:shadow-md`}
+                            onClick={() => scrollToAnnotation(annotation)}
+                          >
+                            <button
+                              onClick={(e) => handleDeleteAnnotation(annotation.id, e)}
+                              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-500/80 hover:bg-red-600 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                              title="Удалить аннотацию"
+                            >
+                              ✕
+                            </button>
+                            <p className="text-sm text-gray-800 dark:text-gray-200 line-clamp-2 mb-1 pr-6">
+                              "{highlightedText}"
+                            </p>
+                            {annotation.note && (() => {
+                              const speakerName = fullText.split(':')[0] || '';
+                              const speakerColor = speakerName ? getSpeakerColor(speakerName) : null;
+                              return (
+                                <p className={`text-xs italic mb-1 line-clamp-2 ${speakerColor?.text || 'text-gray-600 dark:text-gray-300'}`}>
+                                  💬 {annotation.note}
+                                </p>
+                              );
+                            })()}
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {fullText.split(':')[0] || ''} • {colorConfig?.label || 'Жёлтый'}
+                            </p>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -516,79 +689,6 @@ export const AnalysisPage = () => {
                 Отмена
               </Button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Панель аннотаций */}
-      {showAnnotationsPanel && (
-        <div className="annotations-panel fixed inset-y-0 right-0 w-80 bg-white dark:bg-dark-base-800 shadow-2xl z-40 border-l border-gray-200 dark:border-dark-base-700 flex flex-col">
-          <div className="p-4 border-b border-gray-200 dark:border-dark-base-700 flex items-center justify-between">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">📌 Аннотации</h3>
-            <button
-              onClick={() => setShowAnnotationsPanel(false)}
-              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            >
-              ✕
-            </button>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {annotations.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">
-                Нет аннотаций. Выделите текст в транскрипции чтобы создать.
-              </p>
-            ) : (
-              annotations.map((annotation) => {
-                // Находим часть транскрипции для получения текста
-                const part = (transcript.parts as any[])?.find(p => p.id === annotation.part_id);
-                // Текст без спикера (как в транскрипции)
-                const fullText = part?.text || '';
-                const textWithoutSpeaker = fullText.includes(':') 
-                  ? fullText.split(':').slice(1).join(':').trim() 
-                  : fullText;
-                const highlightedText = textWithoutSpeaker.slice(annotation.start_char, annotation.end_char) || '';
-                const colorConfig = ANNOTATION_COLORS.find(c => c.name === annotation.color);
-                
-                return (
-                  <div
-                    key={annotation.id}
-                    data-annotation-id={annotation.id}
-                    className={`group relative p-3 rounded-lg border transition-all ${colorConfig?.bg || 'bg-yellow-200 dark:bg-yellow-900/40'} border-gray-200 dark:border-dark-base-700 hover:shadow-md`}
-                  >
-                    {/* Кнопка удаления */}
-                    <button
-                      onClick={(e) => handleDeleteAnnotation(annotation.id, e)}
-                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-500/80 hover:bg-red-600 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Удалить аннотацию"
-                    >
-                      ✕
-                    </button>
-                    
-                    <button
-                      onClick={() => scrollToAnnotation(annotation)}
-                      className="w-full text-left pr-6"
-                    >
-                      <p className="text-sm text-gray-800 dark:text-gray-200 line-clamp-2 mb-1">
-                        "{highlightedText}"
-                      </p>
-                      {annotation.note && (() => {
-                        const speakerName = fullText.split(':')[0] || '';
-                        const speakerColor = speakerName ? getSpeakerColor(speakerName) : null;
-                        return (
-                          <p className={`text-xs italic mb-1 line-clamp-2 ${speakerColor?.text || 'text-gray-600 dark:text-gray-300'}`}>
-                            💬 {annotation.note}
-                          </p>
-                        );
-                      })()}
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {fullText.split(':')[0] || ''} • {colorConfig?.label || 'Жёлтый'}
-                      </p>
-                    </button>
-                  </div>
-                );
-              })
-            )}
           </div>
         </div>
       )}

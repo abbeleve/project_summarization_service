@@ -47,16 +47,16 @@ export const TranscriptSegment = memo(({
       data-part-id={partId}
       onClick={onClick}
       className={clsx(
-        'p-4 rounded-xl border transition-all cursor-pointer group',
+        'py-2.5 transition-colors cursor-pointer group border-b border-gray-100 dark:border-dark-base-750/60 last:border-b-0',
         isActive
-          ? 'bg-primary-50 border-primary-300 shadow-md dark:bg-primary-900/20 dark:border-primary-700'
-          : 'bg-white dark:bg-dark-base-800 border-gray-200 dark:border-dark-base-700 hover:border-gray-300 dark:hover:border-dark-base-600 hover:shadow-lg'
+          ? 'bg-primary-50 dark:bg-primary-900/20'
+          : 'hover:bg-gray-50/50 dark:hover:bg-dark-base-800/30'
       )}
     >
-      <div className="flex items-start gap-3 mb-3">
-        {/* Цветной кружок спикера / аватарка */}
+      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
+        {/* Цветной кружок спикера / аватарка — row 1, col 1 */}
         {avatarUrl ? (
-          <div className="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden shadow-sm ring-2 ring-white dark:ring-gray-700">
+          <div className="w-8 h-8 rounded-full overflow-hidden shadow-sm ring-2 ring-white dark:ring-gray-700">
             <img
               src={avatarUrl}
               alt={speaker}
@@ -72,7 +72,7 @@ export const TranscriptSegment = memo(({
           </div>
         ) : (
           <div className={clsx(
-            'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm',
+            'w-8 h-8 rounded-full flex items-center justify-center shadow-sm',
             color.bg
           )}>
             <span className="text-white text-xs font-bold">
@@ -81,52 +81,40 @@ export const TranscriptSegment = memo(({
           </div>
         )}
 
-        {/* Информация о спикере и времени */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-1">
-            <span className="font-semibold text-gray-900 dark:text-white">{speaker}</span>
-            <div className="flex items-center gap-2">
-              {partId && onCreateFullAnnotation && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCreateFullAnnotation(partId, text);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-xs font-medium bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 dark:hover:bg-violet-800/50"
-                  title="Подчеркнуть всю реплику"
-                >
-                  🚩
-                </button>
-              )}
-              <span
-                style={dominantColor ? {
-                  backgroundColor: `${dominantColor}22`,
-                  color: dominantColor,
-                } : undefined}
-                className={clsx(
-                  'px-2 py-1 rounded-md text-xs font-medium',
-                  !dominantColor && color.light,
-                  !dominantColor && color.text,
-                )}
-              >
-                {formatTime(startTime)} – {formatTime(endTime)}
-              </span>
-            </div>
-          </div>
-          <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm select-text">
-            {partId ? (
-              <AnnotatedText
-                text={text}
-                partId={partId}
-                annotations={annotations}
-                onAnnotationClick={onAnnotationClick}
-                speaker={speaker}
-              />
-            ) : (
-              text
-            )}
-          </p>
+        {/* Имя спикера и время — row 1, col 2 */}
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-semibold text-gray-900 dark:text-white truncate">{speaker}</span>
+          <span className="text-gray-400 dark:text-gray-500 text-sm whitespace-nowrap flex-shrink-0">
+            {formatTime(startTime)} – {formatTime(endTime)}
+          </span>
+          {partId && onCreateFullAnnotation && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onCreateFullAnnotation(partId, text);
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-xs font-medium bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 dark:hover:bg-violet-800/50 flex-shrink-0 ml-auto"
+              title="Подчеркнуть всю реплику"
+            >
+              🚩
+            </button>
+          )}
         </div>
+
+        {/* Текст — row 2, вся ширина (на одном уровне с аватаркой) */}
+        <p className="col-span-full text-gray-700 dark:text-gray-300 leading-relaxed text-base select-text">
+          {partId ? (
+            <AnnotatedText
+              text={text}
+              partId={partId}
+              annotations={annotations}
+              onAnnotationClick={onAnnotationClick}
+              speaker={speaker}
+            />
+          ) : (
+            text
+          )}
+        </p>
       </div>
     </div>
   );

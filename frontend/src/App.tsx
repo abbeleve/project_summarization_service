@@ -2,7 +2,9 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AppProvider } from '@/context/AppContext';
+import { SidebarProvider } from '@/context/SidebarContext';
 import { Header } from '@/components/ui/Sidebar';
+import { TranscriptionHistoryPanel } from '@/components/transcriptions/TranscriptionHistoryPanel';
 import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
 import { HomePage } from '@/pages/HomePage';
@@ -62,12 +64,15 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-dark-base-900 dark:via-dark-base-800 dark:to-dark-base-900 transition-colors duration-300">
       <Header />
-      <div className="flex justify-center">
-        <main className="w-full max-w-7xl bg-white dark:bg-dark-base-900 min-h-screen shadow-2xl">
-          <div className="p-6">
-            {children}
-          </div>
-        </main>
+      <div className="flex">
+        <TranscriptionHistoryPanel />
+        <div className="flex-1 flex justify-center min-w-0">
+          <main className="w-full max-w-[1600px] bg-white dark:bg-dark-base-900 min-h-screen shadow-2xl">
+            <div className="p-6">
+              {children}
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   );
@@ -129,7 +134,9 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <AppProvider>
-          <AppContent />
+          <SidebarProvider>
+            <AppContent />
+          </SidebarProvider>
         </AppProvider>
       </AuthProvider>
     </QueryClientProvider>
