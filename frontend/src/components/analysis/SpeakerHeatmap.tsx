@@ -116,7 +116,7 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
   const { speakers, timeSlots, cells } = heatmapData;
 
   return (
-    <div className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-2xl p-5 border border-gray-200 dark:border-gray-700">
+    <div className="bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-2xl p-5 border border-gray-200 dark:border-dark-base-700">
       <div className="overflow-x-auto">
         <div className="min-w-max">
           {/* Заголовки времени */}
@@ -159,7 +159,7 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
                             ? `${getIntensityColor(intensity, speaker)} hover:scale-110 ${
                                 onSegmentClick && cell?.segment ? 'cursor-pointer hover:shadow-md' : 'cursor-default'
                               }`
-                            : 'bg-gray-100 dark:bg-gray-800'
+                            : 'bg-gray-100 dark:bg-dark-base-800'
                         }`}
                         title={
                           cell
@@ -171,7 +171,7 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
                       >
                         {/* Tooltip с уровнем активности */}
                         {intensity > 0 && (
-                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 shadow-lg">
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-dark-base-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 shadow-lg">
                             {intensity >= 0.8 ? '🔥 Очень высокая' :
                              intensity >= 0.6 ? '📈 Высокая' :
                              intensity >= 0.4 ? '📊 Средняя' :
@@ -193,7 +193,7 @@ export const SpeakerHeatmap = ({ segments, onSegmentClick }: SpeakerHeatmapProps
           <div className="flex items-center gap-2 mt-4 ml-20">
             <span className="text-xs text-gray-500 dark:text-gray-400">Активность:</span>
             <div className="flex gap-1">
-              <div className="w-8 h-3 rounded flex-shrink-0 bg-gray-100 dark:bg-gray-700" title="Нет активности" />
+              <div className="w-8 h-3 rounded flex-shrink-0 bg-gray-100 dark:bg-dark-base-700" title="Нет активности" />
               <div className="w-8 h-3 rounded flex-shrink-0 bg-blue-100 dark:bg-blue-900/30" title="Низкая" />
               <div className="w-8 h-3 rounded flex-shrink-0 bg-blue-300 dark:bg-blue-700" title="Средняя" />
               <div className="w-8 h-3 rounded flex-shrink-0 bg-blue-500" title="Высокая" />

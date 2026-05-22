@@ -29,7 +29,7 @@ const AnnotationTooltip = ({ note, speaker, children }: { note: string; speaker?
     <span className="relative inline" onMouseEnter={show} onMouseLeave={hide}>
       {children}
       {visible && (
-        <span className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded-lg shadow-lg whitespace-normal max-w-[280px] z-50 pointer-events-none ${color ? color.light + ' ' + color.text : 'bg-gray-900 dark:bg-gray-700 text-white'} text-xs leading-relaxed`}>
+        <span className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded-lg shadow-lg whitespace-normal max-w-[280px] z-50 pointer-events-none ${color ? color.light + ' ' + color.text : 'bg-gray-900 dark:bg-dark-base-700 text-white'} text-xs leading-relaxed`}>
           💬 {note}
           <span className={`absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent ${color ? 'border-t-current' : 'border-t-gray-900 dark:border-t-gray-700'}`}
             style={color ? { borderTopColor: 'currentColor' } : undefined}

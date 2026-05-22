@@ -67,8 +67,8 @@ export const LLM_MODEL_DESCRIPTIONS: Record<string, {
   speed: string;
   context: string;
 }> = {
-  'gemini-2.5-flash': {
-    description: 'Быстрая и эффективная модель от Google для суммаризации.',
+  'deepseek/deepseek-v4-flash': {
+    description: 'Быстрая и эффективная модель от DeepSeek для суммаризации.',
     speed: '🚀 Очень быстрая',
     context: '📚 Большой контекст'
   }
@@ -82,7 +82,7 @@ export const DIARIZATION_CONFIG: Record<string, string[]> = {
 };
 
 export const LLM_MODELS = [
-  'gemini-2.5-flash',
+  'deepseek/deepseek-v4-flash',
 ];
 
 export const MEETING_TYPES = [
@@ -101,7 +101,7 @@ export const DEFAULT_SETTINGS: ProcessingSettings = {
   diarizationModel: 'pyannote/speaker-diarization-community-1',
   diarizeLib: 'pyannote',
   transcribeLib: 'gigaam',
-  llmModel: 'gemini-2.5-flash',
+  llmModel: 'deepseek/deepseek-v4-flash',
   noiseSuppression: false
 };
 

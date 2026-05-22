@@ -18,6 +18,10 @@ class AuthMiddleware:
             "/redoc",
             "/openapi.json",
             "/meetings/webhook",  # Webhook от meeting-bot без JWT
+            # Voice endpoints for speaker identification pipeline
+            "/voice/identify-batch",
+            "/voice/enrolled-speakers",
+            "/voice/stats",
         }
     
     async def __call__(self, request: Request, call_next):

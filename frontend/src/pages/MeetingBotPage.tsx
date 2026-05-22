@@ -64,7 +64,7 @@ const STATUS_COLORS: Record<string, string> = {
   recording: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300",
   completed: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
   failed: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
-  cancelled: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300",
+  cancelled: "bg-gray-100 text-gray-700 dark:bg-dark-base-700 dark:text-gray-300",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -303,7 +303,7 @@ export default function MeetingBotPage() {
             className={`flex-1 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
               mode === "join"
                 ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                : "bg-gray-100 dark:bg-dark-base-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-dark-base-600"
             }`}
           >
             ⚡ Подключиться сейчас
@@ -313,7 +313,7 @@ export default function MeetingBotPage() {
             className={`flex-1 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
               mode === "schedule"
                 ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                : "bg-gray-100 dark:bg-dark-base-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-dark-base-600"
             }`}
           >
             📅 Запланировать
@@ -334,7 +334,7 @@ export default function MeetingBotPage() {
               value={meetingUrl}
               onChange={(e) => setMeetingUrl(e.target.value)}
               placeholder="https://meet.google.com/abc-defg-hij"
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+              className="w-full border border-gray-300 dark:border-dark-base-600 rounded-lg px-4 py-2 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-violet-500 focus:border-transparent"
             />
           </div>
 
@@ -351,7 +351,7 @@ export default function MeetingBotPage() {
                   className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
                     provider === opt.value
                       ? "border-violet-500 bg-violet-50 dark:bg-violet-900/30"
-                      : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
+                      : "border-gray-200 dark:border-dark-base-600 hover:border-gray-300 dark:hover:border-dark-base-500"
                   }`}
                 >
                   <span className="text-2xl">{opt.icon}</span>
@@ -373,7 +373,7 @@ export default function MeetingBotPage() {
               value={botName}
               onChange={(e) => setBotName(e.target.value)}
               placeholder="Meeting Notetaker"
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+              className="w-full border border-gray-300 dark:border-dark-base-600 rounded-lg px-4 py-2 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-violet-500 focus:border-transparent"
             />
           </div>
 
@@ -392,7 +392,7 @@ export default function MeetingBotPage() {
                     type="date"
                     value={scheduleDate}
                     onChange={(e) => setScheduleDate(e.target.value)}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                    className="w-full border border-gray-300 dark:border-dark-base-600 rounded-lg px-4 py-2 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                   />
                   {/* Display formatted date overlay */}
                   {scheduleDate && (
@@ -411,11 +411,11 @@ export default function MeetingBotPage() {
                       const m = scheduleTime ? scheduleTime.split(":")[1] || "00" : "00";
                       setScheduleTime(`${h}:${m}`);
                     }}
-                    className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-center text-base font-mono focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                    className="flex-1 border border-gray-300 dark:border-dark-base-600 rounded-lg px-2 py-2 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white text-center text-base font-mono focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                   >
                     <option value="" disabled>ЧЧ</option>
                     {Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, "0")).map((h) => (
-                      <option key={h} value={h} className="dark:bg-gray-700 dark:text-white">{h}</option>
+                      <option key={h} value={h} className="dark:bg-dark-base-700 dark:text-white">{h}</option>
                     ))}
                   </select>
                   <span className="text-gray-500 font-mono text-lg">:</span>
@@ -426,11 +426,11 @@ export default function MeetingBotPage() {
                       const h = scheduleTime ? scheduleTime.split(":")[0] || "00" : "00";
                       setScheduleTime(`${h}:${m}`);
                     }}
-                    className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-center text-base font-mono focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                    className="flex-1 border border-gray-300 dark:border-dark-base-600 rounded-lg px-2 py-2 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white text-center text-base font-mono focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                   >
                     <option value="" disabled>ММ</option>
                     {Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, "0")).map((m) => (
-                      <option key={m} value={m} className="dark:bg-gray-700 dark:text-white">{m}</option>
+                      <option key={m} value={m} className="dark:bg-dark-base-700 dark:text-white">{m}</option>
                     ))}
                   </select>
                 </div>
@@ -444,10 +444,10 @@ export default function MeetingBotPage() {
                 <select
                   value={scheduleTimezone}
                   onChange={(e) => setScheduleTimezone(e.target.value)}
-                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                  className="w-full border border-gray-300 dark:border-dark-base-600 rounded-lg px-4 py-2 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                 >
                   {TIMEZONE_OPTIONS.map((tz) => (
-                    <option key={tz.value} value={tz.value} className="dark:bg-gray-700 dark:text-white">
+                    <option key={tz.value} value={tz.value} className="dark:bg-dark-base-700 dark:text-white">
                       {tz.label}
                     </option>
                   ))}
@@ -456,7 +456,7 @@ export default function MeetingBotPage() {
 
               {/* Preview of computed ISO */}
               {scheduleDate && scheduleTime && (
-                <div className="text-xs text-gray-400 dark:text-gray-500 font-mono bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2">
+                <div className="text-xs text-gray-400 dark:text-gray-500 font-mono bg-gray-50 dark:bg-dark-base-800 rounded-lg px-3 py-2">
                   {computeScheduledAt() || "—"}
                 </div>
               )}
@@ -467,9 +467,9 @@ export default function MeetingBotPage() {
           <details
             open={showModels}
             onToggle={(e) => setShowModels((e.target as HTMLDetailsElement).open)}
-            className="group border border-gray-200 dark:border-gray-700 rounded-2xl overflow-visible bg-white dark:bg-gray-800"
+            className="group border border-gray-200 dark:border-dark-base-700 rounded-2xl overflow-visible bg-white dark:bg-dark-base-800"
           >
-            <summary className="flex items-center gap-3 font-semibold cursor-pointer p-4 bg-gradient-to-r from-slate-50 to-gray-50 dark:from-gray-700 dark:to-gray-800 hover:from-slate-100 hover:to-gray-100 dark:hover:from-gray-600 dark:hover:to-gray-700 transition-colors list-none">
+            <summary className="flex items-center gap-3 font-semibold cursor-pointer p-4 bg-gradient-to-r from-slate-50 to-gray-50 dark:from-dark-base-700 dark:to-dark-base-800 hover:from-slate-100 hover:to-gray-100 dark:hover:from-dark-base-600 dark:hover:to-dark-base-700 transition-colors list-none">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-400 to-gray-500 flex items-center justify-center shadow-md">
                 <span className="text-lg">⚙️</span>
               </div>
@@ -542,10 +542,10 @@ export default function MeetingBotPage() {
                         transcribe_model: models[0] || prev.transcribe_model,
                       }));
                     }}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-violet-300 dark:hover:border-violet-600"
+                    className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-violet-300 dark:hover:border-violet-600"
                   >
                     {Object.keys(TRANSCRIBE_CONFIG).map((lib) => (
-                      <option key={lib} value={lib} className="dark:bg-gray-700 dark:text-white">
+                      <option key={lib} value={lib} className="dark:bg-dark-base-700 dark:text-white">
                         {lib.charAt(0).toUpperCase() + lib.slice(1)}
                       </option>
                     ))}
@@ -560,10 +560,10 @@ export default function MeetingBotPage() {
                   <select
                     value={settings.transcribe_model}
                     onChange={(e) => setSettings((prev) => ({ ...prev, transcribe_model: e.target.value }))}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-violet-300 dark:hover:border-violet-600"
+                    className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-violet-300 dark:hover:border-violet-600"
                   >
                     {(TRANSCRIBE_CONFIG[settings.transcribe_lib] || []).map((model) => (
-                      <option key={model} value={model} className="dark:bg-gray-700 dark:text-white">{model}</option>
+                      <option key={model} value={model} className="dark:bg-dark-base-700 dark:text-white">{model}</option>
                     ))}
                   </select>
                 </div>
@@ -585,10 +585,10 @@ export default function MeetingBotPage() {
                         diarization_model: models[0] || prev.diarization_model,
                       }));
                     }}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-violet-300 dark:hover:border-violet-600"
+                    className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-violet-300 dark:hover:border-violet-600"
                   >
                     {Object.keys(DIARIZATION_CONFIG).map((lib) => (
-                      <option key={lib} value={lib} className="dark:bg-gray-700 dark:text-white">
+                      <option key={lib} value={lib} className="dark:bg-dark-base-700 dark:text-white">
                         {lib.charAt(0).toUpperCase() + lib.slice(1)}
                       </option>
                     ))}
@@ -603,10 +603,10 @@ export default function MeetingBotPage() {
                   <select
                     value={settings.diarization_model}
                     onChange={(e) => setSettings((prev) => ({ ...prev, diarization_model: e.target.value }))}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-violet-300 dark:hover:border-violet-600"
+                    className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-violet-300 dark:hover:border-violet-600"
                   >
                     {(DIARIZATION_CONFIG[settings.diarize_lib] || []).map((model) => (
-                      <option key={model} value={model} className="dark:bg-gray-700 dark:text-white">{model}</option>
+                      <option key={model} value={model} className="dark:bg-dark-base-700 dark:text-white">{model}</option>
                     ))}
                   </select>
                 </div>
@@ -620,10 +620,10 @@ export default function MeetingBotPage() {
                   <select
                     value={settings.llm_model}
                     onChange={(e) => setSettings((prev) => ({ ...prev, llm_model: e.target.value }))}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-violet-300 dark:hover:border-violet-600"
+                    className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-violet-300 dark:hover:border-violet-600"
                   >
                     {LLM_MODELS.map((model) => (
-                      <option key={model} value={model} className="dark:bg-gray-700 dark:text-white">{model}</option>
+                      <option key={model} value={model} className="dark:bg-dark-base-700 dark:text-white">{model}</option>
                     ))}
                   </select>
                 </div>
@@ -680,7 +680,7 @@ export default function MeetingBotPage() {
             {meetingsData.data.meetings.map((meeting: ScheduledMeeting) => (
               <div
                 key={meeting.id}
-                className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                className="border border-gray-200 dark:border-dark-base-700 rounded-xl p-4 hover:bg-gray-50 dark:hover:bg-dark-base-750 transition-colors"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">

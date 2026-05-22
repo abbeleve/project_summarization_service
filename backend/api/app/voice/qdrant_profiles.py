@@ -29,7 +29,11 @@ def _get_client() -> QdrantClient:
     if _client is None:
         host = os.getenv("QDRANT_HOST", "qdrant")
         port = int(os.getenv("QDRANT_PORT", 6333))
-        _client = QdrantClient(host=host, port=port)
+        _client = QdrantClient(
+            host=host,
+            port=port,
+            check_compatibility=False,  # совместимость client 1.16 ↔ server 1.13
+        )
         _ensure_collection(_client)
     return _client
 
@@ -170,7 +174,7 @@ def search_speaker(
     Search for the best matching speaker from enrolled profiles.
 
     Args:
-        embedding: Query embedding vector
+        embedding: Query embedding vector (192-dim)
         threshold: Minimum cosine similarity threshold
         top_k: Number of top results to consider
 
@@ -180,16 +184,16 @@ def search_speaker(
     client = _get_client()
 
     try:
-        result = client.search(
+        result = client.query_points(
             collection_name=COLLECTION_NAME,
-            query_vector=embedding,
+            query=embedding,
             limit=top_k,
             with_payload=True,
             score_threshold=threshold,
         )
 
-        if result:
-            best = result[0]
+        if result.points:
+            best = result.points[0]
             return (
                 UUID(best.payload["user_id"]),
                 best.payload.get("full_name", ""),

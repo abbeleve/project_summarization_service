@@ -50,7 +50,7 @@ export const RegisterPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4 py-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-dark-base-900 px-4 py-8">
       <Card className="w-full max-w-md p-8">
         <div className="text-center mb-8">
           <span className="text-4xl">🎙️</span>
@@ -72,7 +72,7 @@ export const RegisterPage = () => {
                 type="text"
                 value={surname}
                 onChange={(e) => setSurname(e.target.value)}
-                className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 placeholder="Иванов"
                 required
                 disabled={isLoading}
@@ -88,7 +88,7 @@ export const RegisterPage = () => {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 placeholder="Иван"
                 required
                 disabled={isLoading}
@@ -107,7 +107,7 @@ export const RegisterPage = () => {
               type="text"
               value={patronymic}
               onChange={(e) => setPatronymic(e.target.value)}
-              className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="Иванович"
               disabled={isLoading}
               autoComplete="additional-name"
@@ -124,7 +124,7 @@ export const RegisterPage = () => {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="ivan@example.com"
               required
               disabled={isLoading}
@@ -142,7 +142,7 @@ export const RegisterPage = () => {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="Придумайте логин"
               required
               disabled={isLoading}
@@ -160,7 +160,7 @@ export const RegisterPage = () => {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="Придумайте пароль"
               required
               disabled={isLoading}
@@ -179,7 +179,7 @@ export const RegisterPage = () => {
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="Повторите пароль"
               required
               disabled={isLoading}

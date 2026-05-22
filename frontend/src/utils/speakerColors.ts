@@ -28,3 +28,15 @@ export const getSpeakerColor = (speaker: string) => {
   const index = Math.abs(hash) % SPEAKER_COLORS.length;
   return SPEAKER_COLORS[index];
 };
+
+/** Версия getSpeakerColor, принимающая user_id как seed.
+ *  Используется для идентифицированных спикеров — цвет закрепляется за аккаунтом,
+ *  а не за строкой-именем. */
+export const getSpeakerColorBySeed = (seed: string) => {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % SPEAKER_COLORS.length;
+  return SPEAKER_COLORS[index];
+};

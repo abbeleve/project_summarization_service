@@ -40,7 +40,7 @@ class TranscribeResponse(BaseModel):
 class SummarizeRequest(BaseModel):
     """Запрос на суммаризацию."""
     input_text: str = Field(..., description="Текст для суммаризации")
-    llm_model: str = Field(default="gemini-2.5-flash", description="Модель LLM")
+    llm_model: str = Field(default="deepseek/deepseek-v4-flash", description="Модель LLM")
     include_title: bool = Field(default=True, description="Включить заголовок")
     include_key_points: bool = Field(default=True, description="Включить ключевые пункты")
 
@@ -58,7 +58,7 @@ class SummarizeResponse(BaseModel):
 class ClassifyRequest(BaseModel):
     """Запрос на классификацию типа совещания."""
     input_text: str = Field(..., description="Текст совещания")
-    llm_model: str = Field(default="gemini-2.5-flash", description="Модель LLM")
+    llm_model: str = Field(default="deepseek/deepseek-v4-flash", description="Модель LLM")
     use_fallback: bool = Field(default=True, description="Использовать fallback")
 
 
@@ -75,7 +75,7 @@ class AskRequest(BaseModel):
     """Запрос вопроса по транскрипции."""
     text: str = Field(..., description="Текст совещания")
     question: str = Field(..., description="Вопрос пользователя")
-    llm_model: str = Field(default="gemini-2.5-flash", description="Модель LLM")
+    llm_model: str = Field(default="deepseek/deepseek-v4-flash", description="Модель LLM")
     include_context: bool = Field(default=False, description="Включить контекст")
 
 
@@ -92,7 +92,7 @@ class AskResponse(BaseModel):
 class LLMPipelineRequest(BaseModel):
     """Запрос на полный пайплайн LLM."""
     input_text: str = Field(..., description="Текст совещания")
-    llm_model: str = Field(default="gemini-2.5-flash", description="Модель LLM")
+    llm_model: str = Field(default="deepseek/deepseek-v4-flash", description="Модель LLM")
     summarization_usage: bool = Field(default=True, description="Использовать суммаризацию")
     classification_usage: bool = Field(default=True, description="Использовать классификацию")
 

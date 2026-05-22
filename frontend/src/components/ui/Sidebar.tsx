@@ -29,7 +29,7 @@ export const Header = () => {
   );
 
   return (
-    <header className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-md sticky top-0 z-50 border-b border-gray-200 dark:border-gray-700 transition-colors">
+    <header className="bg-white dark:bg-dark-base-900 text-gray-900 dark:text-white shadow-md sticky top-0 z-50 border-b border-gray-200 dark:border-dark-base-700 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Логотип */}
@@ -51,7 +51,7 @@ export const Header = () => {
                 console.log('Toggle theme, current:', theme);
                 toggleTheme();
               }}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-300"
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-base-800 transition-colors text-gray-600 dark:text-gray-300"
               title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
               type="button"
             >
@@ -61,7 +61,7 @@ export const Header = () => {
             </button>
 
             {/* Инфо о пользователе */}
-            <div className="hidden md:flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+            <div className="hidden md:flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-100 dark:bg-dark-base-800 border border-gray-200 dark:border-dark-base-700">
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-md overflow-hidden">
                 {user?.avatar_url ? (
                   <img
@@ -114,7 +114,7 @@ export const Header = () => {
                     'flex items-center gap-2 px-4 py-2 rounded-lg transition-all',
                     isActive
                       ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-md'
-                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-base-800 hover:text-gray-900 dark:hover:text-white'
                   )
                 }
               >

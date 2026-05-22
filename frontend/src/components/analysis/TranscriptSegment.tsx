@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { clsx } from 'clsx';
 import { formatTime } from '@/utils/formatTime';
-import { getSpeakerColor } from '@/utils/speakerColors';
+import { getSpeakerColor, getSpeakerColorBySeed } from '@/utils/speakerColors';
 import { AnnotatedText } from './AnnotatedText';
 import { type Annotation } from '@/api/transcripts';
 
@@ -12,6 +12,8 @@ interface TranscriptSegmentProps {
   endTime: number;
   isActive?: boolean;
   partId?: string;
+  avatarUrl?: string | null;
+  colorSeed?: string | null;       // user_id для стабильного цвета
   annotations?: Annotation[];
   onAnnotationClick?: (annotation: Annotation) => void;
   onClick?: () => void;
@@ -25,12 +27,14 @@ export const TranscriptSegment = memo(({
   endTime,
   isActive,
   partId,
+  avatarUrl,
+  colorSeed,
   annotations = [],
   onAnnotationClick,
   onClick,
   onCreateFullAnnotation
 }: TranscriptSegmentProps) => {
-  const color = getSpeakerColor(speaker);
+  const color = colorSeed ? getSpeakerColorBySeed(colorSeed) : getSpeakerColor(speaker);
 
   return (
     <div
@@ -40,19 +44,36 @@ export const TranscriptSegment = memo(({
         'p-4 rounded-xl border transition-all cursor-pointer group',
         isActive
           ? 'bg-primary-50 border-primary-300 shadow-md dark:bg-primary-900/20 dark:border-primary-700'
-          : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-lg'
+          : 'bg-white dark:bg-dark-base-800 border-gray-200 dark:border-dark-base-700 hover:border-gray-300 dark:hover:border-dark-base-600 hover:shadow-lg'
       )}
     >
       <div className="flex items-start gap-3 mb-3">
-        {/* Цветной кружок спикера */}
-        <div className={clsx(
-          'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm',
-          color.bg
-        )}>
-          <span className="text-white text-xs font-bold">
-            {speaker.replace('SPEAKER_', '').slice(0, 2)}
-          </span>
-        </div>
+        {/* Цветной кружок спикера / аватарка */}
+        {avatarUrl ? (
+          <div className="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden shadow-sm ring-2 ring-white dark:ring-gray-700">
+            <img
+              src={avatarUrl}
+              alt={speaker}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                // Если аватарка не загрузилась — показываем инициалы
+                (e.target as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).parentElement!.classList.add(...color.bg.split(' '));
+                (e.target as HTMLImageElement).parentElement!.innerHTML =
+                  `<span class="text-white text-xs font-bold">${speaker.slice(0, 2).toUpperCase()}</span>`;
+              }}
+            />
+          </div>
+        ) : (
+          <div className={clsx(
+            'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm',
+            color.bg
+          )}>
+            <span className="text-white text-xs font-bold">
+              {speaker.replace('SPEAKER_', '').slice(0, 2)}
+            </span>
+          </div>
+        )}
 
         {/* Информация о спикере и времени */}
         <div className="flex-1 min-w-0">

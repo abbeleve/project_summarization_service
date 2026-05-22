@@ -534,7 +534,7 @@ async def process_audio(
             "diarization_model": diarization_model or "pyannote/speaker-diarization-community-1",
             "diarize_lib": diarize_lib or "pyannote",
             "transcribe_lib": transcribe_lib or "gigaam",
-            "llm_model": llm_model or "gemini-2.5-flash",
+            "llm_model": llm_model or "deepseek/deepseek-v4-flash",
             "noise_sup_bool": noise_sup_bool,
             "user_id": current_user["user_id"],
             "recording_url": recording_url  # Передаём URL в Celery задачу
@@ -682,7 +682,7 @@ async def proxy_ask_question(
     question: str = Form(...),
     current_user: dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db),
-    llm_model = Form("gemini-2.5-flash"), #HARD CODED
+    llm_model = Form("deepseek/deepseek-v4-flash"), #HARD CODED
 ):
     """
     Проксирует запрос к LLM в audio-ml сервис и сохраняет историю в БД.

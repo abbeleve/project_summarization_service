@@ -98,16 +98,16 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
   }
 
   return (
-    <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-2xl p-5 border border-gray-200 dark:border-gray-700 space-y-4">
+    <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-2xl p-5 border border-gray-200 dark:border-dark-base-700 space-y-4">
       {/* Переключатель интервала */}
       <div className="flex justify-end">
-        <div className="flex gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
+        <div className="flex gap-1 bg-white dark:bg-dark-base-800 rounded-lg p-1 border border-gray-200 dark:border-dark-base-700">
           <button
             onClick={() => setTimeInterval('30s')}
             className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
               timeInterval === '30s'
                 ? 'bg-emerald-500 text-white'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-base-700'
             }`}
           >
             30с
@@ -117,7 +117,7 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
             className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
               timeInterval === '1m'
                 ? 'bg-emerald-500 text-white'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-base-700'
             }`}
           >
             1м
@@ -127,7 +127,7 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
             className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
               timeInterval === '2m'
                 ? 'bg-emerald-500 text-white'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-base-700'
             }`}
           >
             2м

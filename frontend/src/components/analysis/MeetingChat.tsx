@@ -52,7 +52,7 @@ export const MeetingChat = ({ transcriptId }: MeetingChatProps) => {
   const allMessages = [...(messages || []), ...localMessages];
 
   return (
-    <div className="flex flex-col h-[600px] bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div className="flex flex-col h-[600px] bg-white dark:bg-dark-base-800 rounded-2xl shadow-lg border border-gray-200 dark:border-dark-base-700 overflow-hidden">
       {/* Header с градиентом */}
       <div className="bg-gradient-to-r from-violet-500 to-purple-600 p-5">
         <div className="flex items-center gap-3">
@@ -67,7 +67,7 @@ export const MeetingChat = ({ transcriptId }: MeetingChatProps) => {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gradient-to-b from-gray-50 to-white dark:from-dark-base-900 dark:to-dark-base-800">
         {isLoading && messages.length === 0 ? (
           <div className="flex justify-center py-12">
             <LoadingSpinner text="Загрузка истории..." size={'sm'} />
@@ -92,7 +92,7 @@ export const MeetingChat = ({ transcriptId }: MeetingChatProps) => {
                 className={`max-w-[85%] px-4 py-3 rounded-2xl shadow-sm ${
                   msg.role === 'user'
                     ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-br-md'
-                    : 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-bl-md border border-gray-200 dark:border-gray-600'
+                    : 'bg-white dark:bg-dark-base-700 text-gray-800 dark:text-gray-200 rounded-bl-md border border-gray-200 dark:border-dark-base-600'
                 }`}
               >
                 <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
@@ -103,7 +103,7 @@ export const MeetingChat = ({ transcriptId }: MeetingChatProps) => {
 
         {isPending && (
           <div className="flex justify-start">
-            <div className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-4 py-3 rounded-2xl rounded-bl-md shadow-sm">
+            <div className="bg-white dark:bg-dark-base-700 border border-gray-200 dark:border-dark-base-600 px-4 py-3 rounded-2xl rounded-bl-md shadow-sm">
               <div className="flex gap-1.5">
                 <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" />
                 <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce animation-delay-100" />
@@ -116,14 +116,14 @@ export const MeetingChat = ({ transcriptId }: MeetingChatProps) => {
       </div>
 
       {/* Input form */}
-      <form onSubmit={handleSubmit} className="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+      <form onSubmit={handleSubmit} className="p-4 bg-white dark:bg-dark-base-800 border-t border-gray-200 dark:border-dark-base-700">
         <div className="flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Спросите о встрече..."
-            className="flex-1 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all placeholder:text-gray-400 dark:placeholder:text-gray-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="flex-1 border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all placeholder:text-gray-400 dark:placeholder:text-dark-base-500 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white"
             disabled={isPending}
           />
           <button

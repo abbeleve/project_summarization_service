@@ -99,7 +99,7 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
         
         summarize_data = {
             "input_text": transcription_text,
-            "llm_model": options.get("llm_model", "gemini-2.5-flash")
+            "llm_model": options.get("llm_model", "deepseek/deepseek-v4-flash")
         }
         
         summary_response = requests.post(
@@ -208,13 +208,14 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
             logger.warning(f"[{task_id}] Не удалось проиндексировать в RAG: {e}")
             # Не прерываем задачу, RAG indexing не критичен
 
-        # === 5. Speaker identification ===
-        # Пытаемся определить реальных спикеров по SPEAKER_XX меткам
+        # === 5. Speaker identification (by voice embeddings) ===
         try:
             enrolled = _get_enrolled_speakers()
             if enrolled:
                 logger.info(f"[{task_id}] Найдено {len(enrolled)} зарегистрированных голосовых профилей")
-                _match_speakers_in_parts(db, transcript_id, enrolled)
+                _identify_speakers_by_embedding(
+                    db, transcript_id, file_bytes, transcript_segments, enrolled
+                )
         except Exception as e:
             logger.warning(f"[{task_id}] Speaker identification не удалась: {e}")
 
@@ -348,59 +349,116 @@ def _get_enrolled_speakers() -> List[Dict[str, Any]]:
         return []
 
 
-def _match_speakers_in_parts(
+def _identify_speakers_by_embedding(
     db: DataBaseManager,
     transcript_id: UUID,
+    file_bytes: bytes,
+    transcript_segments: List[Dict[str, Any]],
     enrolled: List[Dict[str, Any]],
 ):
     """
-    For each unique speaker label in the transcript parts, try to match
-    against enrolled user profiles. Updates part text labels in DB.
+    Identify speakers by comparing voice embeddings against Qdrant profiles.
 
-    Simple label-based matching: if there's exactly one enrolled speaker
-    or names match partially, update the parts.
+    Для каждого уникального SPEAKER_XX:
+      1. Вырезать до 30 секунд его аудио по таймингам из оригинального файла
+      2. Извлечь ECAPA-TDNN эмбеддинг
+      3. Найти ближайший profile в Qdrant (cosine similarity, threshold 0.6)
+      4. Если найден — обновить все части транскрипции с этим спикером
     """
-    parts = db.select_parts_transcription_by_transcript_id(transcript_id)
-    if not parts:
+    from collections import defaultdict
+
+    # Группируем тайминги по спикеру
+    speaker_timestamps = defaultdict(list)
+    for seg in transcript_segments:
+        speaker = seg.get("Speaker", seg.get("speaker", "UNKNOWN"))
+        start = seg.get("start", seg.get("start_time", 0))
+        end = seg.get("stop", seg.get("end_time", 0))
+        if float(end) > float(start):
+            speaker_timestamps[speaker].append((float(start), float(end)))
+
+    if not speaker_timestamps:
         return
 
-    # Extract unique speaker labels
-    speaker_labels = set()
-    for part in parts:
-        text = part.get("text", "")
-        if ":" in text:
-            speaker = text.split(":", 1)[0].strip()
-            speaker_labels.add(speaker)
-
-    if not speaker_labels:
+    # Загружаем оригинальное аудио через pydub (WebM/MP3 и т.д. — ffmpeg в контейнере есть)
+    try:
+        from pydub import AudioSegment
+        import io as io_module
+        with io_module.BytesIO(file_bytes) as buf:
+            full_audio = AudioSegment.from_file(buf)
+    except Exception as e:
+        logger.warning(f"Cannot load audio for speaker identification: {e}")
         return
 
-    # Build mapping: SPEAKER_XX -> enrolled user name
-    # Simple heuristic: assign in order (first SPEAKER_00 -> first enrolled, etc.)
-    sorted_labels = sorted(speaker_labels)
+    # Импортируем voice-модули (могут отсутствовать в тестовом окружении)
+    try:
+        from app.voice.speaker_identification import extract_embedding_from_wav_bytes
+        from app.voice.qdrant_profiles import search_speaker
+    except ImportError as e:
+        logger.warning(f"Voice modules not available: {e}")
+        return
+
+    MAX_SECONDS = 30
     label_to_name = {}
 
-    for i, label in enumerate(sorted_labels):
-        if i < len(enrolled):
-            full_name = enrolled[i].get("full_name", "")
-            if full_name:
-                label_to_name[label] = full_name
+    for speaker_label, timestamps in speaker_timestamps.items():
+        # Склеиваем сегменты этого спикера, но не дольше MAX_SECONDS
+        speaker_audio = None
+        total_ms = 0
+        max_ms = MAX_SECONDS * 1000
+
+        for start_sec, end_sec in timestamps:
+            if total_ms >= max_ms:
+                break
+            start_ms = int(start_sec * 1000)
+            end_ms = int(end_sec * 1000)
+            seg = full_audio[start_ms:end_ms]
+            if speaker_audio is None:
+                speaker_audio = seg
+            else:
+                speaker_audio = speaker_audio + seg
+            total_ms += len(seg)
+
+        if speaker_audio is None or len(speaker_audio) < 1000:
+            logger.debug(f"{speaker_label}: too short ({len(speaker_audio)//1000}s), skip")
+            continue
+
+        # Экспортируем в WAV bytes
+        with io_module.BytesIO() as buf:
+            speaker_audio.export(buf, format="wav")
+            wav_bytes = buf.getvalue()
+
+        # Извлекаем эмбеддинг
+        embedding = extract_embedding_from_wav_bytes(wav_bytes)
+        if embedding is None:
+            logger.debug(f"{speaker_label}: embedding extraction failed, skip")
+            continue
+
+        # Ищем в Qdrant
+        result = search_speaker(embedding=embedding, threshold=0.6)
+        if result:
+            user_id, full_name, score = result
+            label_to_name[speaker_label] = full_name
+            logger.info(f"{speaker_label} → {full_name} (score: {score:.4f})")
 
     if not label_to_name:
+        logger.info(f"No speakers identified for transcript {transcript_id}")
         return
 
-    # Update parts with identified names
+    # Обновляем части транскрипции в БД
+    parts = db.select_parts_transcription_by_transcript_id(transcript_id)
+    updated = 0
     for part in parts:
         text = part.get("text", "")
         if ":" not in text:
             continue
-
         speaker = text.split(":", 1)[0].strip()
         if speaker in label_to_name:
             new_text = f"{label_to_name[speaker]}:{text.split(':', 1)[1]}"
             db.update_parts_transcription(part["id"], text=new_text)
+            updated += 1
 
     logger.info(
-        f"Speaker labels updated for transcript {transcript_id}: "
-        f"{', '.join(f'{k}→{v}' for k, v in label_to_name.items())}"
+        f"Speaker identification for {transcript_id}: "
+        f"{len(label_to_name)}/{len(speaker_timestamps)} speakers matched, "
+        f"{updated} parts updated"
     )

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranscripts } from '@/hooks/useTranscripts';
 import { useActiveTasks } from '@/hooks/useActiveTasks';
@@ -39,6 +39,30 @@ export const HomePage = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  // Конвертирует дд/мм/гггг в ISO YYYY-MM-DD
+  const toISODate = (val: string): string => {
+    const match = val.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+    return val;
+  };
+
+  // Конвертирует ISO YYYY-MM-DD в дд/мм/гггг
+  const toDisplayDate = (val: string): string => {
+    const match = val.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+    return val;
+  };
+
+  const startDateRef = useRef<HTMLInputElement>(null);
+  const endDateRef = useRef<HTMLInputElement>(null);
+
+  const applyFilters = () => {
+    setActualSearchQuery(searchQuery);
+    setActualStartDate(toISODate(startDate));
+    setActualEndDate(toISODate(endDate));
+    setOffset(0);
+  };
 
   // Проверяем завершённые задачи и показываем уведомление
   useEffect(() => {
@@ -148,84 +172,103 @@ export const HomePage = () => {
 
       {/* History section */}
       <section className="mt-8">
-        <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-lg">
-              <span className="text-2xl">📋</span>
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">История транскрипций</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {total > 0 ? `Всего ${total} транскрипций` : 'Пока пусто'}
-              </p>
-            </div>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-lg">
+            <span className="text-2xl">📋</span>
           </div>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">История транскрипций</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {total > 0 ? `Всего ${total} транскрипций` : 'Пока пусто'}
+            </p>
+          </div>
+        </div>
 
-          {/* Поиск по названию и фильтрация по дате */}
-          <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1 sm:w-64">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      setActualSearchQuery(searchQuery);
-                      setActualStartDate(startDate);
-                      setActualEndDate(endDate);
-                      setOffset(0);
-                    }
-                  }}
-                  placeholder="Поиск по названию..."
-                  className="w-full px-4 py-2 pl-10 pr-10 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all"
-                />
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                  🔍
-                </span>
-                {searchQuery && (
-                  <button
-                    onClick={() => {
-                      setSearchQuery('');
-                      setActualSearchQuery('');
-                      setOffset(0);
-                    }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all text-sm"
-                />
-                <span className="text-gray-400">—</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all text-sm"
-                />
-              </div>
-            </div>
-            <Button
-              onClick={() => {
-                setActualSearchQuery(searchQuery);
-                setActualStartDate(startDate);
-                setActualEndDate(endDate);
-                setOffset(0);
+        {/* GPT-стиль поиск под заголовком */}
+        <div className="mb-4">
+          <div className="relative w-full">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') applyFilters();
               }}
-              size="sm"
-              className="whitespace-nowrap"
-            >
-              Применить
-            </Button>
+              placeholder="Поиск по названию транскрипции..."
+              className="w-full px-5 py-3.5 pl-12 pr-12 rounded-2xl border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all shadow-sm text-base"
+            />
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg">
+              🔍
+            </span>
+            {searchQuery && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setActualSearchQuery('');
+                  setOffset(0);
+                }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-lg transition-colors"
+              >
+                ✕
+              </button>
+            )}
           </div>
+        </div>
+
+        {/* Фильтр по дате в формате дд/мм/гггг */}
+        <div className="flex items-center gap-2 mb-6 flex-wrap">
+          <div className="relative">
+            <input
+              type="text"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              placeholder="дд/мм/гггг"
+              className="w-36 px-3 py-2 pr-9 rounded-xl border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all text-sm"
+            />
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-sm">
+              📅
+            </span>
+            <input
+              ref={startDateRef}
+              type="date"
+              onChange={(e) => {
+                if (e.target.value) {
+                  setStartDate(toDisplayDate(e.target.value));
+                }
+              }}
+              className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 opacity-0 cursor-pointer"
+            />
+          </div>
+          <span className="text-gray-400 dark:text-gray-500 font-medium">—</span>
+          <div className="relative">
+            <input
+              type="text"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              placeholder="дд/мм/гггг"
+              className="w-36 px-3 py-2 pr-9 rounded-xl border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all text-sm"
+            />
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-sm">
+              📅
+            </span>
+            <input
+              ref={endDateRef}
+              type="date"
+              onChange={(e) => {
+                if (e.target.value) {
+                  setEndDate(toDisplayDate(e.target.value));
+                }
+              }}
+              className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 opacity-0 cursor-pointer"
+            />
+          </div>
+          <Button
+            onClick={applyFilters}
+            size="sm"
+            className="whitespace-nowrap"
+          >
+            Применить
+          </Button>
         </div>
 
         {isLoading ? (
@@ -235,7 +278,7 @@ export const HomePage = () => {
         ) : error ? (
           <ErrorMessage message="Не удалось загрузить историю" />
         ) : !transcripts?.length ? (
-          <Card className="p-12 text-center dark:bg-gray-800 dark:border-gray-700">
+          <Card className="p-12 text-center dark:bg-dark-base-800 dark:border-dark-base-700">
             <div className="max-w-md mx-auto">
               <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-100 to-purple-100 dark:from-violet-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">📝</span>
@@ -265,7 +308,7 @@ export const HomePage = () => {
               {transcripts.map((transcript) => (
                 <div
                   key={transcript.transcript_id}
-                  className="group bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-xl hover:border-violet-200 dark:hover:border-violet-800 transition-all duration-300 cursor-pointer"
+                  className="group bg-white dark:bg-dark-base-800 rounded-2xl border border-gray-200 dark:border-dark-base-700 p-5 hover:shadow-xl hover:border-violet-200 dark:hover:border-violet-800 transition-all duration-300 cursor-pointer"
                   onClick={() => navigate(`/analysis/${transcript.transcript_id}`)}
                 >
                   <div className="flex items-start gap-4">
@@ -300,7 +343,7 @@ export const HomePage = () => {
                                 if (e.key === 'Enter') handleRename(transcript.transcript_id);
                                 if (e.key === 'Escape') cancelEditing();
                               }}
-                              className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                              className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-dark-base-600 rounded-lg bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:outline-none"
                               placeholder="Новое название"
                               autoFocus
                             />
@@ -319,7 +362,7 @@ export const HomePage = () => {
                                 e.stopPropagation();
                                 cancelEditing();
                               }}
-                              className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 flex items-center justify-center transition-colors"
+                              className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-dark-base-700 hover:bg-gray-300 dark:hover:bg-dark-base-600 text-gray-700 dark:text-gray-300 flex items-center justify-center transition-colors"
                               title="Отмена"
                             >
                               ✕
@@ -377,7 +420,7 @@ export const HomePage = () => {
                         }`}>
                           {transcript.meeting_type || 'Не определено'}
                         </span>
-                        <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 flex items-center gap-1">
+                        <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-dark-base-700 dark:text-gray-300 flex items-center gap-1">
                           <span>📅</span>
                           {format(new Date(transcript.created_at), 'dd.MM.yyyy HH:mm', { locale: ru })}
                         </span>
@@ -390,11 +433,11 @@ export const HomePage = () => {
                       )}
 
                       <div className="flex items-center gap-4 text-sm">
-                        <span className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 px-3 py-1.5 rounded-lg">
+                        <span className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-dark-base-700 px-3 py-1.5 rounded-lg">
                           <span className="text-violet-500">🗣️</span>
                           <span className="font-medium">{transcript.speakers?.length || 0} спикеров</span>
                         </span>
-                        <span className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 px-3 py-1.5 rounded-lg">
+                        <span className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-dark-base-700 px-3 py-1.5 rounded-lg">
                           <span className="text-violet-500">⏱️</span>
                           <span className="font-medium">{(transcript.duration || 0).toFixed(1)} мин</span>
                         </span>

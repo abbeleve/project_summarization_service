@@ -41,7 +41,7 @@ class MeetingModelSettings(BaseModel):
     diarization_model: Optional[str] = Field("pyannote/speaker-diarization-community-1", description="Модель диаризации")
     diarize_lib: Optional[str] = Field("pyannote", description="Библиотека диаризации")
     transcribe_lib: Optional[str] = Field("gigaam", description="Библиотека транскрибации")
-    llm_model: Optional[str] = Field("gemini-2.5-flash", description="Модель LLM для суммаризации")
+    llm_model: Optional[str] = Field("deepseek/deepseek-v4-flash", description="Модель LLM для суммаризации")
     noise_suppression: Optional[bool] = Field(False, description="Шумоподавление")
 
 

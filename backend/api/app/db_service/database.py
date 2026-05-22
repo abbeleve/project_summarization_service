@@ -384,7 +384,7 @@ class ScheduledMeeting(Base):
     llm_model: Mapped[Optional[str]] = mapped_column(
         String(50),
         nullable=True,
-        default="gemini-2.5-flash"
+        default="deepseek/deepseek-v4-flash"
     )
     noise_suppression: Mapped[Optional[bool]] = mapped_column(
         nullable=True,
@@ -1274,7 +1274,7 @@ class DataBaseManager:
         diarization_model: Optional[str] = "pyannote/speaker-diarization-community-1",
         diarize_lib: Optional[str] = "pyannote",
         transcribe_lib: Optional[str] = "gigaam",
-        llm_model: Optional[str] = "gemini-2.5-flash",
+        llm_model: Optional[str] = "deepseek/deepseek-v4-flash",
         noise_suppression: Optional[bool] = False
     ) -> Optional[UUID]:
         """

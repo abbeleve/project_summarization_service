@@ -10,7 +10,7 @@ export const ragApi = {
   askQuestion: async (
     transcriptId: string,
     question: string,
-    llmModel: string = 'gemini-2.5-flash'
+    llmModel: string = 'deepseek/deepseek-v4-flash'
   ): Promise<{ answer: string }> => {
     const formData = new FormData();
     formData.append('transcript_id', transcriptId);

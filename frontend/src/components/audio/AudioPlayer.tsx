@@ -97,7 +97,7 @@ export const AudioPlayer = ({ src, title, segments, onTimeUpdate }: AudioPlayerP
 
       {/* Segments timeline */}
       {segments && segments.length > 0 && (
-        <div className="relative h-8 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden">
+        <div className="relative h-8 bg-gray-100 dark:bg-dark-base-700 rounded-lg overflow-hidden">
           {segments.map((seg, idx) => {
             const left = duration > 0 ? (seg.start / duration) * 100 : 0;
             const width = duration > 0 ? ((seg.stop - seg.start) / duration) * 100 : 0;

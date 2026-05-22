@@ -1,8 +1,9 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { useTranscripts } from '@/hooks/useTranscripts';
 import { useAnnotations } from '@/hooks/useAnnotations';
 import { transcriptsApi } from '@/api/transcripts';
+import { voiceApi } from '@/api/voice';
 import { SummaryCard } from '@/components/analysis/SummaryCard';
 import { SpeakerDistributionChart } from '@/components/analysis/SpeakerDistributionChart';
 import { TranscriptSegment } from '@/components/analysis/TranscriptSegment';
@@ -77,6 +78,27 @@ export const AnalysisPage = () => {
       }
     }
   };
+
+  // Загружаем enrolled speakers для отображения аватарок и стабильных цветов
+  const [avatarMap, setAvatarMap] = useState<Record<string, string>>({});
+  const [colorSeedMap, setColorSeedMap] = useState<Record<string, string>>({});
+  useEffect(() => {
+    voiceApi.getEnrolledSpeakers().then((data) => {
+      const avMap: Record<string, string> = {};
+      const csMap: Record<string, string> = {};
+      for (const s of data.speakers) {
+        if (s.full_name && s.user_id) {
+          const key = s.full_name.toLowerCase();
+          avMap[key] = `http://localhost:8000/users/me/avatar?user_id=${s.user_id}`;
+          csMap[key] = s.user_id;  // user_id как seed для цвета
+        }
+      }
+      setAvatarMap(avMap);
+      setColorSeedMap(csMap);
+    }).catch(() => {
+      // enrolled-speakers не критичен, без аватарок работаем
+    });
+  }, []);
 
   // Переименование транскрипции
   const handleRename = async () => {
@@ -249,13 +271,18 @@ export const AnalysisPage = () => {
     );
   }
 
-  const segments = (transcript.parts || []).map(p => ({
-    Speaker: p.text.split(':')[0] || 'UNKNOWN',
-    Text: p.text.split(':').slice(1).join(':').trim(),
-    start: p.start_time / 1000,
-    stop: p.end_time / 1000,
-    partId: p.id
-  }));
+  const segments = (transcript.parts || []).map(p => {
+    const speaker = p.text.split(':')[0] || 'UNKNOWN';
+    return {
+      Speaker: speaker,
+      Text: p.text.split(':').slice(1).join(':').trim(),
+      start: p.start_time / 1000,
+      stop: p.end_time / 1000,
+      partId: p.id,
+      avatarUrl: avatarMap[speaker.toLowerCase()] || null,
+      colorSeed: colorSeedMap[speaker.toLowerCase()] || null,
+    };
+  });
 
   // Конвертация Blob в URL для аудио (если есть)
   const audioUrl = transcript.audio_url || (transcript.audio_blob
@@ -293,7 +320,7 @@ export const AnalysisPage = () => {
                   if (e.key === 'Enter') handleRename();
                   if (e.key === 'Escape') setIsEditing(false);
                 }}
-                className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                className="px-3 py-1.5 border border-gray-300 dark:border-dark-base-600 rounded-lg bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:outline-none"
                 placeholder="Новое название"
                 autoFocus
               />
@@ -352,7 +379,7 @@ export const AnalysisPage = () => {
 
           {/* Аудио плеер — между графиками и детальной транскрипцией */}
           {segments.length > 0 && audioUrl && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 shadow-sm">
+            <div className="bg-white dark:bg-dark-base-800 rounded-xl border border-gray-200 dark:border-dark-base-700 p-4 shadow-sm">
               <AudioPlayer
                 src={audioUrl}
                 segments={segments}
@@ -364,7 +391,7 @@ export const AnalysisPage = () => {
           <div
             ref={transcriptContainerRef}
             onMouseUp={handleTextSelection}
-            className="bg-gradient-to-r from-slate-50 to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-2xl p-5 border border-gray-200 dark:border-gray-700"
+            className="bg-gradient-to-r from-slate-50 to-gray-50 dark:from-dark-base-800 dark:to-dark-base-900 rounded-2xl p-5 border border-gray-200 dark:border-dark-base-700"
           >
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -386,6 +413,8 @@ export const AnalysisPage = () => {
                     startTime={seg.start}
                     endTime={seg.stop}
                     partId={seg.partId}
+                    avatarUrl={seg.avatarUrl}
+                    colorSeed={seg.colorSeed}
                     annotations={annotations}
                     onAnnotationClick={handleAnnotationClick}
                     onCreateFullAnnotation={handleCreateFullAnnotation}
@@ -408,10 +437,10 @@ export const AnalysisPage = () => {
       {/* Popup для создания аннотации */}
       {showAnnotationPopup && selectedText && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+          <div className="bg-white dark:bg-dark-base-800 rounded-2xl p-6 max-w-md w-full shadow-2xl">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Создать аннотацию</h3>
             
-            <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            <div className="mb-4 p-3 bg-gray-50 dark:bg-dark-base-700 rounded-lg">
               <p className="text-sm text-gray-700 dark:text-gray-300 italic">
                 "{selectedText.text}"
               </p>
@@ -442,7 +471,7 @@ export const AnalysisPage = () => {
                 onChange={(e) => setAnnotationNote(e.target.value)}
                 placeholder="Напишите заметку к аннотации..."
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-violet-500 focus:outline-none resize-none text-sm"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-dark-base-600 rounded-lg bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-violet-500 focus:outline-none resize-none text-sm"
               />
             </div>
 
@@ -473,8 +502,8 @@ export const AnalysisPage = () => {
 
       {/* Панель аннотаций */}
       {showAnnotationsPanel && (
-        <div className="annotations-panel fixed inset-y-0 right-0 w-80 bg-white dark:bg-gray-800 shadow-2xl z-40 border-l border-gray-200 dark:border-gray-700 flex flex-col">
-          <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <div className="annotations-panel fixed inset-y-0 right-0 w-80 bg-white dark:bg-dark-base-800 shadow-2xl z-40 border-l border-gray-200 dark:border-dark-base-700 flex flex-col">
+          <div className="p-4 border-b border-gray-200 dark:border-dark-base-700 flex items-center justify-between">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">📌 Аннотации</h3>
             <button
               onClick={() => setShowAnnotationsPanel(false)}
@@ -505,7 +534,7 @@ export const AnalysisPage = () => {
                   <div
                     key={annotation.id}
                     data-annotation-id={annotation.id}
-                    className={`group relative p-3 rounded-lg border transition-all ${colorConfig?.bg || 'bg-yellow-200 dark:bg-yellow-900/40'} border-gray-200 dark:border-gray-700 hover:shadow-md`}
+                    className={`group relative p-3 rounded-lg border transition-all ${colorConfig?.bg || 'bg-yellow-200 dark:bg-yellow-900/40'} border-gray-200 dark:border-dark-base-700 hover:shadow-md`}
                   >
                     {/* Кнопка удаления */}
                     <button

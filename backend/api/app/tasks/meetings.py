@@ -219,7 +219,7 @@ def process_recording_callback(
             "diarization_model": meeting.get("diarization_model") or "pyannote/speaker-diarization-community-1",
             "diarize_lib": meeting.get("diarize_lib") or "pyannote",
             "transcribe_lib": meeting.get("transcribe_lib") or "gigaam",
-            "llm_model": meeting.get("llm_model") or "gemini-2.5-flash",
+            "llm_model": meeting.get("llm_model") or "deepseek/deepseek-v4-flash",
             "noise_sup_bool": str(meeting.get("noise_suppression") or False).lower(),
             "user_id": user_id,
             "meeting_id": meeting_id,  # Передаём meeting_id для обновления статуса после завершения

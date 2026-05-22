@@ -138,7 +138,7 @@ class LLMClient:
         logger.info(f"Суммаризация текста ({len(text)} символов), модель: {model}")
         
         try:
-            response = self.client.chat.completions.create(
+            kwargs = dict(
                 model=model,
                 messages=[
                     {"role": "system", "content": self.system_summarization_json_prompt},
@@ -146,7 +146,11 @@ class LLMClient:
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
-                response_format={
+            )
+
+            # DeepSeek и некоторые другие провайдеры не поддерживают json_schema response_format
+            if "deepseek" not in model.lower():
+                kwargs["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {
                         "name": "meeting_analysis",
@@ -156,16 +160,16 @@ class LLMClient:
                                 "title": {"type": "string"},
                                 "summary": {"type": "string"},
                                 "key_points": {
-                                    "type": "array", 
+                                    "type": "array",
                                     "items": {"type": "string"}
                                 },
                             },
                             "required": ["title", "summary", "key_points"]
                         }
                     },
-                    # "plugins": [{"id": "response-healing"}]
-                },
-            )
+                }
+
+            response = self.client.chat.completions.create(**kwargs)
             
             result = self._parse_json_response(response)
             

@@ -32,7 +32,7 @@ export const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-dark-base-900 px-4">
       <Card className="w-full max-w-md p-8">
         <div className="text-center mb-8">
           <span className="text-4xl">🎙️</span>
@@ -55,7 +55,7 @@ export const LoginPage = () => {
               onChange={(e) => {
                 setUsername(e.target.value);
               }}
-              className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="Введите имя пользователя"
               required
               disabled={isLoading}
@@ -75,7 +75,7 @@ export const LoginPage = () => {
               onChange={(e) => {
                 setPassword(e.target.value);
               }}
-              className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="Введите пароль"
               required
               disabled={isLoading}

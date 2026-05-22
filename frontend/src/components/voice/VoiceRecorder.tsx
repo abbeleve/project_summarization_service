@@ -170,7 +170,7 @@ export const VoiceRecorder = ({ hasExistingProfile, onProfileChange }: VoiceReco
 
       {/* Recorded audio preview + action buttons */}
       {state === 'recorded' && audioUrl && (
-        <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="space-y-3 p-4 bg-gray-50 dark:bg-dark-base-800/50 rounded-lg border border-gray-200 dark:border-dark-base-700">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
               Запись готова
@@ -190,7 +190,7 @@ export const VoiceRecorder = ({ hasExistingProfile, onProfileChange }: VoiceReco
           <div className="flex gap-2">
             <button
               onClick={resetRecording}
-              className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+              className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-dark-base-700 border border-gray-300 dark:border-dark-base-600 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-base-600 transition-colors"
             >
               Перезаписать
             </button>
@@ -233,7 +233,7 @@ export const VoiceRecorder = ({ hasExistingProfile, onProfileChange }: VoiceReco
 
       {/* Idle state - start recording button */}
       {state === 'idle' && (
-        <div className="flex flex-col items-center gap-3 p-6 bg-gray-50 dark:bg-gray-800/30 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+        <div className="flex flex-col items-center gap-3 p-6 bg-gray-50 dark:bg-dark-base-800/30 rounded-lg border-2 border-dashed border-gray-300 dark:border-dark-base-600">
           <div className="w-16 h-16 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
             <span className="text-3xl">🎤</span>
           </div>

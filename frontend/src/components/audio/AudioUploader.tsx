@@ -59,7 +59,7 @@ export const AudioUploader = ({
     diarizationModel: 'pyannote/speaker-diarization-community-1',
     diarizeLib: 'pyannote',
     transcribeLib: 'gigaam',
-    llmModel: 'gemini-2.5-flash',
+    llmModel: 'deepseek/deepseek-v4-flash',
     noiseSuppression: false
   });
 
@@ -114,9 +114,9 @@ export const AudioUploader = ({
         className={`relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-300
           ${isDragActive 
             ? 'border-violet-500 bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 scale-[1.02]' 
-            : 'border-gray-300 dark:border-gray-600 hover:border-violet-400 hover:bg-gray-50 dark:hover:bg-gray-800'}
+            : 'border-gray-300 dark:border-dark-base-600 hover:border-violet-400 hover:bg-gray-50 dark:hover:bg-dark-base-800'}
           ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
-          ${!file ? 'bg-gradient-to-br from-gray-50 to-white dark:from-gray-800 dark:to-gray-900' : 'bg-white dark:bg-gray-800'}
+          ${!file ? 'bg-gradient-to-br from-gray-50 to-white dark:from-dark-base-800 dark:to-dark-base-900' : 'bg-white dark:bg-dark-base-800'}
         `}
       >
         <input {...getInputProps()} />
@@ -157,7 +157,7 @@ export const AudioUploader = ({
             </div>
             <button
               onClick={() => { setFile(null); setDenoisedFile(null); }}
-              className="w-8 h-8 rounded-full bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center justify-center transition-colors text-gray-400 hover:text-red-500 shadow-sm"
+              className="w-8 h-8 rounded-full bg-white dark:bg-dark-base-800 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center justify-center transition-colors text-gray-400 hover:text-red-500 shadow-sm"
               disabled={isProcessing}
             >
               <span className="text-lg">×</span>
@@ -166,7 +166,7 @@ export const AudioUploader = ({
 
           {/* Аудио превью */}
           <div className="space-y-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+            <div className="bg-white dark:bg-dark-base-800 rounded-xl p-4 border border-gray-200 dark:border-dark-base-700">
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                 <span>🎧</span> Оригинал
               </p>
@@ -174,7 +174,7 @@ export const AudioUploader = ({
             </div>
 
             {denoisedFile && (
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-green-200 dark:border-green-800">
+              <div className="bg-white dark:bg-dark-base-800 rounded-xl p-4 border border-green-200 dark:border-green-800">
                 <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-2 flex items-center gap-2">
                   <span>✨</span> С шумоподавлением
                 </p>
@@ -214,7 +214,7 @@ export const AudioUploader = ({
           </div>
 
           {denoisedFile && (
-            <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400 bg-white/70 dark:bg-gray-800/70 backdrop-blur p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
+            <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400 bg-white/70 dark:bg-dark-base-800/70 backdrop-blur p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
               <span className="text-lg">✅</span>
               <span className="font-medium">Файл обработан</span>
               <button
@@ -229,8 +229,8 @@ export const AudioUploader = ({
       )}
 
       {/* Settings - аккордеон */}
-      <details className="group border border-gray-200 dark:border-gray-700 rounded-2xl overflow-visible bg-white dark:bg-gray-800">
-        <summary className="flex items-center gap-3 font-semibold cursor-pointer p-4 bg-gradient-to-r from-slate-50 to-gray-50 dark:from-gray-700 dark:to-gray-800 hover:from-slate-100 hover:to-gray-100 dark:hover:from-gray-600 dark:hover:to-gray-700 transition-colors">
+      <details className="group border border-gray-200 dark:border-dark-base-700 rounded-2xl overflow-visible bg-white dark:bg-dark-base-800">
+        <summary className="flex items-center gap-3 font-semibold cursor-pointer p-4 bg-gradient-to-r from-slate-50 to-gray-50 dark:from-dark-base-700 dark:to-dark-base-800 hover:from-slate-100 hover:to-gray-100 dark:hover:from-dark-base-600 dark:hover:to-dark-base-700 transition-colors">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-400 to-gray-500 flex items-center justify-center shadow-md">
             <span className="text-lg">⚙️</span>
           </div>
@@ -328,11 +328,11 @@ export const AudioUploader = ({
                 onChange={(e) => setSettings(s => ({ ...s, transcribeLib: e.target.value }))}
                 onMouseEnter={() => setActiveTooltip('transcribeLib')}
                 onMouseLeave={() => setActiveTooltip(null)}
-                className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-violet-300 dark:hover:border-violet-600 cursor-help"
+                className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-violet-300 dark:hover:border-violet-600 cursor-help"
                 disabled={isProcessing}
               >
                 {Object.keys(TRANSCRIBE_CONFIG).map(lib => (
-                  <option key={lib} value={lib} className="dark:bg-gray-700 dark:text-white">{lib}</option>
+                  <option key={lib} value={lib} className="dark:bg-dark-base-700 dark:text-white">{lib}</option>
                 ))}
               </select>
             </div>
@@ -372,11 +372,11 @@ export const AudioUploader = ({
                 onChange={(e) => setSettings(s => ({ ...s, transcribeModel: e.target.value }))}
                 onMouseEnter={() => setActiveTooltip('transcribeModel')}
                 onMouseLeave={() => setActiveTooltip(null)}
-                className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-violet-300 dark:hover:border-violet-600 cursor-help"
+                className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-violet-300 dark:hover:border-violet-600 cursor-help"
                 disabled={isProcessing}
               >
                 {getTranscribeModelsByLib(settings.transcribeLib).map(model => (
-                  <option key={model} value={model} className="dark:bg-gray-700 dark:text-white">{model}</option>
+                  <option key={model} value={model} className="dark:bg-dark-base-700 dark:text-white">{model}</option>
                 ))}
               </select>
             </div>
@@ -412,11 +412,11 @@ export const AudioUploader = ({
                 onChange={(e) => setSettings(s => ({ ...s, diarizeLib: e.target.value }))}
                 onMouseEnter={() => setActiveTooltip('diarizeLib')}
                 onMouseLeave={() => setActiveTooltip(null)}
-                className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-blue-300 dark:hover:border-blue-600 cursor-help"
+                className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-blue-300 dark:hover:border-blue-600 cursor-help"
                 disabled={isProcessing}
               >
                 {Object.keys(DIARIZATION_CONFIG).map(lib => (
-                  <option key={lib} value={lib} className="dark:bg-gray-700 dark:text-white">{lib}</option>
+                  <option key={lib} value={lib} className="dark:bg-dark-base-700 dark:text-white">{lib}</option>
                 ))}
               </select>
             </div>
@@ -450,11 +450,11 @@ export const AudioUploader = ({
                 onChange={(e) => setSettings(s => ({ ...s, diarizationModel: e.target.value }))}
                 onMouseEnter={() => setActiveTooltip('diarizationModel')}
                 onMouseLeave={() => setActiveTooltip(null)}
-                className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-blue-300 dark:hover:border-blue-600 cursor-help"
+                className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-blue-300 dark:hover:border-blue-600 cursor-help"
                 disabled={isProcessing}
               >
                 {getDiarizationModelsByLib(settings.diarizeLib).map(model => (
-                  <option key={model} value={model} className="dark:bg-gray-700 dark:text-white">{model}</option>
+                  <option key={model} value={model} className="dark:bg-dark-base-700 dark:text-white">{model}</option>
                 ))}
               </select>
             </div>
@@ -489,11 +489,11 @@ export const AudioUploader = ({
                 onChange={(e) => setSettings(s => ({ ...s, llmModel: e.target.value }))}
                 onMouseEnter={() => setActiveTooltip('llmModel')}
                 onMouseLeave={() => setActiveTooltip(null)}
-                className="w-full border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 hover:border-amber-300 dark:hover:border-amber-600 cursor-help"
+                className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-amber-300 dark:hover:border-amber-600 cursor-help"
                 disabled={isProcessing}
               >
                 {LLM_MODELS.map(model => (
-                  <option key={model} value={model} className="dark:bg-gray-700 dark:text-white">{model}</option>
+                  <option key={model} value={model} className="dark:bg-dark-base-700 dark:text-white">{model}</option>
                 ))}
               </select>
             </div>
@@ -509,7 +509,7 @@ export const AudioUploader = ({
         className={`w-full py-4 px-6 rounded-2xl font-semibold text-lg transition-all duration-300 shadow-lg hover:shadow-xl ${
           canProcess && !isProcessing
             ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:from-violet-700 hover:to-purple-700 hover:scale-[1.02]'
-            : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+            : 'bg-gray-200 dark:bg-dark-base-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
         }`}
       >
         {isProcessing ? (

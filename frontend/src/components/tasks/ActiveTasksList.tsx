@@ -66,7 +66,7 @@ export const ActiveTasksList = ({ tasks, onRemove, onNavigate }: ActiveTasksList
     return (
       <div
         key={task.task_id}
-        className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+        className="p-3 border border-gray-200 dark:border-dark-base-700 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-base-800 transition-colors"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
@@ -90,7 +90,7 @@ export const ActiveTasksList = ({ tasks, onRemove, onNavigate }: ActiveTasksList
             </div>
 
             {/* Progress bar */}
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mb-2">
+            <div className="w-full bg-gray-200 dark:bg-dark-base-700 rounded-full h-1.5 mb-2">
               <div
                 className={`h-1.5 rounded-full transition-all duration-500 ${getStatusColor()}`}
                 style={{ width: `${Math.min(displayProgress, 100)}%` }}

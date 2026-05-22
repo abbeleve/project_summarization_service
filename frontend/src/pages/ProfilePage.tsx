@@ -257,7 +257,7 @@ export const ProfilePage = () => {
                       type="text"
                       value={editForm.surname}
                       onChange={(e) => setEditForm(p => ({ ...p, surname: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-dark-base-600 rounded-lg bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white text-sm"
                     />
                   </div>
                   <div>
@@ -266,7 +266,7 @@ export const ProfilePage = () => {
                       type="text"
                       value={editForm.name}
                       onChange={(e) => setEditForm(p => ({ ...p, name: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-dark-base-600 rounded-lg bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white text-sm"
                     />
                   </div>
                   <div>
@@ -275,7 +275,7 @@ export const ProfilePage = () => {
                       type="text"
                       value={editForm.patronymic}
                       onChange={(e) => setEditForm(p => ({ ...p, patronymic: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-dark-base-600 rounded-lg bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white text-sm"
                     />
                   </div>
                   <div>
@@ -284,7 +284,7 @@ export const ProfilePage = () => {
                       type="email"
                       value={editForm.email}
                       onChange={(e) => setEditForm(p => ({ ...p, email: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-dark-base-600 rounded-lg bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white text-sm"
                     />
                   </div>
                   <div className="sm:col-span-2 flex gap-2 pt-2">
@@ -298,7 +298,7 @@ export const ProfilePage = () => {
                     </button>
                     <button
                       onClick={handleCancelEdit}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                      className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-dark-base-700 hover:bg-gray-200 dark:hover:bg-dark-base-600 rounded-lg transition-colors"
                     >
                       Отмена
                     </button>

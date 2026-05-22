@@ -18,10 +18,10 @@ const MEETING_TYPE_COLORS: Record<string, string> = {
 };
 
 export const SummaryCard = ({ title, summary, keyPoints, meetingType }: SummaryCardProps) => {
-  const badgeClass = MEETING_TYPE_COLORS[meetingType] || 'bg-gray-100 text-gray-800 border-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600';
+  const badgeClass = MEETING_TYPE_COLORS[meetingType] || 'bg-gray-100 text-gray-800 border-gray-300 dark:bg-dark-base-700 dark:text-gray-300 dark:border-dark-base-600';
 
   return (
-    <Card className="space-y-6 p-6 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+    <Card className="space-y-6 p-6 bg-white dark:bg-dark-base-800 border-gray-200 dark:border-dark-base-700">
       {/* Заголовок и тип совещания */}
       <div className="flex items-start justify-between">
         <h3 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h3>

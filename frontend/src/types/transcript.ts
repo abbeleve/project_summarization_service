@@ -3,6 +3,8 @@ export interface TranscriptSegment {
   Text: string;
   start: number;
   stop: number;
+  avatarUrl?: string | null;
+  colorSeed?: string | null;   // user_id для стабильного цвета
 }
 
 export interface TranscriptPart {

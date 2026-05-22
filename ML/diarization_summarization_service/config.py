@@ -34,7 +34,7 @@ class Settings(BaseSettings):
         description="Базовый URL для LLM API (Gemini по умолчанию)"
     )
     allowed_llm_models: Set[str] = Field(
-        default={"gemini-2.5-flash", "gemini-2.5-pro"},
+        default={"deepseek/deepseek-v4-flash", "gemini-2.5-flash", "gemini-2.5-pro"},
         description="Разрешённые LLM модели"
     )
 
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     
     # ===== LLM параметры по умолчанию =====
     default_llm_model: str = Field(
-        default="gemini-2.5-flash",
+        default="deepseek/deepseek-v4-flash",
         description="Модель LLM по умолчанию"
     )
     llm_temperature: float = Field(
