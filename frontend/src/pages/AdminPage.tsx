@@ -187,7 +187,7 @@ export const AdminPage = () => {
 
         <Card className="p-6">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-purple-100 rounded-lg">
+            <div className="p-3 bg-blue-100 rounded-lg">
               <span className="text-2xl">⏱️</span>
             </div>
             <div>

@@ -53,7 +53,7 @@ export const AnnotatedText = ({ text, partId, annotations, onAnnotationClick, sp
     green: 'bg-green-200 dark:bg-green-900/40 hover:bg-green-300 dark:hover:bg-green-800/50',
     blue: 'bg-blue-200 dark:bg-blue-900/40 hover:bg-blue-300 dark:hover:bg-blue-800/50',
     pink: 'bg-pink-200 dark:bg-pink-900/40 hover:bg-pink-300 dark:hover:bg-pink-800/50',
-    purple: 'bg-purple-200 dark:bg-purple-900/40 hover:bg-purple-300 dark:hover:bg-purple-800/50',
+    purple: 'bg-blue-200 dark:bg-blue-900/40 hover:bg-blue-300 dark:hover:bg-blue-800/50',
   };
 
   // Сортируем аннотации по позиции

@@ -93,7 +93,7 @@ export const TranscriptSegment = memo(({
                 e.stopPropagation();
                 onCreateFullAnnotation(partId, text);
               }}
-              className="opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-xs font-medium bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 dark:hover:bg-violet-800/50 flex-shrink-0 ml-auto"
+              className="opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800/50 flex-shrink-0 ml-auto"
               title="Подчеркнуть всю реплику"
             >
               🚩

@@ -167,7 +167,7 @@ export const ProfilePage = () => {
             {!editing && (
               <button
                 onClick={() => setEditing(true)}
-                className="text-sm text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300 font-medium"
+                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
               >
                 ✏️ Редактировать
               </button>
@@ -176,7 +176,7 @@ export const ProfilePage = () => {
 
           {profileLoading ? (
             <div className="flex items-center gap-2 text-gray-500">
-              <span className="w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+              <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
               Загрузка...
             </div>
           ) : profileError ? (
@@ -186,7 +186,7 @@ export const ProfilePage = () => {
               {/* Avatar + basic info */}
               <div className="flex items-center gap-4">
                 <div className="relative group">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-lg overflow-hidden">
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 to-blue-500 flex items-center justify-center shadow-lg overflow-hidden">
                     {profile.avatar_url ? (
                       <img
                         src={profile.avatar_url}
@@ -291,7 +291,7 @@ export const ProfilePage = () => {
                     <button
                       onClick={handleSaveProfile}
                       disabled={saving}
-                      className="px-4 py-2 text-sm font-medium text-white bg-violet-600 hover:bg-violet-700 disabled:bg-violet-400 rounded-lg transition-colors flex items-center gap-2"
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg transition-colors flex items-center gap-2"
                     >
                       {saving && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
                       Сохранить
@@ -348,7 +348,7 @@ export const ProfilePage = () => {
 
           {voiceLoading ? (
             <div className="flex items-center gap-2 text-gray-500">
-              <span className="w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+              <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
               Загрузка...
             </div>
           ) : (
@@ -366,21 +366,21 @@ export const ProfilePage = () => {
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Как это работает</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="text-center p-3">
-              <div className="w-10 h-10 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center mx-auto mb-2">
+              <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mx-auto mb-2">
                 <span className="text-lg">🎤</span>
               </div>
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300">1. Запись голоса</p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Запишите 10–30 секунд речи</p>
             </div>
             <div className="text-center p-3">
-              <div className="w-10 h-10 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center mx-auto mb-2">
+              <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mx-auto mb-2">
                 <span className="text-lg">🧬</span>
               </div>
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300">2. Создание эмбеддинга</p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Нейросеть создаёт уникальный вектор голоса</p>
             </div>
             <div className="text-center p-3">
-              <div className="w-10 h-10 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center mx-auto mb-2">
+              <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mx-auto mb-2">
                 <span className="text-lg">🔍</span>
               </div>
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300">3. Идентификация</p>

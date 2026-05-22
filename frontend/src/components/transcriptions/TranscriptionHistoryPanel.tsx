@@ -416,7 +416,7 @@ export const TranscriptionHistoryPanel = () => {
               </div>
             ) : !allTranscripts.length ? (
               <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-3">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-100 to-blue-100 dark:from-blue-900/30 dark:to-blue-900/30 flex items-center justify-center mx-auto mb-3">
                   <span className="text-2xl">📝</span>
                 </div>
                 <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
@@ -542,7 +542,7 @@ export const TranscriptionHistoryPanel = () => {
             className="flex items-center gap-2 w-full px-4 py-3 pb-5 bg-white dark:bg-dark-base-900 hover:bg-gray-50 dark:hover:bg-dark-base-800 transition-colors cursor-pointer"
             type="button"
           >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center shadow-md overflow-hidden flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-500 flex items-center justify-center shadow-md overflow-hidden flex-shrink-0">
               {user?.avatar_url ? (
                 <img src={user.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
               ) : (

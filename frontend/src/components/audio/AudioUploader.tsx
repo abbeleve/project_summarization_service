@@ -113,8 +113,8 @@ export const AudioUploader = ({
         {...getRootProps()}
         className={`relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-300
           ${isDragActive 
-            ? 'border-violet-500 bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 scale-[1.02]' 
-            : 'border-gray-300 dark:border-dark-base-600 hover:border-violet-400 hover:bg-gray-50 dark:hover:bg-dark-base-800'}
+            ? 'border-blue-500 bg-gradient-to-br from-blue-50 to-blue-50 dark:from-blue-900/20 dark:to-blue-900/20 scale-[1.02]' 
+            : 'border-gray-300 dark:border-dark-base-600 hover:border-blue-400 hover:bg-gray-50 dark:hover:bg-dark-base-800'}
           ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
           ${!file ? 'bg-gradient-to-br from-gray-50 to-white dark:from-dark-base-800 dark:to-dark-base-900' : 'bg-white dark:bg-dark-base-800'}
         `}
@@ -125,15 +125,15 @@ export const AudioUploader = ({
         <div className="flex justify-center mb-4">
           <div className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${
             isDragActive 
-              ? 'bg-violet-500 scale-110' 
-              : 'bg-gradient-to-br from-violet-400 to-purple-500'
+              ? 'bg-blue-500 scale-110' 
+              : 'bg-gradient-to-br from-blue-400 to-blue-500'
           }`}>
             <span className="text-3xl">🎵</span>
           </div>
         </div>
         
         <p className={`text-lg font-medium mb-2 ${
-          isDragActive ? 'text-violet-700 dark:text-violet-300' : 'text-gray-700 dark:text-gray-300'
+          isDragActive ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'
         }`}>
           {isDragActive ? 'Отпустите файл здесь...' : 'Перетащите аудиофайл или кликните для выбора'}
         </p>
@@ -144,10 +144,10 @@ export const AudioUploader = ({
 
       {/* Выбранный файл */}
       {file && (
-        <div className="bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 rounded-2xl p-5 border border-violet-200 dark:border-violet-800">
+        <div className="bg-gradient-to-r from-blue-50 to-blue-50 dark:from-blue-900/20 dark:to-blue-900/20 rounded-2xl p-5 border border-blue-200 dark:border-blue-800">
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center gap-3 flex-1">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
                 <span className="text-2xl">🎵</span>
               </div>
               <div className="flex-1 min-w-0">
@@ -256,12 +256,12 @@ export const AudioUploader = ({
 
           {/* Пояснения терминов */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 border border-violet-200 dark:border-violet-800 rounded-xl p-3">
+            <div className="bg-gradient-to-br from-blue-50 to-blue-50 dark:from-blue-900/20 dark:to-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">📝</span>
-                <span className="font-semibold text-violet-800 dark:text-violet-300 text-sm">Транскрибация</span>
+                <span className="font-semibold text-blue-800 dark:text-blue-300 text-sm">Транскрибация</span>
               </div>
-              <p className="text-xs text-violet-700 dark:text-violet-400 leading-relaxed">
+              <p className="text-xs text-blue-700 dark:text-blue-400 leading-relaxed">
                 Преобразование речи в текст. Модель «слышит» аудио и записывает слова.
               </p>
             </div>
@@ -289,7 +289,7 @@ export const AudioUploader = ({
           {/* Транскрибация */}
           <div className="space-y-1">
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
-              <span className="w-1 h-4 bg-violet-500 rounded-full"></span>
+              <span className="w-1 h-4 bg-blue-500 rounded-full"></span>
               Библиотека транскрибации
             </label>
             <div className="relative">
@@ -301,8 +301,8 @@ export const AudioUploader = ({
                       Сравнение библиотек
                     </div>
                     <div className="space-y-2 text-xs">
-                      <div className="bg-violet-900/50 p-2 rounded-lg">
-                        <div className="font-semibold text-violet-300">🎯 GigaAM (Сбер)</div>
+                      <div className="bg-blue-900/50 p-2 rounded-lg">
+                        <div className="font-semibold text-blue-300">🎯 GigaAM (Сбер)</div>
                         <div className="text-gray-300 mt-1">{TRANSCRIBE_MODEL_DESCRIPTIONS.gigaam.description}</div>
                         <div className="mt-2 space-y-1">
                           <div>{TRANSCRIBE_MODEL_DESCRIPTIONS.gigaam.language}</div>
@@ -328,7 +328,7 @@ export const AudioUploader = ({
                 onChange={(e) => setSettings(s => ({ ...s, transcribeLib: e.target.value }))}
                 onMouseEnter={() => setActiveTooltip('transcribeLib')}
                 onMouseLeave={() => setActiveTooltip(null)}
-                className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-violet-300 dark:hover:border-violet-600 cursor-help"
+                className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-blue-300 dark:hover:border-blue-600 cursor-help"
                 disabled={isProcessing}
               >
                 {Object.keys(TRANSCRIBE_CONFIG).map(lib => (
@@ -340,7 +340,7 @@ export const AudioUploader = ({
 
           <div className="space-y-1">
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
-              <span className="w-1 h-4 bg-violet-500 rounded-full"></span>
+              <span className="w-1 h-4 bg-blue-500 rounded-full"></span>
               Модель транскрибации <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">(наведите для деталей)</span>
             </label>
             <div className="relative">
@@ -372,7 +372,7 @@ export const AudioUploader = ({
                 onChange={(e) => setSettings(s => ({ ...s, transcribeModel: e.target.value }))}
                 onMouseEnter={() => setActiveTooltip('transcribeModel')}
                 onMouseLeave={() => setActiveTooltip(null)}
-                className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-violet-300 dark:hover:border-violet-600 cursor-help"
+                className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-blue-300 dark:hover:border-blue-600 cursor-help"
                 disabled={isProcessing}
               >
                 {getTranscribeModelsByLib(settings.transcribeLib).map(model => (
@@ -508,7 +508,7 @@ export const AudioUploader = ({
         disabled={!canProcess || isProcessing}
         className={`w-full py-4 px-6 rounded-2xl font-semibold text-lg transition-all duration-300 shadow-lg hover:shadow-xl ${
           canProcess && !isProcessing
-            ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:from-violet-700 hover:to-purple-700 hover:scale-[1.02]'
+            ? 'bg-gradient-to-r from-blue-600 to-blue-600 text-white hover:from-blue-700 hover:to-blue-700 hover:scale-[1.02]'
             : 'bg-gray-200 dark:bg-dark-base-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
         }`}
       >

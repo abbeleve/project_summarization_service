@@ -50,7 +50,7 @@ export const AnalysisPage = () => {
     { name: 'green', bg: 'bg-green-200 dark:bg-green-900/40', label: 'Зелёный' },
     { name: 'blue', bg: 'bg-blue-200 dark:bg-blue-900/40', label: 'Синий' },
     { name: 'pink', bg: 'bg-pink-200 dark:bg-pink-900/40', label: 'Розовый' },
-    { name: 'purple', bg: 'bg-purple-200 dark:bg-purple-900/40', label: 'Фиолетовый' },
+    { name: 'purple', bg: 'bg-blue-200 dark:bg-blue-900/40', label: 'Фиолетовый' },
   ];
 
   // Функция для прокрутки к нужному сегменту
@@ -194,9 +194,9 @@ export const AnalysisPage = () => {
     const element = transcriptContainerRef.current?.querySelector(`[data-part-id="${annotation.part_id}"]`);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      element.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+      element.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
       setTimeout(() => {
-        element.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2');
+        element.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
       }, 2000);
     }
   };
@@ -224,9 +224,9 @@ export const AnalysisPage = () => {
       const panel = document.querySelector(`[data-annotation-id="${annotation.id}"]`);
       if (panel) {
         panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        panel.classList.add('ring-2', 'ring-violet-500');
+        panel.classList.add('ring-2', 'ring-blue-500');
         setTimeout(() => {
-          panel.classList.remove('ring-2', 'ring-violet-500');
+          panel.classList.remove('ring-2', 'ring-blue-500');
         }, 2000);
       }
     }, 100);
@@ -669,7 +669,7 @@ export const AnalysisPage = () => {
                 onChange={(e) => setAnnotationNote(e.target.value)}
                 placeholder="Напишите заметку к аннотации..."
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-dark-base-600 rounded-lg bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-violet-500 focus:outline-none resize-none text-sm"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-dark-base-600 rounded-lg bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none text-sm"
               />
             </div>
 

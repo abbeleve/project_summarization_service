@@ -195,7 +195,7 @@ export const VoiceRecorder = ({ hasExistingProfile, onProfileChange }: VoiceReco
               {state === 'file_selected' ? 'Выбрать другой файл' : 'Перезаписать'}
             </button>
             <button onClick={uploadRecording} disabled={state === 'uploading'}
-              className="flex-1 px-3 py-2 text-sm font-medium text-white bg-violet-600 hover:bg-violet-700 disabled:bg-violet-400 rounded-lg transition-colors flex items-center justify-center gap-2">
+              className="flex-1 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg transition-colors flex items-center justify-center gap-2">
               {state === 'uploading' ? (
                 <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Загрузка...</>
               ) : 'Сохранить голос'}
@@ -224,7 +224,7 @@ export const VoiceRecorder = ({ hasExistingProfile, onProfileChange }: VoiceReco
       {/* Idle state — запись ИЛИ загрузка файла */}
       {state === 'idle' && (
         <div className="flex flex-col items-center gap-4 p-6 bg-gray-50 dark:bg-gray-800/30 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
-          <div className="w-16 h-16 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
+          <div className="w-16 h-16 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
             <span className="text-3xl">🎤</span>
           </div>
 
@@ -235,7 +235,7 @@ export const VoiceRecorder = ({ hasExistingProfile, onProfileChange }: VoiceReco
 
           {/* Кнопка записи */}
           <button onClick={startRecording}
-            className="px-6 py-3 text-sm font-medium text-white bg-violet-600 hover:bg-violet-700 rounded-xl transition-colors shadow-lg shadow-violet-200 dark:shadow-violet-900/30 flex items-center gap-2">
+            className="px-6 py-3 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-lg shadow-blue-200 dark:shadow-blue-900/30 flex items-center gap-2">
             <span>●</span>
             Начать запись
           </button>
@@ -252,10 +252,10 @@ export const VoiceRecorder = ({ hasExistingProfile, onProfileChange }: VoiceReco
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onClick={() => fileInputRef.current?.click()}
-            className="w-full max-w-sm p-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:border-violet-400 dark:hover:border-violet-500 transition-colors text-center"
+            className="w-full max-w-sm p-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors text-center"
           >
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              🎵 Перетащите файл сюда<br />или <span className="text-violet-600 dark:text-violet-400 font-medium">нажмите для выбора</span>
+              🎵 Перетащите файл сюда<br />или <span className="text-blue-600 dark:text-blue-400 font-medium">нажмите для выбора</span>
             </p>
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">WAV, MP3, M4A, WebM — до 30 МБ</p>
             <input
