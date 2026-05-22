@@ -3,7 +3,8 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { useTranscripts } from '@/hooks/useTranscripts';
 import { useAnnotations } from '@/hooks/useAnnotations';
 import { transcriptsApi } from '@/api/transcripts';
-import { voiceApi } from '@/api/voice';
+import { voiceApi, usersApi } from '@/api/voice';
+import { getDominantColorsMap } from '@/utils/dominantColor';
 import { SummaryCard } from '@/components/analysis/SummaryCard';
 import { SpeakerDistributionChart } from '@/components/analysis/SpeakerDistributionChart';
 import { TranscriptSegment } from '@/components/analysis/TranscriptSegment';
@@ -79,25 +80,30 @@ export const AnalysisPage = () => {
     }
   };
 
-  // Загружаем enrolled speakers для отображения аватарок и стабильных цветов
-  const [avatarMap, setAvatarMap] = useState<Record<string, string>>({});
-  const [colorSeedMap, setColorSeedMap] = useState<Record<string, string>>({});
+  // Загружаем enrolled speakers: строим map user_id → { avatarUrl, fullName }
+  const [speakerInfoMap, setSpeakerInfoMap] = useState<Record<string, { avatarUrl: string; fullName: string }>>({});
+  const [dominantColors, setDominantColors] = useState<Record<string, string>>({});
   useEffect(() => {
-    voiceApi.getEnrolledSpeakers().then((data) => {
-      const avMap: Record<string, string> = {};
-      const csMap: Record<string, string> = {};
+    voiceApi.getEnrolledSpeakers().then(async (data) => {
+      const map: Record<string, { avatarUrl: string; fullName: string }> = {};
       for (const s of data.speakers) {
-        if (s.full_name && s.user_id) {
-          const key = s.full_name.toLowerCase();
-          avMap[key] = `http://localhost:8000/users/me/avatar?user_id=${s.user_id}`;
-          csMap[key] = s.user_id;  // user_id как seed для цвета
+        if (s.user_id) {
+          map[s.user_id] = {
+            avatarUrl: `http://localhost:8000/users/me/avatar?user_id=${s.user_id}`,
+            fullName: s.full_name,
+          };
         }
       }
-      setAvatarMap(avMap);
-      setColorSeedMap(csMap);
-    }).catch(() => {
-      // enrolled-speakers не критичен, без аватарок работаем
-    });
+      setSpeakerInfoMap(map);
+
+      // Извлекаем доминантный цвет из аватарок
+      const avatarUrlMap: Record<string, string> = {};
+      for (const [uid, info] of Object.entries(map)) {
+        avatarUrlMap[uid] = info.avatarUrl;
+      }
+      const colors = await getDominantColorsMap(avatarUrlMap);
+      setDominantColors(colors);
+    }).catch(() => {});
   }, []);
 
   // Переименование транскрипции
@@ -273,14 +279,27 @@ export const AnalysisPage = () => {
 
   const segments = (transcript.parts || []).map(p => {
     const speaker = p.text.split(':')[0] || 'UNKNOWN';
+    let avatarUrl: string | null = null;
+    let colorSeed: string | null = null;
+    let dominantColor: string | null = null;
+
+    // Если employee_id проставлен — берём аватарку и цвет по аккаунту
+    if (p.employee_id && speakerInfoMap[p.employee_id]) {
+      const info = speakerInfoMap[p.employee_id];
+      avatarUrl = info.avatarUrl;
+      colorSeed = p.employee_id;
+      dominantColor = dominantColors[p.employee_id] || null;
+    }
+
     return {
       Speaker: speaker,
       Text: p.text.split(':').slice(1).join(':').trim(),
       start: p.start_time / 1000,
       stop: p.end_time / 1000,
       partId: p.id,
-      avatarUrl: avatarMap[speaker.toLowerCase()] || null,
-      colorSeed: colorSeedMap[speaker.toLowerCase()] || null,
+      avatarUrl,
+      colorSeed,
+      dominantColor,
     };
   });
 
@@ -415,6 +434,7 @@ export const AnalysisPage = () => {
                     partId={seg.partId}
                     avatarUrl={seg.avatarUrl}
                     colorSeed={seg.colorSeed}
+                    dominantColor={seg.dominantColor}
                     annotations={annotations}
                     onAnnotationClick={handleAnnotationClick}
                     onCreateFullAnnotation={handleCreateFullAnnotation}

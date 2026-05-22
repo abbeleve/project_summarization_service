@@ -5,6 +5,7 @@ export interface TranscriptSegment {
   stop: number;
   avatarUrl?: string | null;
   colorSeed?: string | null;   // user_id для стабильного цвета
+  dominantColor?: string | null; // hex-цвет из аватарки
 }
 
 export interface TranscriptPart {

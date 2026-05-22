@@ -14,6 +14,7 @@ interface TranscriptSegmentProps {
   partId?: string;
   avatarUrl?: string | null;
   colorSeed?: string | null;       // user_id для стабильного цвета
+  dominantColor?: string | null;   // hex-цвет из аватарки
   annotations?: Annotation[];
   onAnnotationClick?: (annotation: Annotation) => void;
   onClick?: () => void;
@@ -29,12 +30,17 @@ export const TranscriptSegment = memo(({
   partId,
   avatarUrl,
   colorSeed,
+  dominantColor,
   annotations = [],
   onAnnotationClick,
   onClick,
   onCreateFullAnnotation
 }: TranscriptSegmentProps) => {
-  const color = colorSeed ? getSpeakerColorBySeed(colorSeed) : getSpeakerColor(speaker);
+  // Цвет: если есть dominantColor из аватарки — используем его, иначе — хеш от seed/speaker
+  const paletteColor = colorSeed ? getSpeakerColorBySeed(colorSeed) : getSpeakerColor(speaker);
+  const color = dominantColor
+    ? { bg: '', light: '', text: '' } // не нужны Tailwind-классы, используем inline-style
+    : paletteColor;
 
   return (
     <div
@@ -92,11 +98,17 @@ export const TranscriptSegment = memo(({
                   🚩
                 </button>
               )}
-              <span className={clsx(
-                'px-2 py-1 rounded-md text-xs font-medium',
-                color.light,
-                color.text
-              )}>
+              <span
+                style={dominantColor ? {
+                  backgroundColor: `${dominantColor}22`,
+                  color: dominantColor,
+                } : undefined}
+                className={clsx(
+                  'px-2 py-1 rounded-md text-xs font-medium',
+                  !dominantColor && color.light,
+                  !dominantColor && color.text,
+                )}
+              >
                 {formatTime(startTime)} – {formatTime(endTime)}
               </span>
             </div>

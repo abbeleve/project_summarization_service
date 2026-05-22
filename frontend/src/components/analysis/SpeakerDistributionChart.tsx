@@ -21,22 +21,32 @@ export const SpeakerDistributionChart = ({ segments, onSegmentClick }: SpeakerDi
 
   const data: Array<{ name: string; value: number; fill: string; percent: string; avatarUrl?: string | null }> = [];
   const entries = Object.entries(speakerTimes);
-  // Build a lookup: first segment with this speaker → get its avatarUrl
+  // Build a lookup: first segment with this speaker → get its avatarUrl / dominantColor
   const avatarLookup: Record<string, string | null | undefined> = {};
   const colorSeedLookup: Record<string, string | null | undefined> = {};
+  const dominantColorLookup: Record<string, string | null | undefined> = {};
   for (const seg of segments) {
     if (seg.Speaker) {
       if (!avatarLookup[seg.Speaker]) avatarLookup[seg.Speaker] = seg.avatarUrl;
       if (!colorSeedLookup[seg.Speaker]) colorSeedLookup[seg.Speaker] = seg.colorSeed;
+      if (!dominantColorLookup[seg.Speaker]) dominantColorLookup[seg.Speaker] = seg.dominantColor;
     }
   }
 
   for (let idx = 0; idx < entries.length; idx++) {
     const [name, value] = entries[idx];
-    const seed = colorSeedLookup[name];
-    const color = seed ? getSpeakerColorBySeed(seed) : getSpeakerColor(name);
-    // Конвертируем Tailwind цвет в hex для Recharts
-    const colorHex = getTailwindColorHex(color.bg.replace('bg-', ''));
+
+    // Приоритет: dominantColor из аватарки > хеш от user_id > хеш от имени
+    let colorHex: string;
+    const dominant = dominantColorLookup[name];
+    if (dominant) {
+      colorHex = dominant;
+    } else {
+      const seed = colorSeedLookup[name];
+      const color = seed ? getSpeakerColorBySeed(seed) : getSpeakerColor(name);
+      colorHex = getTailwindColorHex(color.bg.replace('bg-', ''));
+    }
+
     data.push({
       name,
       value,

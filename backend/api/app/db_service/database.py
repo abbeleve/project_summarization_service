@@ -206,6 +206,13 @@ class PartsTranscription(Base):
         nullable=False,
         index=True
     )
+    employee_id: Mapped[Optional[UUID]] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Staff.id', ondelete='SET NULL'),
+        nullable=True,
+        index=True,
+        comment="Идентифицированный спикер (Staff ID)"
+    )
     text: Mapped[str] = mapped_column(Text, nullable=False)
     start_time: Mapped[int] = mapped_column(nullable=False)
     end_time: Mapped[int] = mapped_column(nullable=False)
@@ -228,6 +235,7 @@ class PartsTranscription(Base):
         return {
             'id': str(self.id),
             'transcript_id': str(self.transcript_id),
+            'employee_id': str(self.employee_id) if self.employee_id else None,
             'text': self.text,
             'start_time': self.start_time,
             'end_time': self.end_time,
