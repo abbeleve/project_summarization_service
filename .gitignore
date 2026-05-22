@@ -14,6 +14,7 @@ qdrant_storage/
 result.txt
 milvus_data/
 volumes/
+backend/api/app/models/speaker_embedding/
 
 # Frontend
 frontend/node_modules/
