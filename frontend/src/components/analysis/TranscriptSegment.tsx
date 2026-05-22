@@ -15,6 +15,7 @@ interface TranscriptSegmentProps {
   annotations?: Annotation[];
   onAnnotationClick?: (annotation: Annotation) => void;
   onClick?: () => void;
+  onCreateFullAnnotation?: (partId: string, text: string) => void;
 }
 
 export const TranscriptSegment = memo(({
@@ -26,7 +27,8 @@ export const TranscriptSegment = memo(({
   partId,
   annotations = [],
   onAnnotationClick,
-  onClick
+  onClick,
+  onCreateFullAnnotation
 }: TranscriptSegmentProps) => {
   const color = getSpeakerColor(speaker);
 
@@ -56,13 +58,27 @@ export const TranscriptSegment = memo(({
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-1">
             <span className="font-semibold text-gray-900 dark:text-white">{speaker}</span>
-            <span className={clsx(
-              'px-2 py-1 rounded-md text-xs font-medium',
-              color.light,
-              color.text
-            )}>
-              {formatTime(startTime)} – {formatTime(endTime)}
-            </span>
+            <div className="flex items-center gap-2">
+              {partId && onCreateFullAnnotation && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCreateFullAnnotation(partId, text);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-xs font-medium bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 hover:bg-violet-200 dark:hover:bg-violet-800/50"
+                  title="Подчеркнуть всю реплику"
+                >
+                  🚩
+                </button>
+              )}
+              <span className={clsx(
+                'px-2 py-1 rounded-md text-xs font-medium',
+                color.light,
+                color.text
+              )}>
+                {formatTime(startTime)} – {formatTime(endTime)}
+              </span>
+            </div>
           </div>
           <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm select-text">
             {partId ? (
@@ -71,6 +87,7 @@ export const TranscriptSegment = memo(({
                 partId={partId}
                 annotations={annotations}
                 onAnnotationClick={onAnnotationClick}
+                speaker={speaker}
               />
             ) : (
               text

@@ -21,6 +21,7 @@ class MinioClient:
         access_key = os.getenv("MINIO_ROOT_USER", "minioadmin")
         secret_key = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
         self.bucket = os.getenv("AVATAR_BUCKET_NAME", "avatars")
+        self.AUDIO_BUCKET = os.getenv("AUDIO_BUCKET_NAME") or os.getenv("S3_BUCKET_NAME", "meeting-recordings")
         secure = os.getenv("MINIO_SECURE", "false").lower() == "true"
 
         # Публичный endpoint для presigned URL (со стороны браузера)
@@ -36,12 +37,13 @@ class MinioClient:
 
     def _ensure_bucket(self):
         """Создаёт bucket если его ещё нет."""
-        try:
-            if not self.client.bucket_exists(self.bucket):
-                self.client.make_bucket(self.bucket)
-                logger.info("Created bucket: %s", self.bucket)
-        except S3Error as e:
-            logger.error("Failed to ensure bucket %s: %s", self.bucket, e)
+        for bucket_name in (self.bucket, self.AUDIO_BUCKET):
+            try:
+                if not self.client.bucket_exists(bucket_name):
+                    self.client.make_bucket(bucket_name)
+                    logger.info("Created bucket: %s", bucket_name)
+            except S3Error as e:
+                logger.error("Failed to ensure bucket %s: %s", bucket_name, e)
 
     @staticmethod
     def _avatar_key(user_id: UUID) -> str:
@@ -130,3 +132,59 @@ class MinioClient:
             return url
         except S3Error:
             return None
+
+    # ========================================================================
+    # AUDIO / RECORDING METHODS
+    # ========================================================================
+
+    def upload_audio(self, key: str, data: bytes, content_type: str = "audio/webm") -> str:
+        """Загружает аудиофайл в MinIO (bucket: meeting-recordings).
+
+        Args:
+            key: Ключ объекта (например, uploads/{user_id}/{task_id}/audio.webm)
+            data: Бинарные данные аудиофайла
+            content_type: MIME-тип аудиофайла
+
+        Returns:
+            Ключ загруженного объекта.
+        """
+        self.client.put_object(
+            self.AUDIO_BUCKET,
+            key,
+            io.BytesIO(data),
+            length=len(data),
+            content_type=content_type,
+        )
+        logger.info("Audio uploaded: %s/%s", self.AUDIO_BUCKET, key)
+        return key
+
+    def get_audio_public_url(self, key: str) -> str:
+        """Формирует публичный URL для доступа к аудиофайлу из браузера.
+
+        Бакет meeting-recordings настроен на анонимное скачивание (см. minio-init).
+        Возвращает прямой URL на публичный endpoint MinIO.
+
+        Args:
+            key: Ключ объекта в MinIO
+
+        Returns:
+            Публичный URL для воспроизведения аудио.
+        """
+        return f"http://{self._public_endpoint}/{self.AUDIO_BUCKET}/{key}"
+
+    def delete_audio(self, key: str) -> bool:
+        """Удаляет аудиофайл из MinIO.
+
+        Args:
+            key: Ключ объекта в MinIO
+
+        Returns:
+            True если объект был удалён или не существовал.
+        """
+        try:
+            self.client.remove_object(self.AUDIO_BUCKET, key)
+            logger.info("Audio deleted: %s/%s", self.AUDIO_BUCKET, key)
+            return True
+        except S3Error as e:
+            logger.warning("Failed to delete audio %s/%s: %s", self.AUDIO_BUCKET, key, e)
+            return False

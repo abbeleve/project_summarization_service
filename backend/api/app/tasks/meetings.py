@@ -223,6 +223,7 @@ def process_recording_callback(
             "noise_sup_bool": str(meeting.get("noise_suppression") or False).lower(),
             "user_id": user_id,
             "meeting_id": meeting_id,  # Передаём meeting_id для обновления статуса после завершения
+            "recording_url": recording_url,  # Передаём URL аудио для сохранения в транскрипции
         }
 
         ml_task = transcribe_and_summarize_task.delay(file_bytes, ml_options)

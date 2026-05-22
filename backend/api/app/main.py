@@ -500,21 +500,34 @@ async def process_audio(
     llm_model: Optional[str] = Form(None),
     noise_sup_bool: str = Form("false"),
     current_user: Dict = Depends(get_current_user),
-    db: DataBaseManager = Depends(get_db)
+    db: DataBaseManager = Depends(get_db),
+    minio: MinioClient = Depends(get_minio)
 ):
     """
     Отправляет аудио на обработку в фоновом режиме (Celery).
+    Сохраняет аудиофайл в MinIO для последующего воспроизведения.
     Возвращает task_id для отслеживания статуса.
     """
     from app.tasks.transcribe import transcribe_and_summarize_task
-    
+
     print(f"llm_model: {llm_model}")
     print(f"transcribe_model: {transcribe_model}")
-    
+
     try:
         # Чтение файла в байты
         file_bytes = await file.read()
-        
+
+        # Сохраняем аудиофайл в MinIO
+        task_id_for_key = str(uuid4())
+        original_filename = file.filename or f"audio_{task_id_for_key[:8]}.webm"
+        audio_key = f"uploads/{current_user['user_id']}/{task_id_for_key}/{original_filename}"
+        content_type = file.content_type or "audio/webm"
+        minio.upload_audio(audio_key, file_bytes, content_type)
+
+        # Формируем публичный URL для плеера
+        recording_url = minio.get_audio_public_url(audio_key)
+        logger.info(f"Аудио сохранено в MinIO: {recording_url}")
+
         # Подготовка опций для задачи
         options = {
             "transcribe_model": transcribe_model or "v3_ctc",
@@ -523,22 +536,23 @@ async def process_audio(
             "transcribe_lib": transcribe_lib or "gigaam",
             "llm_model": llm_model or "gemini-2.5-flash",
             "noise_sup_bool": noise_sup_bool,
-            "user_id": current_user["user_id"]
+            "user_id": current_user["user_id"],
+            "recording_url": recording_url  # Передаём URL в Celery задачу
         }
-        
+
         # Отправка задачи в Celery
         task = transcribe_and_summarize_task.delay(file_bytes, options)
         task_id = str(task.id)
-        
+
         # Сохранение задачи в БД
         db.insert_celery_task(
             task_id=task_id,
             user_id=current_user["user_id"],
             status="pending"
         )
-        
+
         logger.info(f"Задача {task_id} отправлена в обработку для пользователя {current_user['user_id']}")
-        
+
         # Мгновенный ответ (202 Accepted)
         return {
             "task_id": task_id,
@@ -546,7 +560,7 @@ async def process_audio(
             "message": "Задача принята в обработку",
             "poll_url": f"/tasks/{task_id}"
         }
-        
+
     except Exception as e:
         logger.error(f"Ошибка при отправке задачи в Celery: {e}")
         import traceback
@@ -850,7 +864,7 @@ async def search_transcripts(
             # SQL запрос с поиском по названию (case-insensitive)
             # Теперь ищем только через таблицу доступа, так как employee_id удален из Transcripts
             sql = text("""
-                SELECT DISTINCT t.id, t.title, t.text, t.created_at
+                SELECT DISTINCT t.id, t.title, t.text, t.created_at, t.recording_url
                 FROM "Transcripts" t
                 JOIN "TranscriptAccess" ta ON t.id = ta.transcript_id
                 WHERE ta.employee_id = :user_id
@@ -910,7 +924,8 @@ async def search_transcripts(
                 "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
                 "speakers": list(speakers),
                 "duration": duration,
-                "parts": parts or []
+                "parts": parts or [],
+                "audio_url": row[4] if len(row) > 4 else None
             }
             transcripts_list.append(transcript_obj)
 
@@ -999,7 +1014,8 @@ async def get_user_transcripts(
                 "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
                 "speakers": list(speakers),
                 "duration": duration,
-                "parts": parts or []
+                "parts": parts or [],
+                "audio_url": transcript_data.get('recording_url')
             }
             transcripts_list.append(transcript_obj)
 
@@ -1043,9 +1059,12 @@ async def get_transcript(
             db.insert_transcript_access(transcript_uuid, user_id)
 
         parts = db.select_parts_transcription_by_transcript_id(transcript_uuid)
-        
+
         summary_data = db.select_summaries_by_transcript_id(transcript_uuid)
-        
+
+        # Формируем audio_url из recording_url
+        audio_url = transcript_data.get('recording_url')
+
         return {
             "transcript_id": transcript_id,
             "original_text": transcript_data.get('original_text') or '',
@@ -1053,7 +1072,8 @@ async def get_transcript(
             "parts": parts,
             "summary": summary_data.get('text') if summary_data else None,
             "key_points": summary_data.get('key_points') if summary_data else None,
-            "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено"
+            "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
+            "audio_url": audio_url
         }
         
     except HTTPException:
@@ -1564,6 +1584,9 @@ async def meeting_bot_webhook(payload: MeetingBotWebhookPayload):
         logger.warning(f"Webhook received without blobUrl")
         return {"status": "error", "message": "blobUrl not found"}
 
+    # Конвертируем внутренний MinIO URL (minio:9000) в публичный (localhost:9000)
+    recording_url = recording_url.replace("minio:9000", "localhost:9000")
+
     # Проверяем, не отменено ли совещание
     if meeting_id:
         try:
@@ -1677,7 +1700,14 @@ async def startup_event():
                 print("ℹ️ В базе уже есть пользователи, пропускаем создание тестовых")
 
             print("✅ База данных инициализирована успешно")
-            
+
+            # Применяем alembic миграции (добавление новых колонок и т.д.)
+            try:
+                run_migrations()
+                print("✅ Миграции БД успешно применены")
+            except Exception as e:
+                print(f"⚠️ Не удалось применить миграции: {e}")
+
             return
             
         except Exception as e:

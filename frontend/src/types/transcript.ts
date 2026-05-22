@@ -35,6 +35,7 @@ export interface Transcript {
   speakers?: string[];
   duration?: number;
   audio_blob?: Blob;
+  audio_url?: string;
 }
 
 export interface ProcessingSettings {

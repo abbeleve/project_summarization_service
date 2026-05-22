@@ -170,6 +170,12 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
                 meeting_type=meeting_type
             )
         
+        # Сохраняем recording_url если передан (для плеера на фронтенде)
+        recording_url = options.get("recording_url")
+        if recording_url:
+            db.update_transcripts(transcript_id, recording_url=recording_url)
+            logger.info(f"[{task_id}] recording_url сохранён: {recording_url}")
+
         logger.info(f"[{task_id}] Сохранение в БД завершено (transcript_id={transcript_id})")
         update_task_status(task_id, "processing", {"step": "db_save", "percent": 90})
         

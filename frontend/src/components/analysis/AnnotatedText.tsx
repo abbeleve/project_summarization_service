@@ -1,16 +1,49 @@
+import { useState, useRef } from 'react';
 import { type Annotation } from '@/api/transcripts';
+import { getSpeakerColor } from '@/utils/speakerColors';
 
 interface AnnotatedTextProps {
   text: string;
   partId: string;
   annotations: Annotation[];
   onAnnotationClick?: (annotation: Annotation) => void;
+  speaker?: string;
 }
 
-export const AnnotatedText = ({ text, partId, annotations, onAnnotationClick }: AnnotatedTextProps) => {
+const AnnotationTooltip = ({ note, speaker, children }: { note: string; speaker?: string; children: React.ReactNode }) => {
+  const [visible, setVisible] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const color = speaker ? getSpeakerColor(speaker) : null;
+
+  const show = () => {
+    clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => setVisible(true), 100);
+  };
+
+  const hide = () => {
+    clearTimeout(timeoutRef.current);
+    setVisible(false);
+  };
+
+  return (
+    <span className="relative inline" onMouseEnter={show} onMouseLeave={hide}>
+      {children}
+      {visible && (
+        <span className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded-lg shadow-lg whitespace-normal max-w-[280px] z-50 pointer-events-none ${color ? color.light + ' ' + color.text : 'bg-gray-900 dark:bg-gray-700 text-white'} text-xs leading-relaxed`}>
+          💬 {note}
+          <span className={`absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent ${color ? 'border-t-current' : 'border-t-gray-900 dark:border-t-gray-700'}`}
+            style={color ? { borderTopColor: 'currentColor' } : undefined}
+          />
+        </span>
+      )}
+    </span>
+  );
+};
+
+export const AnnotatedText = ({ text, partId, annotations, onAnnotationClick, speaker }: AnnotatedTextProps) => {
   // Фильтруем аннотации для этой части
   const partAnnotations = annotations.filter(a => a.part_id === partId);
-  
+
   if (partAnnotations.length === 0) {
     return <span>{text}</span>;
   }
@@ -37,13 +70,13 @@ export const AnnotatedText = ({ text, partId, annotations, onAnnotationClick }: 
         text: text.slice(lastPos, annotation.start_char)
       });
     }
-    
+
     // Аннотированный текст
     segments.push({
       text: text.slice(annotation.start_char, annotation.end_char),
       annotation
     });
-    
+
     lastPos = annotation.end_char;
   }
 
@@ -60,14 +93,19 @@ export const AnnotatedText = ({ text, partId, annotations, onAnnotationClick }: 
         segment.annotation ? (
           <span
             key={idx}
-            className={`px-0.5 rounded cursor-pointer transition-colors ${colorMap[segment.annotation.color || 'yellow'] || colorMap.yellow}`}
-            title={segment.annotation.note || 'Подчёркнутый текст'}
+            className={`relative inline px-0.5 rounded cursor-pointer transition-colors ${colorMap[segment.annotation.color || 'yellow'] || colorMap.yellow}`}
             onClick={(e) => {
               e.stopPropagation();
               onAnnotationClick?.(segment.annotation!);
             }}
           >
-            {segment.text}
+            {segment.annotation.note ? (
+              <AnnotationTooltip note={segment.annotation.note} speaker={speaker}>
+                {segment.text}
+              </AnnotationTooltip>
+            ) : (
+              segment.text
+            )}
           </span>
         ) : (
           <span key={idx}>{segment.text}</span>

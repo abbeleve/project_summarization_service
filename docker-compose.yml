@@ -54,6 +54,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
       AVATAR_BUCKET_NAME: ${AVATAR_BUCKET_NAME:-avatars}
+      AUDIO_BUCKET_NAME: ${AUDIO_BUCKET_NAME:-meeting-recordings}
       MINIO_PUBLIC_ENDPOINT: localhost:9000
       PYTHONUNBUFFERED: "1"
     depends_on:

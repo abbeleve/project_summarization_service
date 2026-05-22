@@ -73,6 +73,11 @@ class Transcript(Base):
         server_default=func.now(),
         nullable=False
     )
+    recording_url: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="URL аудиофайла в MinIO/S3 для воспроизведения в плеере"
+    )
 
     parts_transcriptions: Mapped[List["PartsTranscription"]] = relationship(
         "PartsTranscription",
@@ -101,7 +106,8 @@ class Transcript(Base):
             'id': str(self.id),
             'title': self.title,
             'text': self.text,
-            'created_at': self.created_at.isoformat()
+            'created_at': self.created_at.isoformat(),
+            'recording_url': self.recording_url
         }
 
 class ChatMessage(Base):

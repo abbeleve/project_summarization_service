@@ -14,6 +14,7 @@ import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { Button } from '@/components/ui/Button';
 import { type TranscriptSegment as TranscriptSegmentType } from '@/types/transcript';
 import { type Annotation } from '@/api/transcripts';
+import { getSpeakerColor } from '@/utils/speakerColors';
 
 export const AnalysisPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -33,6 +34,7 @@ export const AnalysisPage = () => {
   } | null>(null);
   const [showAnnotationPopup, setShowAnnotationPopup] = useState(false);
   const [selectedColor, setSelectedColor] = useState('yellow');
+  const [annotationNote, setAnnotationNote] = useState('');
   const [showAnnotationsPanel, setShowAnnotationsPanel] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -145,11 +147,13 @@ export const AnalysisPage = () => {
         part_id: selectedText.partId,
         start_char: selectedText.startChar,
         end_char: selectedText.endChar,
-        color: selectedColor
+        color: selectedColor,
+        note: annotationNote || undefined
       });
       setShowAnnotationPopup(false);
       setSelectedText(null);
       setSelectedColor('yellow');
+      setAnnotationNote('');
       window.getSelection()?.removeAllRanges();
       showToast('✅ Аннотация создана', 'success');
     } catch (err: any) {
@@ -191,7 +195,7 @@ export const AnalysisPage = () => {
   const handleAnnotationClick = (annotation: Annotation) => {
     // Открываем панель если закрыта
     setShowAnnotationsPanel(true);
-    
+
     // Прокручиваем к нужной аннотации в панели
     setTimeout(() => {
       const panel = document.querySelector('.annotations-panel');
@@ -206,6 +210,17 @@ export const AnalysisPage = () => {
         }
       }
     }, 100);
+  };
+
+  // Аннотация всей реплики через флажок
+  const handleCreateFullAnnotation = (partId: string, text: string) => {
+    setSelectedText({
+      text,
+      partId,
+      startChar: 0,
+      endChar: text.length
+    });
+    setShowAnnotationPopup(true);
   };
 
   if (!id) {
@@ -243,9 +258,9 @@ export const AnalysisPage = () => {
   }));
 
   // Конвертация Blob в URL для аудио (если есть)
-  const audioUrl = transcript.audio_blob 
-    ? URL.createObjectURL(transcript.audio_blob) 
-    : '';
+  const audioUrl = transcript.audio_url || (transcript.audio_blob
+    ? URL.createObjectURL(transcript.audio_blob)
+    : '');
 
   return (
     <div className="space-y-6">
@@ -327,22 +342,22 @@ export const AnalysisPage = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Левая колонка - транскрипция */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Аудио плеер */}
+          {/* Диаграмма распределения спикеров */}
+          {segments.length > 0 && (
+            <SpeakerDistributionChart
+              segments={segments}
+              onSegmentClick={handleSegmentClick}
+            />
+          )}
+
+          {/* Аудио плеер — между графиками и детальной транскрипцией */}
           {segments.length > 0 && audioUrl && (
-            <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 shadow-sm">
               <AudioPlayer
                 src={audioUrl}
                 segments={segments}
               />
             </div>
-          )}
-
-          {/* Диаграмма распределения спикеров */}
-          {segments.length > 0 && (
-            <SpeakerDistributionChart 
-              segments={segments}
-              onSegmentClick={handleSegmentClick}
-            />
           )}
 
           {/* Полная транскрипция */}
@@ -373,6 +388,7 @@ export const AnalysisPage = () => {
                     partId={seg.partId}
                     annotations={annotations}
                     onAnnotationClick={handleAnnotationClick}
+                    onCreateFullAnnotation={handleCreateFullAnnotation}
                   />
                 </div>
               ))}
@@ -417,6 +433,19 @@ export const AnalysisPage = () => {
               </div>
             </div>
 
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Комментарий (необязательно):
+              </label>
+              <textarea
+                value={annotationNote}
+                onChange={(e) => setAnnotationNote(e.target.value)}
+                placeholder="Напишите заметку к аннотации..."
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-violet-500 focus:outline-none resize-none text-sm"
+              />
+            </div>
+
             <div className="flex gap-2">
               <Button
                 variant="primary"
@@ -431,6 +460,7 @@ export const AnalysisPage = () => {
                   setShowAnnotationPopup(false);
                   setSelectedText(null);
                   setSelectedColor('yellow');
+                  setAnnotationNote('');
                   window.getSelection()?.removeAllRanges();
                 }}
               >
@@ -493,6 +523,15 @@ export const AnalysisPage = () => {
                       <p className="text-sm text-gray-800 dark:text-gray-200 line-clamp-2 mb-1">
                         "{highlightedText}"
                       </p>
+                      {annotation.note && (() => {
+                        const speakerName = fullText.split(':')[0] || '';
+                        const speakerColor = speakerName ? getSpeakerColor(speakerName) : null;
+                        return (
+                          <p className={`text-xs italic mb-1 line-clamp-2 ${speakerColor?.text || 'text-gray-600 dark:text-gray-300'}`}>
+                            💬 {annotation.note}
+                          </p>
+                        );
+                      })()}
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         {fullText.split(':')[0] || ''} • {colorConfig?.label || 'Жёлтый'}
                       </p>
