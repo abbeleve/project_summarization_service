@@ -3,6 +3,7 @@ version: '3.8'
 services:
   redis:
     image: redis:7-alpine
+    mem_limit: 256m
     ports:
       - "6379:6379"
     networks:
@@ -13,19 +14,23 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
-  
+
   redis-commander:
     image: rediscommander/redis-commander:latest
+    mem_limit: 128m
     environment:
       - REDIS_HOSTS=local:redis:6379
     ports:
       - "8081:8081"
     depends_on:
       - redis
+    networks:
+      - meeting-network
 
   postgres:
     image: postgres:17
     container_name: postgres_container
+    mem_limit: 2g
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -46,6 +51,7 @@ services:
 
   api:
     build: ./backend/api
+    mem_limit: 512m
     ports:
       - "8000:8000"
     environment:
@@ -81,6 +87,7 @@ services:
   celery-worker-default:
     build: ./backend/api
     container_name: celery_worker_default
+    mem_limit: 4g
     command: >
       celery -A app.celery_app worker
       --loglevel=info
@@ -128,6 +135,7 @@ services:
   celery-worker-meetings:
     build: ./backend/api
     container_name: celery_worker_meetings
+    mem_limit: 1g
     command: >
       celery -A app.celery_app worker
       --loglevel=info
@@ -159,6 +167,7 @@ services:
   celery-beat:
     build: ./backend/api
     container_name: celery_beat
+    mem_limit: 256m
     command: celery -A app.celery_app beat --loglevel=info
     environment:
       DB_NAME: ${POSTGRES_DB}
@@ -201,6 +210,7 @@ services:
   
   adminer:
     image: adminer
+    mem_limit: 128m
     restart: always
     ports:
       - "8080:8080"
@@ -215,6 +225,7 @@ services:
   minio:
     image: minio/minio:latest
     container_name: minio
+    mem_limit: 1g
     command: server /data --console-address ":9001"
     ports:
       - "9000:9000"   # S3 API
@@ -265,6 +276,7 @@ services:
       context: ./meeting-bot
       dockerfile: Dockerfile.production
     container_name: meeting_bot
+    mem_limit: 4g
     ports:
       - "3000:3000"
     environment:
@@ -316,6 +328,7 @@ services:
   audio-ml:
     build:
       context: ./ML/diarization_summarization_service
+    mem_limit: 6g
     ports:
       - "8053:8053"
     volumes:
@@ -350,6 +363,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:v1.13.0
+    mem_limit: 1g
     ports:
       - "6333:6333"
     volumes:
@@ -379,6 +393,7 @@ services:
 
   rag-service:
     build: ./ML/rag-service
+    mem_limit: 2g
     ports:
       - "8055:8055"
     environment:
@@ -397,6 +412,7 @@ services:
   audio-ml-whisper:
     build:
       context: ./ML/whisper_transcription_service
+    mem_limit: 4g
     ports:
       - "8054:8054"
     volumes:
@@ -429,6 +445,7 @@ services:
     build:
       context: ./ML/noise_suppression_service
       dockerfile: Dockerfile
+    mem_limit: 2g
     ports:
       - "8052:8052"
     volumes:

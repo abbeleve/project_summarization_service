@@ -1,6 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { formatTime } from '@/utils/formatTime';
 import { type TranscriptSegment } from '@/types/transcript';
+
+export interface AudioPlayerHandle {
+  seekTo: (time: number) => void;
+}
 
 interface AudioPlayerProps {
   src: string;
@@ -9,7 +13,7 @@ interface AudioPlayerProps {
   onTimeUpdate?: (time: number) => void;
 }
 
-export const AudioPlayer = ({ src, title, segments, onTimeUpdate }: AudioPlayerProps) => {
+export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(({ src, title, segments, onTimeUpdate }, ref) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -39,6 +43,15 @@ export const AudioPlayer = ({ src, title, segments, onTimeUpdate }: AudioPlayerP
       audio.removeEventListener('pause', togglePlaying);
     };
   }, [onTimeUpdate]);
+
+  useImperativeHandle(ref, () => ({
+    seekTo: (time: number) => {
+      if (audioRef.current) {
+        audioRef.current.currentTime = time;
+        setCurrentTime(time);
+      }
+    },
+  }), []);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const time = parseFloat(e.target.value);
@@ -114,4 +127,4 @@ export const AudioPlayer = ({ src, title, segments, onTimeUpdate }: AudioPlayerP
       )}
     </div>
   );
-};
+});

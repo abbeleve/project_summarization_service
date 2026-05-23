@@ -57,17 +57,22 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
         logger.info(f"[{task_id}] Шаг 1: Транскрибация")
         update_task_status(task_id, "processing", {"step": "transcription", "percent": 10})
 
-        # Определяем internal URL для audio-ml (внутри Docker)
+        # Определяем URL для audio-ml
         audio_key = options.get("audio_key")
-        if not audio_key:
-            raise RuntimeError("audio_key is missing in options")
-        minio_endpoint = os.getenv("MINIO_ENDPOINT", "minio:9000")
-        audio_bucket = os.getenv("AUDIO_BUCKET_NAME", "meeting-recordings")
-        internal_url = f"http://{minio_endpoint}/{audio_bucket}/{audio_key}"
+        if audio_key:
+            # Прямая загрузка через API — строим internal URL
+            minio_endpoint = os.getenv("MINIO_ENDPOINT", "minio:9000")
+            audio_bucket = os.getenv("AUDIO_BUCKET_NAME", "meeting-recordings")
+            file_url = f"http://{minio_endpoint}/{audio_bucket}/{audio_key}"
+        else:
+            # Meeting-bot уже загрузил в MinIO — используем его recording_url
+            file_url = options.get("recording_url")
+            if not file_url:
+                raise RuntimeError("Neither audio_key nor recording_url in options")
 
         # Передаём URL в audio-ml — он сам скачает файл из MinIO
         data = {
-            "file_url": internal_url,
+            "file_url": file_url,
             "transcribe_model": options.get("transcribe_model", "v3_ctc"),
             "diarization_model": options.get("diarization_model", "pyannote/speaker-diarization-community-1"),
             "diarize_lib": options.get("diarize_lib", "pyannote"),
@@ -103,7 +108,7 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
                 logger.info(f"[{task_id}] Найдено {len(enrolled)} зарегистрированных голосовых профилей")
 
                 # Скачиваем аудио из MinIO для speaker identification
-                resp = requests.get(internal_url, timeout=300)
+                resp = requests.get(file_url, timeout=300)
                 resp.raise_for_status()
                 audio_bytes = resp.content
 

@@ -9,7 +9,7 @@ import { SpeakerDistributionChart } from '@/components/analysis/SpeakerDistribut
 import { TranscriptSegment } from '@/components/analysis/TranscriptSegment';
 import { AnnotatedText } from '@/components/analysis/AnnotatedText';
 import { MeetingChat } from '@/components/analysis/MeetingChat';
-import { AudioPlayer } from '@/components/audio/AudioPlayer';
+import { AudioPlayer, type AudioPlayerHandle } from '@/components/audio/AudioPlayer';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { Button } from '@/components/ui/Button';
@@ -24,6 +24,7 @@ export const AnalysisPage = () => {
   const { data: transcript, isLoading, error, refetch } = getTranscript(id || '');
   const { annotations, createAnnotation, deleteAnnotation } = useAnnotations(id || '');
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
+  const audioPlayerRef = useRef<AudioPlayerHandle>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -53,8 +54,12 @@ export const AnalysisPage = () => {
     { name: 'purple', bg: 'bg-blue-200 dark:bg-blue-900/40', label: 'Фиолетовый' },
   ];
 
-  // Функция для прокрутки к нужному сегменту
+  // Функция для прокрутки к нужному сегменту и перемотки аудио
   const handleSegmentClick = (segment: TranscriptSegmentType) => {
+    // Перематываем аудио
+    audioPlayerRef.current?.seekTo(segment.start);
+
+    // Прокручиваем транскрипцию
     if (transcriptContainerRef.current) {
       // Находим элемент с нужным startTime в data-атрибуте
       const elements = transcriptContainerRef.current.querySelectorAll('[data-start-time]');
@@ -295,6 +300,56 @@ export const AnalysisPage = () => {
     };
   });
 
+  // Скачать JSON
+  const handleDownloadJson = () => {
+    const jsonStr = JSON.stringify(transcript, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${transcript.title || 'transcript'}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('✅ JSON скачан', 'success');
+  };
+
+  // Скачать отчёт (текстовый файл с кратким содержанием и ключевыми моментами)
+  const handleDownloadReport = () => {
+    const lines: string[] = [];
+    lines.push(`Отчёт: ${transcript.title}`);
+    lines.push('='.repeat(50));
+    lines.push('');
+    if (transcript.summary) {
+      lines.push('Краткое содержание:');
+      lines.push('-'.repeat(30));
+      lines.push(transcript.summary);
+      lines.push('');
+    }
+    if (transcript.key_points && transcript.key_points.length > 0) {
+      lines.push('Ключевые моменты:');
+      lines.push('-'.repeat(30));
+      transcript.key_points.forEach((point, i) => {
+        lines.push(`${i + 1}. ${point}`);
+      });
+      lines.push('');
+    }
+    lines.push('Дата создания: ' + new Date().toLocaleString('ru-RU'));
+
+    const text = lines.join('\n');
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${transcript.title || 'transcript'}_report.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('✅ Отчёт скачан', 'success');
+  };
+
   // Конвертация Blob в URL для аудио (если есть)
   const audioUrl = transcript.audio_url || (transcript.audio_blob
     ? URL.createObjectURL(transcript.audio_blob)
@@ -350,10 +405,10 @@ export const AnalysisPage = () => {
             <Button variant="secondary" size="sm" onClick={() => { navigator.clipboard.writeText(window.location.origin + '/analysis/' + id); showToast('🔗 Ссылка скопирована!', 'success'); }}>
               🔗 Поделиться
             </Button>
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" onClick={handleDownloadJson}>
               📥 Скачать JSON
             </Button>
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" onClick={handleDownloadReport}>
               📋 Скачать отчёт
             </Button>
           </span>
@@ -364,6 +419,7 @@ export const AnalysisPage = () => {
       {audioUrl && (
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
           <AudioPlayer
+            ref={audioPlayerRef}
             src={audioUrl}
             segments={segments}
           />
@@ -382,7 +438,7 @@ export const AnalysisPage = () => {
             style={{ height: 'calc(100vh - 200px)' }}
           >
             <div className="flex items-center justify-between mb-3 flex-shrink-0">
-              <h3 className="text-xl font-bold text-blue-600 dark:text-blue-400">Детальная транскрипция</h3>
+              <h3 className="text-2xl font-bold text-blue-600 dark:text-blue-400">Детальная транскрипция</h3>
             </div>
             <div className="space-y-0 overflow-y-auto pr-2 flex-1 min-h-0">
               {segments.map((seg, idx) => (

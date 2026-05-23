@@ -514,15 +514,11 @@ async def process_audio(
     print(f"transcribe_model: {transcribe_model}")
 
     try:
-        # Чтение файла в байты
-        file_bytes = await file.read()
-
-        # Сохраняем аудиофайл в MinIO
+        # Сохраняем аудиофайл в MinIO потоково (без загрузки всего в RAM)
         task_id_for_key = str(uuid4())
         original_filename = file.filename or f"audio_{task_id_for_key[:8]}.webm"
         audio_key = f"uploads/{current_user['user_id']}/{task_id_for_key}/{original_filename}"
-        content_type = file.content_type or "audio/webm"
-        minio.upload_audio(audio_key, file_bytes, content_type)
+        minio.stream_upload_audio(audio_key, file)
 
         # Формируем публичный URL для плеера
         recording_url = minio.get_audio_public_url(audio_key)

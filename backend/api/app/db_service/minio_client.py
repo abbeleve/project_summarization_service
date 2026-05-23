@@ -158,6 +158,36 @@ class MinioClient:
         logger.info("Audio uploaded: %s/%s", self.AUDIO_BUCKET, key)
         return key
 
+    @staticmethod
+    def _get_file_size(file_obj) -> int:
+        """Определяет размер файла через seek/tell, не загружая в память."""
+        pos = file_obj.tell()
+        file_obj.seek(0, os.SEEK_END)
+        size = file_obj.tell()
+        file_obj.seek(pos)
+        return size
+
+    def stream_upload_audio(self, key: str, upload_file) -> str:
+        """Загружает аудиофайл в MinIO потоково (без загрузки всего в RAM).
+
+        Принимает UploadFile (SpooledTemporaryFile) или любой file-like object.
+        """
+        content_type = getattr(upload_file, 'content_type', None) or "audio/webm"
+
+        # Определяем размер не загружая файл в память
+        file_size = self._get_file_size(upload_file.file)
+        upload_file.file.seek(0)
+
+        self.client.put_object(
+            self.AUDIO_BUCKET,
+            key,
+            upload_file.file,
+            length=file_size,
+            content_type=content_type,
+        )
+        logger.info("Audio stream uploaded: %s/%s (%d bytes)", self.AUDIO_BUCKET, key, file_size)
+        return key
+
     def get_audio_public_url(self, key: str) -> str:
         """Формирует публичный URL для доступа к аудиофайлу из браузера.
 

@@ -46,7 +46,7 @@ def _extract_audio_with_ffmpeg(input_path: Path, output_path: Path, sample_rate:
         "-loglevel", "error"
     ]
     logger.info(f"ffmpeg: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True, capture_output=True, text=True)
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     logger.info(f"Аудио извлечено: {output_path}")
     return str(output_path)
 
