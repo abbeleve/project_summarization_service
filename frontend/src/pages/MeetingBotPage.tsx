@@ -5,26 +5,39 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorMessage } from "@/components/ui/ErrorMessage";
-import {
-  TRANSCRIBE_CONFIG,
-  DIARIZATION_CONFIG,
-  LLM_MODELS,
-  DEFAULT_SETTINGS,
-} from "@/config/settings";
-import { format } from "date-fns";
+import { DEFAULT_SETTINGS } from "@/config/settings";
+import type { ProcessingSettings } from "@/types/transcript";
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isToday, addMonths, subMonths } from "date-fns";
 import { ru } from "date-fns/locale";
 import { useActiveTasks } from "@/hooks/useActiveTasks";
 
 type MeetingMode = "join" | "schedule";
 
-interface ModelSettings {
-  transcribe_model: string;
-  diarization_model: string;
-  diarize_lib: string;
-  transcribe_lib: string;
-  llm_model: string;
-  noise_suppression: boolean;
-}
+// Load model settings from user's saved preferences (Settings page → localStorage)
+const loadMeetingSettings = (): import("@/api/meetingBot").MeetingBotSettings => {
+  try {
+    const saved = localStorage.getItem("modelSettings");
+    if (saved) {
+      const s: ProcessingSettings = JSON.parse(saved);
+      return {
+        transcribe_model: s.transcribeModel,
+        diarization_model: s.diarizationModel,
+        diarize_lib: s.diarizeLib,
+        transcribe_lib: s.transcribeLib,
+        llm_model: s.llmModel,
+        noise_suppression: s.noiseSuppression,
+      };
+    }
+  } catch {}
+  return {
+    transcribe_model: DEFAULT_SETTINGS.transcribeModel,
+    diarization_model: DEFAULT_SETTINGS.diarizationModel,
+    diarize_lib: DEFAULT_SETTINGS.diarizeLib,
+    transcribe_lib: DEFAULT_SETTINGS.transcribeLib,
+    llm_model: DEFAULT_SETTINGS.llmModel,
+    noise_suppression: DEFAULT_SETTINGS.noiseSuppression,
+  };
+};
 
 // Timezone options with common zones
 const TIMEZONE_OPTIONS = [
@@ -53,9 +66,9 @@ const TIMEZONE_OPTIONS = [
 ];
 
 const PROVIDER_OPTIONS = [
-  { value: "google", label: "Google Meet", icon: "📹" },
-  { value: "microsoft", label: "Microsoft Teams", icon: "🏢" },
-  { value: "zoom", label: "Zoom", icon: "🎥" },
+  { value: "google", label: "Google Meet", icon: "/images/Google_Meet_Logo.svg" },
+  { value: "microsoft", label: "Microsoft Teams", icon: "/images/Microsoft_Teams.png" },
+  { value: "zoom", label: "Zoom", icon: "/images/zoom.png" },
 ] as const;
 
 const STATUS_COLORS: Record<string, string> = {
@@ -82,6 +95,8 @@ const PROVIDER_LABELS: Record<string, string> = {
   zoom: "Zoom",
 };
 
+const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
 export default function MeetingBotPage() {
   const queryClient = useQueryClient();
 
@@ -97,15 +112,8 @@ export default function MeetingBotPage() {
   const [scheduleTime, setScheduleTime] = useState("");
   const [scheduleTimezone, setScheduleTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Moscow");
 
-  const [showModels, setShowModels] = useState(false);
-  const [settings, setSettings] = useState<ModelSettings>({
-    transcribe_model: DEFAULT_SETTINGS.transcribeModel,
-    diarization_model: DEFAULT_SETTINGS.diarizationModel,
-    diarize_lib: DEFAULT_SETTINGS.diarizeLib,
-    transcribe_lib: DEFAULT_SETTINGS.transcribeLib,
-    llm_model: DEFAULT_SETTINGS.llmModel,
-    noise_suppression: DEFAULT_SETTINGS.noiseSuppression,
-  });
+  // Calendar month navigation
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
 
   // Form errors
   const [formError, setFormError] = useState<string | null>(null);
@@ -256,7 +264,7 @@ export default function MeetingBotPage() {
       meeting_url: meetingUrl.trim(),
       provider,
       bot_name: botName || "Meeting Notetaker",
-      ...settings,
+      ...loadMeetingSettings(),
     };
 
     if (mode === "join") {
@@ -268,7 +276,7 @@ export default function MeetingBotPage() {
         scheduled_at: iso || "",
       } as ScheduleMeetingPayload);
     }
-  }, [meetingUrl, provider, botName, settings, mode, computeScheduledAt, joinMutation, scheduleMutation]);
+  }, [meetingUrl, provider, botName, mode, computeScheduledAt, joinMutation, scheduleMutation]);
 
   const handleCancel = useCallback((id: string) => {
     cancelMutation.mutate(id);
@@ -277,46 +285,45 @@ export default function MeetingBotPage() {
   const isProcessing = joinMutation.isPending || scheduleMutation.isPending;
 
   return (
-    <div className="space-y-6">
+    <div className="bg-gray-50 dark:bg-[rgb(35,35,38)] min-h-screen">
+      <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
-      <section>
-        <div className="flex items-center gap-4 mb-2">
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg">
-            <span className="text-2xl">🤖</span>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Meeting Bot
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Автоматическое подключение к совещаниям
-            </p>
-          </div>
+      <section className="pt-8">
+        <div>
+          <h1 className="text-5xl font-extrabold text-blue-600 dark:text-blue-400 tracking-tight">
+            Meeting Bot
+          </h1>
+          <p className="text-base text-gray-500 dark:text-gray-300 mt-2 leading-relaxed">
+            Автоматическое подключение к совещаниям.
+          </p>
+          <p className="text-base text-gray-500 dark:text-gray-300 mt-2 leading-relaxed">
+            Введите ссылку на совещание и отправьте бота чтобы он сделал все за вас!
+          </p>
         </div>
       </section>
 
       {/* Mode Toggle */}
       <Card>
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           <button
             onClick={() => setMode("join")}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+            className={`flex-1 px-6 py-3 rounded-xl font-semibold text-base transition-colors ${
               mode === "join"
                 ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white"
                 : "bg-gray-100 dark:bg-dark-base-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-dark-base-600"
             }`}
           >
-            ⚡ Подключиться сейчас
+            Подключиться сейчас
           </button>
           <button
             onClick={() => setMode("schedule")}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+            className={`flex-1 px-6 py-3 rounded-xl font-semibold text-base transition-colors ${
               mode === "schedule"
                 ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white"
                 : "bg-gray-100 dark:bg-dark-base-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-dark-base-600"
             }`}
           >
-            📅 Запланировать
+            Запланировать
           </button>
         </div>
       </Card>
@@ -343,19 +350,23 @@ export default function MeetingBotPage() {
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Платформа
             </label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-4">
               {PROVIDER_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
                   onClick={() => handleProviderChange(opt.value)}
-                  className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
+                  className={`flex flex-col items-center gap-4 py-8 px-4 rounded-xl border-2 transition-all ${
                     provider === opt.value
                       ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30"
                       : "border-gray-200 dark:border-dark-base-600 hover:border-gray-300 dark:hover:border-dark-base-500"
                   }`}
                 >
-                  <span className="text-2xl">{opt.icon}</span>
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                  <img
+                    src={opt.icon}
+                    alt={opt.label}
+                    className="w-20 h-20 object-contain"
+                  />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                     {opt.label}
                   </span>
                 </button>
@@ -377,273 +388,196 @@ export default function MeetingBotPage() {
             />
           </div>
 
-          {/* Scheduled Time — Custom Date Picker */}
-          {mode === "schedule" && (
-            <div className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Время начала
-              </label>
+          {/* Schedule — visual calendar + clock face */}
+          {mode === "schedule" && (() => {
+            const monthStart = startOfMonth(calendarMonth);
+            const monthEnd = endOfMonth(calendarMonth);
+            const calStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+            const calEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+            const days = eachDayOfInterval({ start: calStart, end: calEnd });
 
-              {/* Date + Time row */}
-              <div className="flex gap-3">
-                {/* Date input — displays as "День Месяц Год" */}
-                <div className="flex-1 relative">
+            return (
+            <div className="space-y-4 py-4 border-t border-gray-200 dark:border-dark-base-700 pt-6">
+              {/* Date/time summary bar */}
+              <div className="text-center py-2">
+                <div className="text-lg text-gray-900 dark:text-gray-100 flex items-center justify-center gap-2 flex-wrap">
+                  <span>Бот подключится:</span>
                   <input
                     type="date"
                     value={scheduleDate}
                     onChange={(e) => setScheduleDate(e.target.value)}
-                    className="w-full border border-gray-300 dark:border-dark-base-600 rounded-lg px-4 py-2 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="bg-transparent border-b border-gray-400 dark:border-gray-500 text-blue-600 dark:text-blue-400 font-bold text-lg px-1 py-0.5 outline-none cursor-pointer w-[180px] text-center"
                   />
-                  {/* Display formatted date overlay */}
-                  {scheduleDate && (
-                    <div className="mt-1 text-xs text-blue-600 dark:text-blue-400 font-medium">
-                      {format(new Date(scheduleDate + "T00:00:00"), "dd MMM yyyy", { locale: ru })}
+                  <span>в</span>
+                  <input
+                    type="text"
+                    value={scheduleTime}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9:]/g, "").slice(0, 5);
+                      setScheduleTime(val);
+                    }}
+                    placeholder="ЧЧ:ММ"
+                    className="bg-transparent border-b border-gray-400 dark:border-gray-500 text-blue-600 dark:text-blue-400 font-bold text-lg px-1 py-0.5 outline-none w-16 text-center"
+                  />
+                  <select value={scheduleTimezone} onChange={(e) => setScheduleTimezone(e.target.value)}
+                    className="bg-transparent border-b border-gray-400 dark:border-gray-500 text-sm text-gray-500 dark:text-gray-400 outline-none cursor-pointer appearance-none px-1"
+                  >
+                    {TIMEZONE_OPTIONS.map((tz) => (
+                      <option key={tz.value} value={tz.value} className="dark:bg-dark-base-800 dark:text-white">{tz.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-start justify-center gap-10">
+                {/* Calendar widget — left */}
+                <div className="bg-gray-50 dark:bg-dark-base-800 rounded-2xl p-5 border border-gray-200 dark:border-dark-base-700 w-[340px]">
+                  <div className="flex items-center justify-between mb-3">
+                    <button onClick={() => setCalendarMonth(prev => subMonths(prev, 1))}
+                      className="w-8 h-8 rounded-lg bg-transparent text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-200 dark:hover:bg-dark-base-700 transition-colors cursor-pointer"
+                    >◀</button>
+                    <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                      {format(calendarMonth, "LLLL yyyy", { locale: ru })}
+                    </span>
+                    <button onClick={() => setCalendarMonth(prev => addMonths(prev, 1))}
+                      className="w-8 h-8 rounded-lg bg-transparent text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-200 dark:hover:bg-dark-base-700 transition-colors cursor-pointer"
+                    >▶</button>
+                  </div>
+                  <div className="grid grid-cols-7 mb-2">
+                    {WEEKDAYS.map(d => (
+                      <div key={d} className="text-center text-[11px] font-bold text-gray-500 dark:text-dark-base-300 uppercase py-1">{d}</div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7">
+                    {days.map((day, i) => {
+                      const dateKey = format(day, "yyyy-MM-dd");
+                      const selected = dateKey === scheduleDate;
+                      const inMonth = isSameMonth(day, calendarMonth);
+                      const today = isToday(day);
+                      return (
+                        <button key={i} onClick={() => setScheduleDate(dateKey)}
+                          className={`text-center py-1.5 text-[13px] rounded-lg relative cursor-pointer transition-colors
+                            ${selected ? "bg-blue-500 text-white font-bold" : ""}
+                            ${!selected && today ? "text-blue-600 font-bold" : ""}
+                            ${!inMonth && !selected ? "text-gray-400 dark:text-dark-base-500" : ""}
+                            ${inMonth && !selected && !today ? "text-gray-900 dark:text-dark-base-100 hover:bg-gray-200 dark:hover:bg-dark-base-700" : ""}
+                          `}
+                        >{format(day, "d")}</button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Analog clock faces — right */}
+                <div className="flex items-start gap-6">
+                  {/* Hours clock face */}
+                  <div className="flex flex-col items-center">
+                    <span className="text-xs font-semibold text-gray-500 dark:text-dark-base-400 mb-2">Часы</span>
+                    <div className="relative w-64 h-64 rounded-full bg-gray-50 dark:bg-dark-base-800 border-4 border-gray-200 dark:border-dark-base-700 shadow-inner">
+                      {/* Center dot */}
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-blue-500 z-10 shadow" />
+
+                      {/* Hour numbers 1–12 in a circle */}
+                      {(() => {
+                        const currentH = scheduleTime ? parseInt(scheduleTime.split(":")[0]) : 0;
+                        const currentM = scheduleTime ? parseInt(scheduleTime.split(":")[1]) : 0;
+                        const hourAngle = ((currentH % 12) * 30) + (currentM * 0.5);
+
+                        return (<>
+                      {Array.from({ length: 12 }, (_, i) => {
+                        const angle = (i * 30 - 90) * Math.PI / 180;
+                        const r = 100;
+                        const cx = 128, cy = 128;
+                        const x = cx + r * Math.cos(angle) - 16;
+                        const y = cy + r * Math.sin(angle) - 16;
+                        const hourNum = i === 0 ? 12 : i;
+                        const displayHour = currentH % 12 || 12;
+                        const selected = displayHour === hourNum;
+                        const hour12 = hourNum === 12 ? 0 : hourNum;
+
+                        return (
+                          <button key={i} onClick={() => {
+                            const m = scheduleTime ? scheduleTime.split(":")[1] || "00" : "00";
+                            const isPM = currentH >= 12;
+                            const h = isPM ? hour12 + 12 : hour12;
+                            setScheduleTime(`${h.toString().padStart(2, "0")}:${m}`);
+                          }}
+                            className={`absolute w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors cursor-pointer
+                              ${selected ? "bg-blue-500 text-white shadow-md" : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-dark-base-700"}
+                            `}
+                            style={{ left: x, top: y }}
+                          >{hourNum}</button>
+                        );
+                      })}
+
+                      {/* Hour hand */}
+                      <div className="absolute top-1/2 left-1/2 z-[5]" style={{
+                        transform: `translate(-50%, -100%) rotate(${hourAngle}deg)`,
+                        transformOrigin: 'center bottom',
+                      }}>
+                        <div className="w-[5px] h-[50px] bg-gray-800 dark:bg-gray-200 rounded-full" />
+                      </div>
+                      </>);
+                      })()}
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                {/* Time input — custom 24-hour selects (no AM/PM) */}
-                <div className="flex items-center gap-1 w-36">
-                  <select
-                    value={scheduleTime ? scheduleTime.split(":")[0] : ""}
-                    onChange={(e) => {
-                      const h = e.target.value;
-                      const m = scheduleTime ? scheduleTime.split(":")[1] || "00" : "00";
-                      setScheduleTime(`${h}:${m}`);
-                    }}
-                    className="flex-1 border border-gray-300 dark:border-dark-base-600 rounded-lg px-2 py-2 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white text-center text-base font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="" disabled>ЧЧ</option>
-                    {Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, "0")).map((h) => (
-                      <option key={h} value={h} className="dark:bg-dark-base-700 dark:text-white">{h}</option>
-                    ))}
-                  </select>
-                  <span className="text-gray-500 font-mono text-lg">:</span>
-                  <select
-                    value={scheduleTime ? scheduleTime.split(":")[1] : ""}
-                    onChange={(e) => {
-                      const m = e.target.value;
-                      const h = scheduleTime ? scheduleTime.split(":")[0] || "00" : "00";
-                      setScheduleTime(`${h}:${m}`);
-                    }}
-                    className="flex-1 border border-gray-300 dark:border-dark-base-600 rounded-lg px-2 py-2 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white text-center text-base font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="" disabled>ММ</option>
-                    {Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, "0")).map((m) => (
-                      <option key={m} value={m} className="dark:bg-dark-base-700 dark:text-white">{m}</option>
-                    ))}
-                  </select>
+                  {/* Minutes clock face */}
+                  <div className="flex flex-col items-center">
+                    <span className="text-xs font-semibold text-gray-500 dark:text-dark-base-400 mb-2">Минуты</span>
+                    <div className="relative w-64 h-64 rounded-full bg-gray-50 dark:bg-dark-base-800 border-4 border-gray-200 dark:border-dark-base-700 shadow-inner">
+                      {/* Minute numbers 00, 05, 10...55 in a circle */}
+                      {(() => {
+                        const currentM = scheduleTime ? parseInt(scheduleTime.split(":")[1]) : 0;
+                        const minuteAngle = currentM * 6;
+
+                        return (<>
+                      {Array.from({ length: 12 }, (_, i) => {
+                        const angle = (i * 30 - 90) * Math.PI / 180;
+                        const r = 100;
+                        const cx = 128, cy = 128;
+                        const x = cx + r * Math.cos(angle) - 14;
+                        const y = cy + r * Math.sin(angle) - 14;
+                        const minuteVal = (i * 5).toString().padStart(2, "0");
+                        const selected = currentM === i * 5;
+
+                        return (
+                          <button key={i} onClick={() => {
+                            const h = scheduleTime ? scheduleTime.split(":")[0] || "00" : "00";
+                            setScheduleTime(`${h}:${minuteVal}`);
+                          }}
+                            className={`absolute w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold transition-colors cursor-pointer
+                              ${selected ? "bg-blue-500 text-white shadow-md" : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-dark-base-700"}
+                            `}
+                            style={{ left: x, top: y }}
+                          >{minuteVal}</button>
+                        );
+                      })}
+
+                      {/* Minute hand */}
+                      <div className="absolute top-1/2 left-1/2 z-[5]" style={{
+                        transform: `translate(-50%, -100%) rotate(${minuteAngle}deg)`,
+                        transformOrigin: 'center bottom',
+                      }}>
+                        <div className="w-[3px] h-[65px] bg-blue-500 dark:bg-blue-400 rounded-full" />
+                      </div>
+                      </>);
+                      })()}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Timezone selector */}
-              <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Часовой пояс
-                </label>
-                <select
-                  value={scheduleTimezone}
-                  onChange={(e) => setScheduleTimezone(e.target.value)}
-                  className="w-full border border-gray-300 dark:border-dark-base-600 rounded-lg px-4 py-2 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  {TIMEZONE_OPTIONS.map((tz) => (
-                    <option key={tz.value} value={tz.value} className="dark:bg-dark-base-700 dark:text-white">
-                      {tz.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Preview of computed ISO */}
               {scheduleDate && scheduleTime && (
-                <div className="text-xs text-gray-400 dark:text-gray-500 font-mono bg-gray-50 dark:bg-dark-base-800 rounded-lg px-3 py-2">
-                  {computeScheduledAt() || "—"}
+                <div className="text-center">
+                  <div className="inline-block text-sm text-gray-400 dark:text-gray-500 font-mono bg-gray-50 dark:bg-dark-base-800 rounded-xl px-4 py-2">
+                    {computeScheduledAt() || "—"}
+                  </div>
                 </div>
               )}
             </div>
-          )}
-
-          {/* Model Selection Accordion */}
-          <details
-            open={showModels}
-            onToggle={(e) => setShowModels((e.target as HTMLDetailsElement).open)}
-            className="group border border-gray-200 dark:border-dark-base-700 rounded-2xl overflow-visible bg-white dark:bg-dark-base-800"
-          >
-            <summary className="flex items-center gap-3 font-semibold cursor-pointer p-4 bg-gradient-to-r from-slate-50 to-gray-50 dark:from-dark-base-700 dark:to-dark-base-800 hover:from-slate-100 hover:to-gray-100 dark:hover:from-dark-base-600 dark:hover:to-dark-base-700 transition-colors list-none">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-400 to-gray-500 flex items-center justify-center shadow-md">
-                <span className="text-lg">⚙️</span>
-              </div>
-              <span className="text-lg text-gray-900 dark:text-white">Настройки моделей</span>
-              <span className="ml-auto text-gray-400 dark:text-gray-500 group-open:rotate-180 transition-transform">▼</span>
-            </summary>
-            <div className="p-5 space-y-4">
-              {/* Информационное сообщение */}
-              <div className="bg-gradient-to-r from-rose-50 to-pink-50 dark:from-rose-900/20 dark:to-pink-900/20 border border-rose-200 dark:border-rose-800 rounded-xl p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-400 to-pink-500 flex items-center justify-center flex-shrink-0 shadow-sm">
-                    <span className="text-lg">💡</span>
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold text-rose-800 dark:text-rose-300 mb-1">Важная информация</p>
-                    <p className="text-sm text-rose-700 dark:text-rose-400 leading-relaxed">
-                      Выбирайте модели вручную только в редких случаях: если вас не устраивает результат транскрибации или язык записи отличается от русского.
-                      <span className="font-medium"> По умолчанию используются оптимальные настройки.</span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Пояснения терминов */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="bg-gradient-to-br from-blue-50 to-blue-50 dark:from-blue-900/20 dark:to-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-lg">📝</span>
-                    <span className="font-semibold text-blue-800 dark:text-blue-300 text-sm">Транскрибация</span>
-                  </div>
-                  <p className="text-xs text-blue-700 dark:text-blue-400 leading-relaxed">
-                    Преобразование речи в текст. Модель «слышит» аудио и записывает слова.
-                  </p>
-                </div>
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-lg">👥</span>
-                    <span className="font-semibold text-blue-800 dark:text-blue-300 text-sm">Диаризация</span>
-                  </div>
-                  <p className="text-xs text-blue-700 dark:text-blue-400 leading-relaxed">
-                    Разделение спикеров. Определяет кто и когда говорил (Спикер 1, Спикер 2 и т.д.).
-                  </p>
-                </div>
-                <div className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-lg">🤖</span>
-                    <span className="font-semibold text-amber-800 dark:text-amber-300 text-sm">LLM (суммаризация)</span>
-                  </div>
-                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
-                    Нейросеть для создания краткого содержания. Превращает длинный текст в сжатый пересказ.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Транскрибация */}
-                <div className="space-y-1">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                    <span className="w-1 h-4 bg-blue-500 rounded-full"></span>
-                    Библиотека транскрибации
-                  </label>
-                  <select
-                    value={settings.transcribe_lib}
-                    onChange={(e) => {
-                      const lib = e.target.value;
-                      const models = TRANSCRIBE_CONFIG[lib] || [];
-                      setSettings((prev) => ({
-                        ...prev,
-                        transcribe_lib: lib,
-                        transcribe_model: models[0] || prev.transcribe_model,
-                      }));
-                    }}
-                    className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-blue-300 dark:hover:border-blue-600"
-                  >
-                    {Object.keys(TRANSCRIBE_CONFIG).map((lib) => (
-                      <option key={lib} value={lib} className="dark:bg-dark-base-700 dark:text-white">
-                        {lib.charAt(0).toUpperCase() + lib.slice(1)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                    <span className="w-1 h-4 bg-blue-500 rounded-full"></span>
-                    Модель транскрибации
-                  </label>
-                  <select
-                    value={settings.transcribe_model}
-                    onChange={(e) => setSettings((prev) => ({ ...prev, transcribe_model: e.target.value }))}
-                    className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-blue-300 dark:hover:border-blue-600"
-                  >
-                    {(TRANSCRIBE_CONFIG[settings.transcribe_lib] || []).map((model) => (
-                      <option key={model} value={model} className="dark:bg-dark-base-700 dark:text-white">{model}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Диаризация */}
-                <div className="space-y-1">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                    <span className="w-1 h-4 bg-blue-500 rounded-full"></span>
-                    Библиотека диаризации
-                  </label>
-                  <select
-                    value={settings.diarize_lib}
-                    onChange={(e) => {
-                      const lib = e.target.value;
-                      const models = DIARIZATION_CONFIG[lib] || [];
-                      setSettings((prev) => ({
-                        ...prev,
-                        diarize_lib: lib,
-                        diarization_model: models[0] || prev.diarization_model,
-                      }));
-                    }}
-                    className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-blue-300 dark:hover:border-blue-600"
-                  >
-                    {Object.keys(DIARIZATION_CONFIG).map((lib) => (
-                      <option key={lib} value={lib} className="dark:bg-dark-base-700 dark:text-white">
-                        {lib.charAt(0).toUpperCase() + lib.slice(1)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                    <span className="w-1 h-4 bg-blue-500 rounded-full"></span>
-                    Модель диаризации
-                  </label>
-                  <select
-                    value={settings.diarization_model}
-                    onChange={(e) => setSettings((prev) => ({ ...prev, diarization_model: e.target.value }))}
-                    className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-blue-300 dark:hover:border-blue-600"
-                  >
-                    {(DIARIZATION_CONFIG[settings.diarize_lib] || []).map((model) => (
-                      <option key={model} value={model} className="dark:bg-dark-base-700 dark:text-white">{model}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* LLM */}
-                <div className="space-y-1 md:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                    <span className="w-1 h-4 bg-amber-500 rounded-full"></span>
-                    Модель LLM
-                  </label>
-                  <select
-                    value={settings.llm_model}
-                    onChange={(e) => setSettings((prev) => ({ ...prev, llm_model: e.target.value }))}
-                    className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white dark:bg-dark-base-700 hover:border-blue-300 dark:hover:border-blue-600"
-                  >
-                    {LLM_MODELS.map((model) => (
-                      <option key={model} value={model} className="dark:bg-dark-base-700 dark:text-white">{model}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Noise Suppression */}
-              <div className="flex items-center gap-3 pt-2">
-                <input
-                  type="checkbox"
-                  id="noise-suppression-meeting"
-                  checked={settings.noise_suppression}
-                  onChange={(e) => setSettings((prev) => ({ ...prev, noise_suppression: e.target.checked }))}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label htmlFor="noise-suppression-meeting" className="text-sm text-gray-700 dark:text-gray-300">
-                  Подавление шума
-                </label>
-              </div>
-            </div>
-          </details>
+            );
+          })()}
 
           {/* Error */}
           {formError && <ErrorMessage message={formError} onRetry={() => setFormError(null)} />}
@@ -655,15 +589,14 @@ export default function MeetingBotPage() {
             fullWidth
             size="lg"
           >
-            {mode === "join" ? "🚀 Подключиться" : "📅 Запланировать"}
+            {mode === "join" ? "Подключиться" : "Запланировать"}
           </Button>
         </div>
       </Card>
 
       {/* Meetings History */}
       <Card>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <span className="text-lg">📋</span>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           История совещаний
         </h2>
 
@@ -745,7 +678,7 @@ export default function MeetingBotPage() {
                         }}
                         isLoading={cancelMutation.isPending}
                       >
-                        ⏹ Отозвать бота
+                        Отозвать бота
                       </Button>
                     )}
                     {meeting.status === "failed" && (
@@ -757,19 +690,11 @@ export default function MeetingBotPage() {
                           setMeetingUrl(meeting.meeting_url);
                           setProvider(meeting.provider as any);
                           setBotName(meeting.bot_name);
-                          setSettings({
-                            transcribe_model: meeting.transcribe_model || DEFAULT_SETTINGS.transcribeModel,
-                            diarization_model: meeting.diarization_model || DEFAULT_SETTINGS.diarizationModel,
-                            diarize_lib: meeting.diarize_lib || DEFAULT_SETTINGS.diarizeLib,
-                            transcribe_lib: meeting.transcribe_lib || DEFAULT_SETTINGS.transcribeLib,
-                            llm_model: meeting.llm_model || DEFAULT_SETTINGS.llmModel,
-                            noise_suppression: meeting.noise_suppression || false,
-                          });
                           setMode("join");
                           window.scrollTo({ top: 0, behavior: "smooth" });
                         }}
                       >
-                        🔄 Повторить
+                        Повторить
                       </Button>
                     )}
 
@@ -807,6 +732,7 @@ export default function MeetingBotPage() {
           </div>
         )}
       </Card>
+      </div>
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { NewAnalysisPage } from '@/pages/NewAnalysisPage';
 import { AnalysisPage } from '@/pages/AnalysisPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { ProfilePage } from '@/pages/ProfilePage';
+import { SettingsPage } from '@/pages/SettingsPage';
 import MeetingBotPage from '@/pages/MeetingBotPage';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
@@ -161,6 +162,14 @@ function AppContent() {
         <ProtectedRoute>
           <AppLayout>
             <ProfilePage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/settings" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <SettingsPage />
           </AppLayout>
         </ProtectedRoute>
       } />

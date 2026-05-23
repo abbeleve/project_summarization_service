@@ -601,6 +601,14 @@ export const TranscriptionHistoryPanel = () => {
                 <span className="text-lg">👤</span>
                 <span>Профиль</span>
               </NavLink>
+              <NavLink
+                to="/settings"
+                onClick={() => setProfileOpen(false)}
+                className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-base-700 transition-colors"
+              >
+                <span className="text-lg">⚙️</span>
+                <span>Настройки</span>
+              </NavLink>
               <div className="border-t border-gray-100 dark:border-dark-base-700 my-1" />
               <button
                 onClick={() => { setProfileOpen(false); handleLogout(); }}

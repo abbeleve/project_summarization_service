@@ -16,10 +16,12 @@ export const NewAnalysisPage = () => {
   const { processAudio } = useTranscripts({});
   const { tasks, addTask, removeTask } = useActiveTasks();
   const [taskError, setTaskError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
 
   const handleProcess = useCallback(async (file: File, settings: ProcessingSettings) => {
     try {
       setTaskError(null);
+      setProcessing(true);
       const result = await processAudio({ file, settings });
 
       // Проверяем, вернул ли backend task_id (очередь) или готовую транскрипцию
@@ -32,6 +34,8 @@ export const NewAnalysisPage = () => {
     } catch (err) {
       console.error('Processing error:', err);
       setTaskError(err instanceof Error ? err.message : 'Ошибка обработки');
+    } finally {
+      setProcessing(false);
     }
   }, [processAudio, navigate, addTask]);
 
@@ -46,14 +50,13 @@ export const NewAnalysisPage = () => {
   }, []);
 
   return (
-    <div className="fixed inset-0 overflow-hidden">
-      {/* Full-width background layers — fixed to viewport */}
-      <div className="fixed inset-x-0 top-0 h-1/2 bg-[linear-gradient(135deg,#e5e7eb,#f3f4f6_30%,#ffffff_50%,#f3f4f6_70%,#e5e7eb)] dark:bg-[linear-gradient(135deg,#232326,#28282b_30%,#2d2d30_50%,#28282b_70%,#232326)] pointer-events-none z-0" />
-      <div className="fixed inset-x-0 bottom-0 h-1/2 bg-gray-100 dark:bg-[#232326] pointer-events-none z-0" />
+    <div className="fixed inset-0 overflow-y-auto">
+      {/* Full-page gradient background */}
+      <div className="fixed inset-0 bg-[linear-gradient(135deg,#e5e7eb,#f3f4f6_30%,#ffffff_50%,#f3f4f6_70%,#e5e7eb)] dark:bg-[linear-gradient(135deg,#232326,#28282b_30%,#2d2d30_50%,#28282b_70%,#232326)] pointer-events-none z-0" />
 
       {/* Content on top */}
       <div className="relative z-10 h-full flex flex-col">
-        {/* Top half — fixed, no scroll */}
+        {/* Top half — fixed height */}
         <div className="flex-none h-1/2 pt-28 overflow-hidden">
           <div className="max-w-5xl mx-auto px-6">
             <div className="flex items-start justify-between gap-8">
@@ -107,36 +110,53 @@ export const NewAnalysisPage = () => {
                 <span className="text-sm font-medium text-white whitespace-nowrap mt-2">Результат</span>
               </div>
             </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* AudioUploader — fixed top anchor, grows downward */}
-      <div className="absolute top-[calc(50%-140px)] left-1/2 -translate-x-1/2 z-20 w-full max-w-2xl px-6">
-        <div className="w-full">
-          <AudioUploader
-          onProcess={handleProcess}
-          isProcessing={false}
-          onNoiseSuppression={handleNoiseSuppression}
-          initialFile={droppedFile}
-        />
-      </div>
-      </div>
+        {/* AudioUploader — in normal flow, auto height */}
+        <div className="flex-none flex justify-center px-6 -mt-56 z-20">
+          <div className="w-full max-w-4xl">
+            <AudioUploader
+            onProcess={handleProcess}
+            isProcessing={processing}
+            onNoiseSuppression={handleNoiseSuppression}
+            initialFile={droppedFile}
+          />
+          </div>
+        </div>
 
-      {/* Bottom half — scrolls internally */}
-      <div className="flex-1 overflow-y-hidden pt-16">
-        <div className="max-w-5xl mx-auto px-6">
-          {/* Active tasks list */}
-          {tasks.length > 0 && (
+        {/* Processing overlay */}
+        {processing && (
+          <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white/60 dark:bg-dark-base-900/60 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-4">
+              <svg className="animate-spin h-16 w-16 text-blue-600" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">Обработка...</p>
+              <p className="text-base text-gray-500 dark:text-gray-400">Пожалуйста, подождите</p>
+            </div>
+          </div>
+        )}
+
+        {/* Bottom half — scrolls internally, tasks appear below AudioUploader */}
+        <div className="flex-1 pt-6 z-30">
+          <div className="max-w-5xl mx-auto px-6">
+            {/* Active tasks list — always visible */}
             <section>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-3">Активные задачи</h2>
-              <ActiveTasksList
-                tasks={tasks}
-                onRemove={removeTask}
-                onNavigate={(transcriptId) => navigate(`/analysis/${transcriptId}`)}
-              />
+              {tasks.length > 0 ? (
+                <ActiveTasksList
+                  tasks={tasks}
+                  onRemove={removeTask}
+                  onNavigate={(transcriptId) => navigate(`/analysis/${transcriptId}`)}
+                />
+              ) : (
+                <div className="text-center py-10">
+                  <p className="text-gray-400 dark:text-dark-base-400 text-base">Нет активных задач</p>
+                </div>
+              )}
             </section>
-          )}
 
           {/* Task error */}
           {taskError && (

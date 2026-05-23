@@ -189,20 +189,20 @@ export const HomePage = () => {
             className={`group relative rounded-2xl border-2 border-dashed p-6 text-center hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 w-full flex flex-col items-center justify-center min-h-[200px] ${
               isDragOver
                 ? 'bg-blue-600 border-blue-400 scale-[1.02] shadow-xl'
-                : 'bg-gray-900 dark:bg-dark-base-700 border-gray-400 dark:border-dark-base-500'
+                : 'bg-gray-200 dark:bg-dark-base-700 border-gray-400 dark:border-dark-base-500'
             }`}
           >
             <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-all duration-300 ${
-              isDragOver ? 'bg-blue-500' : 'bg-gray-700 dark:bg-dark-base-600 group-hover:bg-gray-600 dark:group-hover:bg-dark-base-500'
+              isDragOver ? 'bg-blue-500' : 'bg-gray-300 dark:bg-dark-base-600 group-hover:bg-gray-400 dark:group-hover:bg-dark-base-500'
             }`}>
-              <span className={`text-3xl font-light ${isDragOver ? 'text-white' : 'text-gray-300 dark:text-gray-400'}`}>
+              <span className={`text-3xl font-light ${isDragOver ? 'text-white' : 'text-gray-500 dark:text-gray-400'}`}>
                 {isDragOver ? '📂' : '+'}
               </span>
             </div>
-            <span className={`text-lg font-bold ${isDragOver ? 'text-white' : 'text-gray-200 dark:text-gray-300'}`}>
+            <span className={`text-lg font-bold ${isDragOver ? 'text-white' : 'text-gray-600 dark:text-gray-300'}`}>
               {isDragOver ? 'Отпустите файл' : 'Новый анализ'}
             </span>
-            <span className={`text-sm mt-1 ${isDragOver ? 'text-blue-200' : 'text-gray-400 dark:text-gray-500'}`}>
+            <span className={`text-sm mt-1 ${isDragOver ? 'text-blue-200' : 'text-gray-500 dark:text-gray-500'}`}>
               {isDragOver ? 'Файл будет загружен' : 'Загрузить аудиофайл'}
             </span>
           </button>
