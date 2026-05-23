@@ -75,7 +75,7 @@ services:
     networks:
       - meeting-network
     restart: on-failure
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - ./backend/api:/app
   celery-worker-default:
@@ -98,6 +98,8 @@ services:
       HF_API_KEY: ${HF_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      MINIO_ENDPOINT: minio:9000
+      AUDIO_BUCKET_NAME: ${AUDIO_BUCKET_NAME:-meeting-recordings}
       PYTHONUNBUFFERED: "1"
     depends_on:
       postgres:
@@ -344,7 +346,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    command: uvicorn main:app --host 0.0.0.0 --port 8053 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8053
 
   qdrant:
     image: qdrant/qdrant:v1.13.0
@@ -408,7 +410,7 @@ services:
     restart: unless-stopped
     networks:
       - meeting-network
-    command: uvicorn main:app --host 0.0.0.0 --port 8054 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8054
     deploy:
       resources:
         reservations:
@@ -445,7 +447,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    command: uvicorn main:app --host 0.0.0.0 --port 8052 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8052
 
 networks:
   meeting-network:

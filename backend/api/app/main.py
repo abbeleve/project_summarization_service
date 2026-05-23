@@ -537,7 +537,8 @@ async def process_audio(
             "llm_model": llm_model or "deepseek/deepseek-v4-flash",
             "noise_sup_bool": noise_sup_bool,
             "user_id": current_user["user_id"],
-            "recording_url": recording_url  # Передаём URL в Celery задачу
+            "recording_url": recording_url,  # Публичный URL для плеера
+            "audio_key": audio_key,         # Ключ в MinIO для скачивания внутри Docker
         }
 
         # Отправка задачи в Celery

@@ -1,9 +1,9 @@
 """
 Celery задачи для обработки аудио.
 """
-import io
 import json
 import logging
+import os
 import requests
 from uuid import UUID
 from typing import Dict, Any, Optional, List
@@ -53,37 +53,31 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
     logger.info(f"Начало обработки задачи {task_id}")
 
     try:
-        # === 0. Скачивание аудио из MinIO ===
-        recording_url = options.get("recording_url")
-        logger.info(f"[{task_id}] Шаг 0: Скачивание аудио из MinIO: {recording_url}")
-        update_task_status(task_id, "processing", {"step": "download_from_minio", "percent": 5})
-
-        if not recording_url:
-            raise RuntimeError("recording_url is missing in options")
-
-        resp = requests.get(recording_url, timeout=300)
-        resp.raise_for_status()
-        file_bytes = resp.content
-        logger.info(f"[{task_id}] Аудио скачано: {len(file_bytes)} байт")
-
         # === 1. Транскрибация (вызов audio-ml сервиса) ===
         logger.info(f"[{task_id}] Шаг 1: Транскрибация")
         update_task_status(task_id, "processing", {"step": "transcription", "percent": 10})
 
-        # Подготовка запроса к audio-ml сервису
-        files = {"file": ("audio.wav", io.BytesIO(file_bytes), "audio/wav")}
+        # Определяем internal URL для audio-ml (внутри Docker)
+        audio_key = options.get("audio_key")
+        if not audio_key:
+            raise RuntimeError("audio_key is missing in options")
+        minio_endpoint = os.getenv("MINIO_ENDPOINT", "minio:9000")
+        audio_bucket = os.getenv("AUDIO_BUCKET_NAME", "meeting-recordings")
+        internal_url = f"http://{minio_endpoint}/{audio_bucket}/{audio_key}"
+
+        # Передаём URL в audio-ml — он сам скачает файл из MinIO
         data = {
+            "file_url": internal_url,
             "transcribe_model": options.get("transcribe_model", "v3_ctc"),
             "diarization_model": options.get("diarization_model", "pyannote/speaker-diarization-community-1"),
             "diarize_lib": options.get("diarize_lib", "pyannote"),
             "transcribe_lib": options.get("transcribe_lib", "gigaam"),
             "noise_sup_bool": options.get("noise_sup_bool", "false")
         }
-        
+
         # Вызов audio-ml сервиса
         response = requests.post(
             "http://audio-ml:8053/transcribe/",
-            files=files,
             data=data,
             timeout=1200  # 20 минут на транскрибацию
         )
@@ -107,10 +101,16 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
             enrolled = _get_enrolled_speakers()
             if enrolled:
                 logger.info(f"[{task_id}] Найдено {len(enrolled)} зарегистрированных голосовых профилей")
+
+                # Скачиваем аудио из MinIO для speaker identification
+                resp = requests.get(internal_url, timeout=300)
+                resp.raise_for_status()
+                audio_bytes = resp.content
+
                 speaker_label_map = _identify_speakers_by_embedding(
                     None,  # db не нужен в dry_run
                     None,  # transcript_id ещё не существует
-                    file_bytes,
+                    audio_bytes,
                     transcript_segments,
                     enrolled,
                     dry_run=True,  # только возвращает маппинг, не трогает БД

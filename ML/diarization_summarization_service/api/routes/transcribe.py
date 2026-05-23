@@ -2,9 +2,12 @@
 API роуты для транскрибации аудио.
 """
 import logging
+import subprocess
 import tempfile
 import shutil
 from pathlib import Path
+from typing import Optional
+import requests
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from config import settings
 from core.audio_converter import AudioConverter
@@ -22,10 +25,36 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/transcribe", tags=["Транскрибация"])
 
+# Форматы, требующие извлечения аудиодорожки через ffmpeg
+VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'}
+
+
+def _extract_audio_with_ffmpeg(input_path: Path, output_path: Path, sample_rate: int) -> str:
+    """
+    Извлекает аудиодорожку из видеофайла через ffmpeg.
+    Параллельно делает ресемплинг, конвертацию в моно и WAV.
+    Результат — готовый к использованию WAV файл.
+    """
+    cmd = [
+        "ffmpeg", "-i", str(input_path),
+        "-vn",                              # без видео
+        "-acodec", "pcm_s16le",             # 16-bit PCM
+        "-ar", str(sample_rate),            # ресемплинг
+        "-ac", "1",                         # моно
+        str(output_path),
+        "-y",                               # перезаписать
+        "-loglevel", "error"
+    ]
+    logger.info(f"ffmpeg: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True, capture_output=True, text=True)
+    logger.info(f"Аудио извлечено: {output_path}")
+    return str(output_path)
+
 
 @router.post("/")
 async def transcribe(
-    file: UploadFile = File(..., description="Аудиофайл для транскрибации"),
+    file: Optional[UploadFile] = File(None, description="Аудиофайл для транскрибации"),
+    file_url: Optional[str] = Form(None, description="URL аудиофайла в MinIO (альтернатива file)"),
     transcribe_model: str = Form("v3_ctc", description="Модель транскрибации"),
     diarization_model: str = Form(
         "pyannote/speaker-diarization-community-1",
@@ -40,16 +69,20 @@ async def transcribe(
 ):
     """
     Транскрибация аудиофайла с диаризацией.
-    
+
+    Принимает либо **file** (прямая загрузка), либо **file_url** (URL в MinIO).
+    Один из двух параметров обязателен.
+
     - **file**: Аудиофайл (mp3, wav, mp4, ogg)
+    - **file_url**: URL аудиофайла в MinIO (audio-ml сам скачает)
     - **transcribe_model**: Модель для транскрибации
     - **diarization_model**: Модель для диаризации спикеров
     - **transcribe_lib**: Библиотека транскрибации (gigaam/whisper)
     - **diarize_lib**: Библиотека диаризации (pyannote)
     - **noise_sup_bool**: Использовать ли шумоподавление
     """
-    # Валидация расширения файла
-    audio_converter.validate_extension(file.filename)
+    if not file and not file_url:
+        raise HTTPException(400, "Необходимо передать file или file_url")
 
     # Временная директория для файлов
     temp_dir = None
@@ -57,16 +90,35 @@ async def transcribe(
     try:
         # Создание временной директории
         temp_dir = tempfile.mkdtemp()
-        input_path = Path(temp_dir) / f"input{Path(file.filename).suffix}"
 
-        # Сохранение загруженного файла
-        with open(input_path, "wb") as f:
-            f.write(await file.read())
+        # Определяем имя файла и скачиваем
+        if file_url:
+            # Скачиваем по URL (streaming, без resp.content)
+            filename = file_url.rstrip("/").split("/")[-1] or "audio.webm"
+            input_path = Path(temp_dir) / filename
+            logger.info(f"Скачивание аудио из {file_url}")
+            resp = requests.get(file_url, stream=True, timeout=300)
+            resp.raise_for_status()
+            with open(input_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8_388_608):  # 8MB чанки
+                    if chunk:
+                        f.write(chunk)
+            file_size = input_path.stat().st_size
+            logger.info(f"Файл скачан: {input_path} ({file_size} байт)")
+        else:
+            # Прямая загрузка файла
+            audio_converter.validate_extension(file.filename)
+            input_path = Path(temp_dir) / f"input{Path(file.filename).suffix}"
+            with open(input_path, "wb") as f:
+                f.write(await file.read())
+            logger.info(f"Загружен файл: {input_path}")
 
-        logger.info(f"Загружен файл: {input_path}")
-
-        # Конвертация в WAV если нужно
-        if input_path.suffix.lower() != '.wav':
+        # Для видеофайлов — извлекаем только аудиодорожку через ffmpeg
+        # Это превращает 600MB MP4 → ~50MB WAV, снимая нагрузку с torchaudio
+        if input_path.suffix.lower() in VIDEO_EXTENSIONS:
+            wav_path = Path(temp_dir) / "input.wav"
+            audio_path = _extract_audio_with_ffmpeg(input_path, wav_path, audio_converter.sample_rate)
+        elif input_path.suffix.lower() != '.wav':
             wav_path = Path(temp_dir) / "input.wav"
             audio_converter.convert_to_wav(str(input_path), str(wav_path))
             audio_path = str(wav_path)

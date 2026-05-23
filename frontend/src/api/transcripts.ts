@@ -38,7 +38,7 @@ export const transcriptsApi = {
     formData.append('noise_sup_bool', settings.noiseSuppression.toString());
 
     const response = await apiClient.post<ProcessAudioResponse | TaskQueuedResponse>('/process', formData, {
-      timeout: 300000
+      timeout: 1_800_000  // 30 минут на загрузку больших файлов
     });
     return response.data;
   },
