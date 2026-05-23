@@ -140,7 +140,7 @@ export const HomePage = () => {
     <div className="max-w-5xl mx-auto mt-8">
       {/* Header */}
       <div className="mb-10">
-        <h1 className="text-4xl font-extrabold text-blue-600 dark:text-blue-400 tracking-tight">
+        <h1 className="text-5xl font-extrabold text-blue-600 dark:text-blue-400 tracking-tight">
           Ваши недавние совещания
         </h1>
         {!isLoading && !error && (

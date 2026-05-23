@@ -314,9 +314,8 @@ export const TranscriptionHistoryPanel = () => {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') applyFilters(); }}
                   placeholder="Поиск..."
-                  className="w-full pl-8 pr-8 py-2 text-sm rounded-xl border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  className="w-full pl-3 pr-8 py-2 text-sm rounded-xl border border-gray-300 dark:border-dark-base-600 bg-white dark:bg-dark-base-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
                 {searchQuery && (
                   <button
                     onClick={() => { setSearchQuery(''); setActualSearchQuery(''); resetPagination(); }}
@@ -341,9 +340,9 @@ export const TranscriptionHistoryPanel = () => {
                   <button
                     type="button"
                     onClick={() => startDateRef.current?.showPicker()}
-                    className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors text-xs cursor-pointer"
+                    className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors cursor-pointer"
                   >
-                    📅
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" strokeWidth="2"/><line x1="3" y1="10" x2="21" y2="10" strokeWidth="2"/><line x1="8" y1="2" x2="8" y2="6" strokeWidth="2"/><line x1="16" y1="2" x2="16" y2="6" strokeWidth="2"/></svg>
                   </button>
                   <input
                     ref={startDateRef}
@@ -364,9 +363,9 @@ export const TranscriptionHistoryPanel = () => {
                   <button
                     type="button"
                     onClick={() => endDateRef.current?.showPicker()}
-                    className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors text-xs cursor-pointer"
+                    className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors cursor-pointer"
                   >
-                    📅
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" strokeWidth="2"/><line x1="3" y1="10" x2="21" y2="10" strokeWidth="2"/><line x1="8" y1="2" x2="8" y2="6" strokeWidth="2"/><line x1="16" y1="2" x2="16" y2="6" strokeWidth="2"/></svg>
                   </button>
                   <input
                     ref={endDateRef}
