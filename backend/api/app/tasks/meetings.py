@@ -226,7 +226,7 @@ def process_recording_callback(
             "recording_url": recording_url,  # Передаём URL аудио для сохранения в транскрипции
         }
 
-        ml_task = transcribe_and_summarize_task.delay(file_bytes, ml_options)
+        ml_task = transcribe_and_summarize_task.delay(ml_options)
         ml_task_id = str(ml_task.id)
 
         # Вставляем ML задачу в БД чтобы update_task_status мог обновлять статус

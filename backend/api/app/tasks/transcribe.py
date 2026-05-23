@@ -27,17 +27,17 @@ def update_task_status(task_id: str, status: str, progress: Dict[str, Any] = Non
 
 
 @celery_app.task(bind=True, max_retries=1)
-def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, Any]):
+def transcribe_and_summarize_task(self, options: Dict[str, Any]):
     """
     Полный пайплайн обработки аудио:
     1. Транскрибация (diarization + transcription)
     2. Суммаризация
     3. Сохранение в PostgreSQL
     4. RAG indexing
-    
+
     Args:
-        file_bytes: Байты аудиофайла
         options: Параметры обработки
+            - recording_url: URL аудиофайла в MinIO (воркер скачивает сам)
             - transcribe_model: модель транскрибации
             - diarization_model: модель диаризации
             - diarize_lib: библиотека диаризации
@@ -45,18 +45,31 @@ def transcribe_and_summarize_task(self, file_bytes: bytes, options: Dict[str, An
             - llm_model: модель суммаризации
             - noise_sup_bool: использовать ли шумоподавление
             - user_id: ID пользователя
-    
+
     Returns:
         {"transcript_id": int, "status": "completed"}
     """
     task_id = self.request.id
     logger.info(f"Начало обработки задачи {task_id}")
-    
+
     try:
+        # === 0. Скачивание аудио из MinIO ===
+        recording_url = options.get("recording_url")
+        logger.info(f"[{task_id}] Шаг 0: Скачивание аудио из MinIO: {recording_url}")
+        update_task_status(task_id, "processing", {"step": "download_from_minio", "percent": 5})
+
+        if not recording_url:
+            raise RuntimeError("recording_url is missing in options")
+
+        resp = requests.get(recording_url, timeout=300)
+        resp.raise_for_status()
+        file_bytes = resp.content
+        logger.info(f"[{task_id}] Аудио скачано: {len(file_bytes)} байт")
+
         # === 1. Транскрибация (вызов audio-ml сервиса) ===
         logger.info(f"[{task_id}] Шаг 1: Транскрибация")
         update_task_status(task_id, "processing", {"step": "transcription", "percent": 10})
-        
+
         # Подготовка запроса к audio-ml сервису
         files = {"file": ("audio.wav", io.BytesIO(file_bytes), "audio/wav")}
         data = {

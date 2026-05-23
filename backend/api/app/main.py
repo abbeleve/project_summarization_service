@@ -541,7 +541,7 @@ async def process_audio(
         }
 
         # Отправка задачи в Celery
-        task = transcribe_and_summarize_task.delay(file_bytes, options)
+        task = transcribe_and_summarize_task.delay(options)
         task_id = str(task.id)
 
         # Сохранение задачи в БД
