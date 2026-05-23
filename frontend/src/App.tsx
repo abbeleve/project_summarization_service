@@ -1,13 +1,16 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useState } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AppProvider } from '@/context/AppContext';
 import { SidebarProvider } from '@/context/SidebarContext';
 import { Header } from '@/components/ui/Sidebar';
 import { TranscriptionHistoryPanel } from '@/components/transcriptions/TranscriptionHistoryPanel';
+import { RightPanel } from '@/components/transcriptions/RightPanel';
 import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
 import { HomePage } from '@/pages/HomePage';
+import { NewAnalysisPage } from '@/pages/NewAnalysisPage';
 import { AnalysisPage } from '@/pages/AnalysisPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { ProfilePage } from '@/pages/ProfilePage';
@@ -61,6 +64,11 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 const AppLayout = ({ children }: { children: React.ReactNode }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isHomePage = location.pathname === '/';
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-dark-base-900 dark:via-dark-base-800 dark:to-dark-base-900 transition-colors duration-300">
       <Header />
@@ -73,7 +81,31 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
             </div>
           </main>
         </div>
+        {isHomePage && rightPanelOpen && <RightPanel />}
       </div>
+
+      {/* Toggle button for right panel — only on home page */}
+      {isHomePage && (
+        <button
+          onClick={() => setRightPanelOpen(v => !v)}
+          className="fixed top-1/2 -translate-y-1/2 z-50 w-7 h-12 rounded-l-lg bg-white dark:bg-dark-base-800 border border-gray-200 dark:border-dark-base-700 border-r-0 flex items-center justify-center shadow-md hover:shadow-lg hover:bg-gray-50 dark:hover:bg-dark-base-700 transition-all cursor-pointer text-xs text-gray-400 dark:text-gray-500"
+          style={{ right: rightPanelOpen ? '320px' : '0' }}
+          title={rightPanelOpen ? 'Скрыть панель' : 'Показать панель'}
+        >
+          {rightPanelOpen ? '▶' : '◀'}
+        </button>
+      )}
+
+      {/* Floating button — Новый анализ (только на главной) */}
+      {isHomePage && (
+        <button
+          onClick={() => navigate('/new-analysis')}
+          className="fixed bottom-6 z-50 max-w-4xl w-[calc(100vw-24rem)] flex items-center justify-center px-6 py-4 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold text-xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+          style={{ left: 'calc(50vw + 10px)', transform: 'translateX(-50%)' }}
+        >
+          Новый анализ
+        </button>
+      )}
     </div>
   );
 };
@@ -91,7 +123,15 @@ function AppContent() {
           </AppLayout>
         </ProtectedRoute>
       } />
-      
+
+      <Route path="/new-analysis" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <NewAnalysisPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
       <Route path="/analysis/:id" element={
         <ProtectedRoute>
           <AppLayout>
