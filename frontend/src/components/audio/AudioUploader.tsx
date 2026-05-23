@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
   SUPPORTED_FORMATS,
@@ -19,6 +19,7 @@ interface AudioUploaderProps {
   onProcess: (file: File, settings: ProcessingSettings) => void;
   isProcessing: boolean;
   onNoiseSuppression?: (file: File) => Promise<Blob | null>;
+  initialFile?: File | null;
 }
 
 /** Тип для идентификатора тултипа */
@@ -48,12 +49,22 @@ const ModelTooltip = ({
 export const AudioUploader = ({
   onProcess,
   isProcessing,
-  onNoiseSuppression
+  onNoiseSuppression,
+  initialFile
 }: AudioUploaderProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [denoisedFile, setDenoisedFile] = useState<Blob | null>(null);
   const [isDenoising, setIsDenoising] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState<TooltipId>(null);
+
+  // Предзагрузка файла из внешнего источника (drag-n-drop на тайл)
+  useEffect(() => {
+    if (initialFile) {
+      setFile(initialFile);
+      setDenoisedFile(null);
+    }
+  }, [initialFile]);
+
   const [settings, setSettings] = useState<ProcessingSettings>({
     transcribeModel: 'v3_ctc',
     diarizationModel: 'pyannote/speaker-diarization-community-1',

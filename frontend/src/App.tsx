@@ -67,25 +67,26 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const isHomePage = location.pathname === '/';
+  const showRightPanel = isHomePage || location.pathname === '/meeting-bot' || location.pathname === '/new-analysis';
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-dark-base-900 dark:via-dark-base-800 dark:to-dark-base-900 transition-colors duration-300">
       <Header />
-      <div className="flex">
+      <div className="flex flex-nowrap relative">
         <TranscriptionHistoryPanel />
-        <div className="flex-1 flex justify-center min-w-0">
+        <div className="flex-1 flex justify-center min-w-0 max-w-full">
           <main className="w-full max-w-[1600px] bg-white dark:bg-dark-base-900 min-h-screen shadow-2xl">
             <div className="p-6">
               {children}
             </div>
           </main>
         </div>
-        {isHomePage && rightPanelOpen && <RightPanel />}
+        {showRightPanel && rightPanelOpen && <RightPanel />}
       </div>
 
-      {/* Toggle button for right panel — only on home page */}
-      {isHomePage && (
+      {/* Toggle button for right panel */}
+      {showRightPanel && (
         <button
           onClick={() => setRightPanelOpen(v => !v)}
           className="fixed top-1/2 -translate-y-1/2 z-50 w-7 h-12 rounded-l-lg bg-white dark:bg-dark-base-800 border border-gray-200 dark:border-dark-base-700 border-r-0 flex items-center justify-center shadow-md hover:shadow-lg hover:bg-gray-50 dark:hover:bg-dark-base-700 transition-all cursor-pointer text-xs text-gray-400 dark:text-gray-500"
