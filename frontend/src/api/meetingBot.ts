@@ -12,6 +12,7 @@ export interface MeetingBotSettings {
 export interface JoinMeetingPayload extends MeetingBotSettings {
   meeting_url: string;
   provider: 'google' | 'microsoft' | 'zoom';
+  title?: string;
   bot_name?: string;
 }
 
@@ -19,6 +20,7 @@ export interface ScheduleMeetingPayload extends MeetingBotSettings {
   meeting_url: string;
   provider: 'google' | 'microsoft' | 'zoom';
   scheduled_at: string;
+  title?: string;
   bot_name?: string;
 }
 
@@ -27,6 +29,7 @@ export interface ScheduledMeeting {
   user_id: string;
   meeting_url: string;
   provider: string;
+  title: string | null;
   bot_name: string;
   scheduled_at: string;
   status: 'pending' | 'processing' | 'recording' | 'completed' | 'failed' | 'cancelled';

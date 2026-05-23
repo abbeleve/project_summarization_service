@@ -49,6 +49,7 @@ class JoinMeetingRequest(MeetingModelSettings):
     """Запрос на немедленное подключение к совещанию."""
     meeting_url: str
     provider: str = Field(..., description="Платформа: google, microsoft, zoom")
+    title: Optional[str] = Field(None, description="Название совещания")
     bot_name: Optional[str] = Field("Meeting Notetaker", description="Имя бота в совещании")
 
 
@@ -57,6 +58,7 @@ class ScheduleMeetingRequest(MeetingModelSettings):
     meeting_url: str
     provider: str = Field(..., description="Платформа: google, microsoft, zoom")
     scheduled_at: str = Field(..., description="Время начала в ISO 8601, например: 2026-04-13T15:00:00")
+    title: Optional[str] = Field(None, description="Название совещания")
     bot_name: Optional[str] = Field("Meeting Notetaker", description="Имя бота в совещании")
 
 

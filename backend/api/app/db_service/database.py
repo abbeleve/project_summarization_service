@@ -333,6 +333,11 @@ class ScheduledMeeting(Base):
         nullable=False,
         comment="google, microsoft, zoom"
     )
+    title: Mapped[Optional[str]] = mapped_column(
+        String(200),
+        nullable=True,
+        comment="Название совещания, задаётся пользователем"
+    )
     bot_name: Mapped[Optional[str]] = mapped_column(
         String(100),
         nullable=True,
@@ -425,6 +430,7 @@ class ScheduledMeeting(Base):
             'user_id': str(self.user_id),
             'meeting_url': self.meeting_url,
             'provider': self.provider,
+            'title': self.title,
             'bot_name': self.bot_name,
             'scheduled_at': self.scheduled_at.isoformat(),
             'status': self.status,
@@ -1277,6 +1283,7 @@ class DataBaseManager:
         meeting_url: str,
         provider: str,
         scheduled_at: datetime,
+        title: Optional[str] = None,
         bot_name: Optional[str] = "Meeting Notetaker",
         transcribe_model: Optional[str] = "v3_ctc",
         diarization_model: Optional[str] = "pyannote/speaker-diarization-community-1",
@@ -1293,6 +1300,7 @@ class DataBaseManager:
             meeting_url: Ссылка на совещание
             provider: Платформа (google, microsoft, zoom)
             scheduled_at: Время начала
+            title: Название совещания
             bot_name: Имя бота
             transcribe_model: Модель транскрибации
             diarization_model: Модель диаризации
@@ -1311,6 +1319,7 @@ class DataBaseManager:
                     meeting_url=meeting_url,
                     provider=provider,
                     scheduled_at=scheduled_at,
+                    title=title,
                     bot_name=bot_name,
                     status="pending",
                     transcribe_model=transcribe_model,

@@ -104,6 +104,7 @@ export default function MeetingBotPage() {
   const [mode, setMode] = useState<MeetingMode>("join");
   const [meetingUrl, setMeetingUrl] = useState("");
   const [provider, setProvider] = useState<string>("google");
+  const [meetingTitle, setMeetingTitle] = useState("");
   const [botName, setBotName] = useState("Meeting Notetaker");
   const [scheduledAt, setScheduledAt] = useState("");
 
@@ -125,6 +126,7 @@ export default function MeetingBotPage() {
       queryClient.invalidateQueries({ queryKey: ["meetings"] });
       setFormError(null);
       setMeetingUrl("");
+      setMeetingTitle("");
     },
     onError: (err: any) => {
       setFormError(err.response?.data?.detail || "Ошибка при подключении к совещанию");
@@ -138,6 +140,7 @@ export default function MeetingBotPage() {
       queryClient.invalidateQueries({ queryKey: ["meetings"] });
       setFormError(null);
       setMeetingUrl("");
+      setMeetingTitle("");
       setScheduledAt("");
     },
     onError: (err: any) => {
@@ -263,6 +266,7 @@ export default function MeetingBotPage() {
     const basePayload = {
       meeting_url: meetingUrl.trim(),
       provider,
+      title: meetingTitle.trim() || undefined,
       bot_name: botName || "Meeting Notetaker",
       ...loadMeetingSettings(),
     };
@@ -372,6 +376,20 @@ export default function MeetingBotPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Bot Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Название совещания
+            </label>
+            <input
+              type="text"
+              value={meetingTitle}
+              onChange={(e) => setMeetingTitle(e.target.value)}
+              placeholder="Например: Еженедельный синк"
+              className="w-full border border-gray-300 dark:border-dark-base-600 rounded-lg px-4 py-2 bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
           </div>
 
           {/* Bot Name */}
@@ -621,9 +639,14 @@ export default function MeetingBotPage() {
                       <span className="text-lg">
                         {meeting.provider === "google" ? "📹" : meeting.provider === "microsoft" ? "🏢" : "🎥"}
                       </span>
-                      <span className="font-medium text-gray-900 dark:text-white truncate text-sm">
-                        {meeting.meeting_url}
+                      <span className="font-semibold text-gray-900 dark:text-white truncate text-sm">
+                        {meeting.title || meeting.meeting_url}
                       </span>
+                      {meeting.title && (
+                        <span className="text-xs text-gray-400 dark:text-gray-500 truncate hidden sm:inline">
+                          {meeting.meeting_url}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
                       <span>{PROVIDER_LABELS[meeting.provider] || meeting.provider}</span>
