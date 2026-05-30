@@ -1,0 +1,24 @@
+# ===== Основные зависимости =====
+fastapi>=0.100.0
+uvicorn>=0.23.0
+python-multipart>=0.0.6
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+
+# ===== ML модели =====
+pyannote-audio>=4.0.0
+gigaam @ git+https://github.com/salute-developers/GigaAM.git
+
+# ===== LLM клиенты =====
+openai>=1.0.0
+httpx>=0.24.0
+requests>=2.31.0
+
+# ===== Обработка аудио =====
+soundfile>=0.13.1
+
+# ===== Утилиты =====
+tqdm>=4.65.0
+PyYAML>=6.0
+numpy>=1.24.0

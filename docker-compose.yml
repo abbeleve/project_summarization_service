@@ -1,0 +1,471 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    mem_limit: 256m
+    ports:
+      - "6379:6379"
+    networks:
+      - meeting-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    mem_limit: 128m
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - meeting-network
+
+  postgres:
+    image: postgres:17
+    container_name: postgres_container
+    mem_limit: 2g
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5430:5432"
+    volumes:
+      - ./backend/db/pgdata:/var/lib/postgresql/data
+    networks:
+      - meeting-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres_user} -d ${POSTGRES_DB:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  api:
+    build: ./backend/api
+    mem_limit: 512m
+    ports:
+      - "8000:8000"
+    environment:
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      CELERY_TASK_QUEUE: celery
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES}
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: ${JWT_REFRESH_TOKEN_EXPIRE_DAYS}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      AVATAR_BUCKET_NAME: ${AVATAR_BUCKET_NAME:-avatars}
+      AUDIO_BUCKET_NAME: ${AUDIO_BUCKET_NAME:-meeting-recordings}
+      MINIO_PUBLIC_ENDPOINT: localhost:9000
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - meeting-network
+    restart: on-failure
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend/api:/app
+  celery-worker-default:
+    build: ./backend/api
+    container_name: celery_worker_default
+    mem_limit: 4g
+    command: >
+      celery -A app.celery_app worker
+      --loglevel=info
+      --concurrency=1
+      --prefetch-multiplier=1
+      --pool=solo
+      -Q default
+    environment:
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      HF_API_KEY: ${HF_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      MINIO_ENDPOINT: minio:9000
+      AUDIO_BUCKET_NAME: ${AUDIO_BUCKET_NAME:-meeting-recordings}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      audio-ml:
+        condition: service_started
+      audio-ml-whisper:
+        condition: service_started
+      denoiser:
+        condition: service_started
+    networks:
+      - meeting-network
+    restart: on-failure
+    volumes:
+      - ./backend/api:/app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  celery-worker-meetings:
+    build: ./backend/api
+    container_name: celery_worker_meetings
+    mem_limit: 1g
+    command: >
+      celery -A app.celery_app worker
+      --loglevel=info
+      --concurrency=2
+      --prefetch-multiplier=1
+      --pool=prefork
+      -Q meetings
+    environment:
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      MEETING_BOT_URL: ${MEETING_BOT_URL:-http://meeting-bot:3000}
+      BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - meeting-network
+    restart: on-failure
+    volumes:
+      - ./backend/api:/app
+
+  celery-beat:
+    build: ./backend/api
+    container_name: celery_beat
+    mem_limit: 256m
+    command: celery -A app.celery_app beat --loglevel=info
+    environment:
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      CELERY_TASK_QUEUE: celery
+      MEETING_BOT_URL: ${MEETING_BOT_URL:-http://meeting-bot:3000}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - meeting-network
+    restart: on-failure
+    volumes:
+      - ./backend/api:/app
+
+  # frontend:
+  #   build: ./frontend
+  #   ports:
+  #     - "8502:8501"
+  #   environment:
+  #     - API_URL=http://api:8000
+  #     - PYTHONUNBUFFERED=1
+  #   depends_on:
+  #     - api
+  #   networks:
+  #     - meeting-network
+  #   restart: on-failure
+  #   command: >
+  #     sh -c "echo '⏳ Ожидание запуска API...' &&
+  #            sleep 15 &&
+  #            echo '🚀 Запуск Streamlit...' &&
+  #            streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
+  
+  adminer:
+    image: adminer
+    mem_limit: 128m
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - meeting-network
+
+  # ========================================================================
+  # MINIO - S3-compatible storage for meeting recordings
+  # ========================================================================
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    mem_limit: 1g
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web Console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - ./volumes/minio_data:/data
+    networks:
+      - meeting-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # ========================================================================
+  # MINIO-INIT - Create bucket for meeting recordings
+  # ========================================================================
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        echo '=== MinIO Bucket Initialization ===' &&
+        mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin} &&
+        echo 'Creating bucket: ${S3_BUCKET_NAME:-meeting-recordings}' &&
+        mc mb --ignore-existing myminio/${S3_BUCKET_NAME:-meeting-recordings} &&
+        echo 'Creating bucket: ${AVATAR_BUCKET_NAME:-avatars}' &&
+        mc mb --ignore-existing myminio/${AVATAR_BUCKET_NAME:-avatars} &&
+        mc anonymous set download myminio/${S3_BUCKET_NAME:-meeting-recordings} &&
+        echo '=== MinIO Initialization Complete ==='
+      "
+    networks:
+      - meeting-network
+
+  # ========================================================================
+  # MEETING-BOT - Playwright bot для подключения к Zoom/Google Meet/Teams
+  # ========================================================================
+  meeting-bot:
+    build:
+      context: ./meeting-bot
+      dockerfile: Dockerfile.production
+    container_name: meeting_bot
+    mem_limit: 4g
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # Required at startup (dummy values, we use MinIO not GCP)
+      - GCP_DEFAULT_REGION=us-west-2
+      - GCP_MISC_BUCKET=meeting-recordings
+      # Recording settings
+      - MAX_RECORDING_DURATION_MINUTES=${MAX_RECORDING_DURATION_MINUTES:-180}
+      - MEETING_INACTIVITY_MINUTES=${MEETING_INACTIVITY_MINUTES:-2}
+      - INACTIVITY_DETECTION_START_DELAY_MINUTES=${INACTIVITY_DETECTION_START_DELAY_MINUTES:-5}
+      - JOIN_WAIT_TIME_MINUTES=${JOIN_WAIT_TIME_MINUTES:-2}
+      - RETRY_COUNT=${RETRY_COUNT:-2}
+      # Uploader → S3 (MinIO)
+      - UPLOADER_TYPE=s3
+      - UPLOADER_FILE_EXTENSION=.webm
+      - STORAGE_PROVIDER=s3
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minioadmin}
+      - S3_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-meeting-recordings}
+      - S3_REGION=us-west-2
+      - S3_USE_MINIO_COMPATIBILITY=true
+      # Redis (для очереди задач, но используем REST API)
+      - REDIS_CONSUMER_ENABLED=false
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Webhook → наш backend
+      - NOTIFY_WEBHOOK_ENABLED=true
+      - NOTIFY_WEBHOOK_URL=http://api:8000/meetings/webhook
+      - NOTIFY_WEBHOOK_SECRET=${MEETING_BOT_WEBHOOK_SECRET:-}
+      # Не используем ScreenApp backend
+      - SCREENAPP_BACKEND_SERVICE_API_KEY=
+      - AUTH_BASE_URL_V2=
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    networks:
+      - meeting-network
+    restart: "no"
+    # Нужно /dev/shm для Chrome и shm_size для Playwright
+    shm_size: "2gb"
+    # Xvfb нужен для headless браузера (уже есть в Dockerfile.production entrypoint)
+
+  audio-ml:
+    build:
+      context: ./ML/diarization_summarization_service
+    mem_limit: 6g
+    ports:
+      - "8053:8053"
+    volumes:
+      - ./ML/diarization_summarization_service/main.py:/app/main.py
+      - ./ML/diarization_summarization_service/config.py:/app/config.py
+      - ./ML/diarization_summarization_service/dependencies.py:/app/dependencies.py
+      - ./ML/diarization_summarization_service/core:/app/core
+      - ./ML/diarization_summarization_service/api:/app/api
+      - ./ML/diarization_summarization_service/services:/app/services
+      - ./ML/diarization_summarization_service/prompts:/app/prompts
+      - ./ML/diarization_summarization_service/models/pyannote:/app/models/pyannote
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_API_KEY=${HF_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - PYANNOTE_MODEL_PATH=${PYANNOTE_MODEL_PATH}
+    depends_on:
+      - audio-ml-whisper
+    runtime: nvidia
+    restart: unless-stopped
+    networks:
+      - meeting-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: uvicorn main:app --host 0.0.0.0 --port 8053
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.0
+    mem_limit: 1g
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    networks:
+      - meeting-network
+
+  # milvus-standalone:
+  #   container_name: milvus-standalone
+  #   image: milvusdb/milvus:v2.3.10
+  #   command: ["milvus", "run", "standalone"]
+  #   environment:
+  #   - MILVUS_MODE=standalone
+  #   ports:
+  #     - "19530:19530"
+  #     - "9091:9091"
+  #   volumes:
+  #     - ./milvus_data/milvus:/var/lib/milvus
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 30
+  #     start_period: 40s
+  #   networks:
+  #     - meeting-network
+
+  rag-service:
+    build: ./ML/rag-service
+    mem_limit: 2g
+    ports:
+      - "8055:8055"
+    environment:
+      - VECTOR_DB=${VECTOR_DB:-qdrant}
+      - QDRANT_HOST=${QDRANT_HOST}
+      - QDRANT_PORT=${QDRANT_INTERNAL_PORT}
+      - MILVUS_HOST=${MILVUS_HOST}
+      - MILVUS_PORT=${MILVUS_INTERNAL_PORT}
+    volumes:
+      - ./ML/rag-service:/app
+      - ./ML/rag-service/models:/app/models
+    networks:
+      - meeting-network
+    command: uvicorn main:app --host 0.0.0.0 --port 8055 --reload
+
+  audio-ml-whisper:
+    build:
+      context: ./ML/whisper_transcription_service
+    mem_limit: 4g
+    ports:
+      - "8054:8054"
+    volumes:
+      - ./ML/whisper_transcription_service:/app
+      - ./ML/whisper_transcription_service/models/faster-whisper-large-v3:/app/models/faster-whisper-large-v3:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_API_KEY=${HF_API_KEY}
+      - WHISPER_MODEL_PATH=/app/models/faster-whisper-large-v3
+    runtime: nvidia
+    restart: unless-stopped
+    networks:
+      - meeting-network
+    command: uvicorn main:app --host 0.0.0.0 --port 8054
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8054/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  denoiser:
+    build:
+      context: ./ML/noise_suppression_service
+      dockerfile: Dockerfile
+    mem_limit: 2g
+    ports:
+      - "8052:8052"
+    volumes:
+      - ./ML/noise_suppression_service:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CUDA_VISIBLE_DEVICES=0
+    runtime: nvidia
+    restart: unless-stopped
+    networks:
+      - meeting-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: uvicorn main:app --host 0.0.0.0 --port 8052
+
+networks:
+  meeting-network:
+    driver: bridge

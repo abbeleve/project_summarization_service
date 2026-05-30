@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+faster-whisper
+torch
+torchaudio
+librosa
+soundfile
+tqdm
+python-multipart
