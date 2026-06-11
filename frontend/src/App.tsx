@@ -15,6 +15,7 @@ import { AnalysisPage } from '@/pages/AnalysisPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { AllMeetingsPage } from '@/pages/AllMeetingsPage';
 import MeetingBotPage from '@/pages/MeetingBotPage';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
@@ -170,6 +171,14 @@ function AppContent() {
         <ProtectedRoute>
           <AppLayout>
             <SettingsPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/all-meetings" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <AllMeetingsPage />
           </AppLayout>
         </ProtectedRoute>
       } />

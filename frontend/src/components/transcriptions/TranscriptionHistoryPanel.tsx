@@ -274,6 +274,18 @@ export const TranscriptionHistoryPanel = () => {
             >
               <span>Meeting Bot</span>
             </NavLink>
+            <NavLink
+              to="/all-meetings"
+              className={({ isActive }) =>
+                `flex items-center gap-2 px-3 py-2.5 rounded-lg text-base font-medium transition-all ${
+                  isActive
+                    ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-md'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-base-800 hover:text-gray-900 dark:hover:text-white'
+                }`
+              }
+            >
+              <span>Ваши совещания</span>
+            </NavLink>
           </nav>
         </div>
 
