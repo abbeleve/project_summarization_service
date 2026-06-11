@@ -315,27 +315,115 @@ export const AnalysisPage = () => {
     showToast('✅ JSON скачан', 'success');
   };
 
-  // Скачать отчёт (текстовый файл с кратким содержанием и ключевыми моментами)
+  // Скачать отчёт (текстовый файл со всей информацией)
   const handleDownloadReport = () => {
     const lines: string[] = [];
-    lines.push(`Отчёт: ${transcript.title}`);
-    lines.push('='.repeat(50));
+
+    const separator = '='.repeat(60);
+    const subSep = '-'.repeat(40);
+
+    // --- Шапка ---
+    lines.push(separator);
+    lines.push(`  ОТЧЁТ: ${transcript.title}`);
+    lines.push(separator);
     lines.push('');
+    lines.push(`  Дата создания:    ${new Date(transcript.created_at).toLocaleString('ru-RU')}`);
+    lines.push(`  Тип совещания:    ${transcript.meeting_type}`);
+    lines.push(`  Длительность:     ${(() => {
+      const secs = transcript.duration ? transcript.duration * 60 : (segments[segments.length - 1]?.stop || 0);
+      const m = Math.floor(secs / 60);
+      const s = Math.floor(secs % 60);
+      return `${m} мин ${s} сек`;
+    })()}`);
+    lines.push(`  Кол-во спикеров:  ${new Set(segments.map(s => s.Speaker)).size}`);
+    lines.push('');
+
+    // --- Статистика спикеров ---
+    const speakerTimes: Record<string, number> = {};
+    segments.forEach(seg => {
+      const speaker = seg.Speaker || 'UNKNOWN';
+      speakerTimes[speaker] = (speakerTimes[speaker] || 0) + (seg.stop - seg.start);
+    });
+    const totalTime = Object.values(speakerTimes).reduce((a, b) => a + b, 0);
+    const sortedSpeakers = Object.entries(speakerTimes).sort((a, b) => b[1] - a[1]);
+
+    lines.push('--- Спикеры ---');
+    lines.push(subSep);
+    sortedSpeakers.forEach(([speaker, time]) => {
+      const pct = totalTime > 0 ? ((time / totalTime) * 100).toFixed(1) : '0.0';
+      const m = Math.floor(time / 60);
+      const s = Math.floor(time % 60);
+      lines.push(`  ${speaker.padEnd(20)} ${m} мин ${s.toString().padStart(2, '0')} сек  (${pct}%)`);
+    });
+    lines.push('');
+
+    // --- Краткое содержание ---
     if (transcript.summary) {
-      lines.push('Краткое содержание:');
-      lines.push('-'.repeat(30));
-      lines.push(transcript.summary);
+      lines.push('--- Краткое содержание ---');
+      lines.push(subSep);
+      // Разбиваем summary на строки по 100 символов для читаемости
+      const words = transcript.summary.split(' ');
+      let line = '';
+      words.forEach(word => {
+        if ((line + ' ' + word).length > 100) {
+          lines.push(`  ${line.trim()}`);
+          line = word;
+        } else {
+          line += (line ? ' ' : '') + word;
+        }
+      });
+      if (line) lines.push(`  ${line.trim()}`);
       lines.push('');
     }
+
+    // --- Ключевые моменты ---
     if (transcript.key_points && transcript.key_points.length > 0) {
-      lines.push('Ключевые моменты:');
-      lines.push('-'.repeat(30));
+      lines.push('--- Ключевые моменты ---');
+      lines.push(subSep);
       transcript.key_points.forEach((point, i) => {
-        lines.push(`${i + 1}. ${point}`);
+        lines.push(`  ${i + 1}. ${point}`);
       });
       lines.push('');
     }
-    lines.push('Дата создания: ' + new Date().toLocaleString('ru-RU'));
+
+    // --- Аннотации ---
+    if (annotations.length > 0) {
+      lines.push('--- Аннотации ---');
+      lines.push(subSep);
+      annotations.forEach((ann, i) => {
+        const part = transcript.parts?.find(p => p.id === ann.part_id);
+        const speaker = part ? part.text.split(':')[0] || '' : '';
+        const fullText = part?.text || '';
+        const textWithoutSpeaker = fullText.includes(':')
+          ? fullText.split(':').slice(1).join(':').trim()
+          : fullText;
+        const highlighted = textWithoutSpeaker.slice(ann.start_char, ann.end_char) || '';
+        lines.push(`  [${i + 1}] ${speaker}: "${highlighted}"`);
+        const colorNames: Record<string, string> = {
+          yellow: 'Жёлтый', green: 'Зелёный', blue: 'Синий', pink: 'Розовый', purple: 'Фиолетовый',
+        };
+        lines.push(`       Цвет: ${colorNames[ann.color || 'yellow'] || ann.color}`);
+        if (ann.note) lines.push(`       Заметка: ${ann.note}`);
+        lines.push('');
+      });
+    }
+
+    // --- Полная транскрипция ---
+    lines.push('--- Полная транскрипция ---');
+    lines.push(subSep);
+    lines.push('');
+    segments.forEach(seg => {
+      const startM = Math.floor(seg.start / 60);
+      const startS = Math.floor(seg.start % 60);
+      const timestamp = `${startM.toString().padStart(2, '0')}:${startS.toString().padStart(2, '0')}`;
+      lines.push(`  [${timestamp}] ${seg.Speaker}: ${seg.Text}`);
+    });
+    lines.push('');
+
+    // --- Футер ---
+    lines.push(separator);
+    lines.push(`  Отчёт сгенерирован ${new Date().toLocaleString('ru-RU')}`);
+    lines.push(separator);
 
     const text = lines.join('\n');
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });

@@ -194,7 +194,7 @@ const getTailwindColorHex = (colorName: string): string => {
     'blue-500': '#3B82F6',
     'green-500': '#10B981',
     'orange-500': '#F97316',
-    'blue-500': '#A855F7',
+    'purple-500': '#A855F7',
     'pink-500': '#EC4899',
     'indigo-500': '#6366F1',
     'red-500': '#EF4444',
@@ -202,11 +202,12 @@ const getTailwindColorHex = (colorName: string): string => {
     'teal-500': '#14B8A6',
     'cyan-500': '#06B6D4',
     'rose-500': '#F43F5E',
-    'blue-500': '#8B5CF6',
+    'violet-500': '#8B5CF6',
     'lime-500': '#84CC16',
     'amber-500': '#F59E0B',
     'emerald-500': '#10B981',
     'sky-500': '#0EA5E9',
+    'fuchsia-500': '#D946EF',
   };
   return colorMap[colorName] || '#3B82F6';
 };

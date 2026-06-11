@@ -510,7 +510,7 @@ def _identify_speakers_by_embedding(
             continue
 
         # Ищем в Qdrant
-        result = search_speaker(embedding=embedding, threshold=0.6)
+        result = search_speaker(embedding=embedding, threshold=0.5)
         if result:
             user_id, full_name, score = result
             label_to_name[speaker_label] = {"name": full_name, "user_id": user_id}

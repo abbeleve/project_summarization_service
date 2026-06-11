@@ -67,6 +67,16 @@ export const HomePage = () => {
     }
   });
 
+  // Множество ID транскрипций, которые пользователь уже открыл
+  const [viewedIds, setViewedIds] = useState<Set<string>>(() => {
+    try {
+      const raw = sessionStorage.getItem('viewedTranscriptIds');
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
   const { transcripts, isLoading, error, refetch } = useTranscripts({
     limit: RECENT_LIMIT,
     offset: 0,
@@ -90,8 +100,16 @@ export const HomePage = () => {
     const tid = latest.result!.transcript_id;
 
     if (tid !== freshTranscriptId) {
+      // Новая транскрипция — убираем её из просмотренных, чтобы показать бадж
       setFreshTranscriptId(tid);
       sessionStorage.setItem('freshTranscriptId', tid);
+      setViewedIds(prev => {
+        if (!prev.has(tid)) return prev;
+        const next = new Set(prev);
+        next.delete(tid);
+        sessionStorage.setItem('viewedTranscriptIds', JSON.stringify([...next]));
+        return next;
+      });
       refetch(); // перезапрашиваем список транскрипций
     }
   }, [completedWithResult, refetch]);
@@ -234,11 +252,21 @@ export const HomePage = () => {
 
           {/* Тайлы транскрипций */}
           {items.slice(0, regularLimit).map((tr) => {
-            const isFresh = tr.transcript_id === freshTranscriptId;
+            const isFresh = tr.transcript_id === freshTranscriptId && !viewedIds.has(tr.transcript_id);
             return (
               <button
                 key={tr.transcript_id}
-                onClick={() => navigate(`/analysis/${tr.transcript_id}`)}
+                onClick={() => {
+                  // Помечаем транскрипцию как просмотренную (убираем бадж "Только что")
+                  setViewedIds(prev => {
+                    if (prev.has(tr.transcript_id)) return prev;
+                    const next = new Set(prev);
+                    next.add(tr.transcript_id);
+                    sessionStorage.setItem('viewedTranscriptIds', JSON.stringify([...next]));
+                    return next;
+                  });
+                  navigate(`/analysis/${tr.transcript_id}`);
+                }}
                 className={`group relative rounded-2xl border-2 p-6 text-left hover:shadow-xl hover:-translate-y-1 transition-all duration-300 w-full flex flex-col min-h-[200px] ${
                   isFresh
                     ? 'bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-green-400 dark:border-green-600 shadow-lg shadow-green-200/50 dark:shadow-green-900/30'
