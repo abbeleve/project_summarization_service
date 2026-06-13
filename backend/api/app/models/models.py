@@ -70,3 +70,19 @@ class MeetingBotWebhookPayload(BaseModel):
     timestamp: str
     metadata: Optional[Dict[str, Any]] = None
     blobUrl: Optional[str] = None
+
+
+class AdminCreateUserRequest(BaseModel):
+    """Запрос на создание пользователя администратором."""
+    username: str = Field(..., min_length=3, description="Логин пользователя")
+    password: str = Field(..., min_length=6, description="Пароль пользователя")
+    surname: str = Field(..., description="Фамилия")
+    name: str = Field(..., description="Имя")
+    patronymic: Optional[str] = Field(None, description="Отчество")
+    email: str = Field(..., description="Email")
+    role: str = Field("user", description="Роль: user или admin")
+
+
+class AdminUpdateRoleRequest(BaseModel):
+    """Запрос на обновление роли пользователя."""
+    role: str = Field(..., pattern="^(user|admin)$", description="Новая роль")

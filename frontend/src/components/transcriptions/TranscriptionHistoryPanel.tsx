@@ -620,6 +620,16 @@ export const TranscriptionHistoryPanel = () => {
                 <span className="text-lg">⚙️</span>
                 <span>Настройки</span>
               </NavLink>
+              {user?.role === 'admin' && (
+                <NavLink
+                  to="/admin"
+                  onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                >
+                  <span className="text-lg">🛡️</span>
+                  <span>Админ панель</span>
+                </NavLink>
+              )}
               <div className="border-t border-gray-100 dark:border-dark-base-700 my-1" />
               <button
                 onClick={() => { setProfileOpen(false); handleLogout(); }}

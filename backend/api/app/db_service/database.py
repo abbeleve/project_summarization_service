@@ -31,6 +31,12 @@ class Staff(Base):
     email: Mapped[str] = mapped_column(String(70), unique=True)
     login: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
     password: Mapped[str] = mapped_column(String(100), nullable=False)
+    role: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="user",
+        comment="Роль пользователя: user или admin"
+    )
     avatar_key: Mapped[Optional[str]] = mapped_column(
         String(255),
         nullable=True,
@@ -60,6 +66,7 @@ class Staff(Base):
             'patronymic': self.patronymic,
             'email': self.email,
             'login': self.login,
+            'role': self.role,
             'avatar_key': self.avatar_key
         }
 
@@ -561,7 +568,8 @@ class DataBaseManager:
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
     def insert_staff(self, surname: str, name: str, patronymic: Optional[str],
-                     email: str, login: str, password: str) -> Optional[UUID]:
+                     email: str, login: str, password: str,
+                     role: str = "user") -> Optional[UUID]:
         with self.session_scope() as session:
             try:
                 hashed_password = self.hash_password(password)
@@ -571,7 +579,8 @@ class DataBaseManager:
                     patronymic=patronymic,
                     email=email,
                     login=login,
-                    password=hashed_password
+                    password=hashed_password,
+                    role=role
                 )
                 session.add(staff)
                 session.flush()
