@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, R
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware import Middleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 import time
 import os
@@ -20,7 +20,8 @@ from alembic import command
 
 from .models.models import (
     User, Token, TokenData, LoginRequest, TokenResponse, RegisterRequest,
-    JoinMeetingRequest, ScheduleMeetingRequest, MeetingBotWebhookPayload
+    JoinMeetingRequest, ScheduleMeetingRequest, MeetingBotWebhookPayload,
+    AdminCreateUserRequest, AdminUpdateRoleRequest
 )
 from .db_service.gen_fake_data import gen_fake_data
 from .db_service.database import DataBaseManager
@@ -101,14 +102,13 @@ async def get_current_active_user(current_user: Dict = Depends(get_current_user)
     return current_user
 
 def require_admin(current_user: Dict = Depends(get_current_user)):
-    # TODO: добавить проверку роли когда она будет в БД
+    """Проверка, что пользователь является администратором."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin privileges required."
+        )
     return current_user
-
-# Зависимость для админа (если понадобится)
-def require_admin(request: Request):
-    user = get_current_user(request)
-    # Здесь можно добавить проверку роли
-    return user
 
 # Эндпоинты аутентификации
 @app.post("/auth/login", response_model=TokenResponse)
@@ -136,21 +136,24 @@ async def login(
             )
         
         full_name = f"{user_data['surname']} {user_data['name']}"
-        
+        user_role = user_data.get('role', 'user')
+
         # Создаем access token
         access_token = jwt_service.create_access_token(
             data={
                 "sub": login_data.username,
                 "user_id": str(employee_id),
-                "full_name": full_name
+                "full_name": full_name,
+                "role": user_role
             }
         )
-        
+
         # Создаем refresh token (опционально)
         refresh_token = jwt_service.create_refresh_token(
             data={
                 "sub": login_data.username,
-                "user_id": str(employee_id)
+                "user_id": str(employee_id),
+                "role": user_role
             }
         )
         
@@ -214,7 +217,8 @@ async def register(
             data={
                 "sub": register_data.username,
                 "user_id": str(employee_id),
-                "full_name": f"{register_data.surname} {register_data.name}"
+                "full_name": f"{register_data.surname} {register_data.name}",
+                "role": "user"
             }
         )
 
@@ -222,7 +226,8 @@ async def register(
         refresh_token = jwt_service.create_refresh_token(
             data={
                 "sub": register_data.username,
-                "user_id": str(employee_id)
+                "user_id": str(employee_id),
+                "role": "user"
             }
         )
 
@@ -270,7 +275,8 @@ async def refresh_token(
             data={
                 "sub": payload.get("sub"),
                 "user_id": payload.get("user_id"),
-                "full_name": payload.get("full_name", "")
+                "full_name": payload.get("full_name", ""),
+                "role": payload.get("role", "user")
             }
         )
         
@@ -1286,24 +1292,289 @@ async def delete_annotation(
 
 @app.get("/admin/users")
 async def get_all_users(
-    current_user: Dict = Depends(get_current_user),
+    _admin: Dict = Depends(require_admin),
     db: DataBaseManager = Depends(get_db)
 ):
+    """Получить список всех пользователей (только для админа)"""
     try:
         users = db.select_staff()
         return [
             {
-                "user_id": user[0],
-                "surname": user[1],
-                "name": user[2],
-                "patronymic": user[3],
-                "email": user[4],
-                "login": user[5]
+                "user_id": user["id"],
+                "username": user["login"],
+                "surname": user["surname"],
+                "name": user["name"],
+                "patronymic": user.get("patronymic", ""),
+                "email": user["email"],
+                "login": user["login"],
+                "role": user.get("role", "user"),
+                "full_name": f"{user['surname']} {user['name']}".strip()
             }
             for user in users
         ]
     except Exception as e:
+        logger.error(f"Error fetching users: {str(e)}")
         raise HTTPException(500, f"Error fetching users: {str(e)}")
+
+
+@app.post("/admin/users")
+async def admin_create_user(
+    user_data: AdminCreateUserRequest,
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Создать пользователя (только для админа)"""
+    try:
+        existing_users = db.select_staff()
+        if any(u['login'] == user_data.username for u in existing_users):
+            raise HTTPException(400, "Пользователь с таким логином уже существует")
+        if any(u['email'] == user_data.email for u in existing_users):
+            raise HTTPException(400, "Пользователь с таким email уже существует")
+
+        employee_id = db.insert_staff(
+            surname=user_data.surname,
+            name=user_data.name,
+            patronymic=user_data.patronymic,
+            email=user_data.email,
+            login=user_data.username,
+            password=user_data.password,
+            role=user_data.role
+        )
+
+        if not employee_id:
+            raise HTTPException(500, "Ошибка при создании пользователя")
+
+        return {
+            "status": "success",
+            "message": "Пользователь создан",
+            "user_id": str(employee_id)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating user: {str(e)}")
+        raise HTTPException(500, f"Ошибка при создании пользователя: {str(e)}")
+
+
+@app.delete("/admin/users/{user_id}")
+async def admin_delete_user(
+    user_id: str,
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Удалить пользователя (только для админа)"""
+    try:
+        from uuid import UUID
+        try:
+            user_uuid = UUID(user_id)
+        except ValueError:
+            raise HTTPException(400, "Некорректный формат ID пользователя")
+
+        user_data = db.select_staff_by_id(user_uuid)
+        if not user_data:
+            raise HTTPException(404, "Пользователь не найден")
+
+        success = db.delete_staff(user_uuid)
+        if not success:
+            raise HTTPException(500, "Ошибка при удалении пользователя")
+
+        return {"status": "success", "message": "Пользователь удалён"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting user: {str(e)}")
+        raise HTTPException(500, f"Ошибка при удалении пользователя: {str(e)}")
+
+
+@app.patch("/admin/users/{user_id}/role")
+async def admin_update_user_role(
+    user_id: str,
+    role_data: AdminUpdateRoleRequest,
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Изменить роль пользователя (только для админа)"""
+    try:
+        from uuid import UUID
+        try:
+            user_uuid = UUID(user_id)
+        except ValueError:
+            raise HTTPException(400, "Некорректный формат ID пользователя")
+
+        user_data = db.select_staff_by_id(user_uuid)
+        if not user_data:
+            raise HTTPException(404, "Пользователь не найден")
+
+        success = db.update_staff(user_uuid, role=role_data.role)
+        if not success:
+            raise HTTPException(500, "Ошибка при обновлении роли")
+
+        return {"status": "success", "message": "Роль обновлена"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating user role: {str(e)}")
+        raise HTTPException(500, f"Ошибка при обновлении роли: {str(e)}")
+
+
+@app.get("/admin/stats")
+async def admin_get_stats(
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Получить статистику (только для админа)"""
+    try:
+        users = db.select_staff()
+        transcripts = db.select_transcripts()
+
+        total_duration = 0.0
+        for t in transcripts:
+            parts = db.select_parts_transcription_by_transcript_id(UUID(t['id']))
+            if parts:
+                min_start = min(p.get("start_time", 0) for p in parts)
+                max_end = max(p.get("end_time", 0) for p in parts)
+                total_duration += (max_end - min_start) / 1000.0
+
+        return {
+            "total_users": len(users),
+            "total_transcripts": len(transcripts),
+            "total_duration": round(total_duration, 2)
+        }
+    except Exception as e:
+        logger.error(f"Error fetching stats: {str(e)}")
+        raise HTTPException(500, f"Ошибка получения статистики: {str(e)}")
+
+
+@app.get("/admin/users/{user_id}/transcripts")
+async def admin_get_user_transcripts(
+    user_id: str,
+    limit: int = 10,
+    offset: int = 0,
+    search: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Получить транскрипции конкретного пользователя (только для админа)"""
+    try:
+        from uuid import UUID
+        from datetime import datetime
+
+        try:
+            user_uuid = UUID(user_id)
+        except ValueError:
+            raise HTTPException(400, "Некорректный формат ID пользователя")
+
+        user_data = db.select_staff_by_id(user_uuid)
+        if not user_data:
+            raise HTTPException(404, "Пользователь не найден")
+
+        # Парсим даты фильтрации если переданы
+        parsed_start_date = None
+        parsed_end_date = None
+        try:
+            if start_date:
+                parsed_start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            if end_date:
+                parsed_end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+
+        # Используем существующий метод получения транскрипций сотрудника
+        all_transcripts = db.select_transcripts_for_employee(
+            user_uuid,
+            start_date=parsed_start_date,
+            end_date=parsed_end_date
+        )
+
+        # Фильтр по поиску на стороне Python
+        if search:
+            search_lower = search.lower()
+            all_transcripts = [
+                t for t in all_transcripts
+                if (t.get('title') or '').lower().find(search_lower) != -1
+            ]
+
+        total = len(all_transcripts)
+        rows = all_transcripts[offset : offset + limit]
+
+        transcripts_list = []
+        for transcript_data in rows:
+            transcript_uuid = UUID(transcript_data['id'])
+            parts = db.select_parts_transcription_by_transcript_id(transcript_uuid)
+            summary_data = db.select_summaries_by_transcript_id(transcript_uuid)
+
+            speakers = set()
+            duration = 0
+            if parts:
+                for part in parts:
+                    text_part = part.get("text", "")
+                    if ":" in text_part:
+                        speaker = text_part.split(":")[0].strip()
+                        speakers.add(speaker)
+                min_start = min(p.get("start_time", 0) for p in parts)
+                max_end = max(p.get("end_time", 0) for p in parts)
+                duration = (max_end - min_start) / 1000.0 / 60.0
+
+            transcripts_list.append({
+                "transcript_id": str(transcript_uuid),
+                "title": transcript_data.get('title') or f'Запись от {str(transcript_uuid)[:8]}',
+                "original_text": transcript_data.get('text', ''),
+                "created_at": transcript_data.get('created_at'),
+                "summary": summary_data.get('text') if summary_data else None,
+                "speakers": list(speakers),
+                "duration": round(duration, 2),
+                "parts_count": len(parts) if parts else 0
+            })
+
+        return {
+            "items": transcripts_list,
+            "total": total,
+            "user": {
+                "user_id": user_id,
+                "full_name": f"{user_data['surname']} {user_data['name']}".strip(),
+                "login": user_data['login'],
+                "email": user_data['email']
+            },
+            "limit": limit,
+            "offset": offset
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching user transcripts: {str(e)}")
+        raise HTTPException(500, f"Ошибка получения транскрипций: {str(e)}")
+
+
+@app.delete("/admin/transcripts/{transcript_id}")
+async def admin_delete_transcript(
+    transcript_id: str,
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Жёстко удалить транскрипцию (только для админа)"""
+    try:
+        from uuid import UUID
+        try:
+            transcript_uuid = UUID(transcript_id)
+        except ValueError:
+            raise HTTPException(400, "Некорректный формат ID транскрипции")
+
+        transcript_data = db.select_transcripts_by_id(transcript_uuid)
+        if not transcript_data:
+            raise HTTPException(404, "Транскрипция не найдена")
+
+        success = db.delete_transcripts(transcript_uuid)
+        if not success:
+            raise HTTPException(500, "Ошибка при удалении транскрипции")
+
+        return {"status": "success", "message": "Транскрипция удалена"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting transcript: {str(e)}")
+        raise HTTPException(500, f"Ошибка при удалении транскрипции: {str(e)}")
 
 
 # ============================================================================
