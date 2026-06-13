@@ -215,7 +215,7 @@ def process_recording_callback(
         from app.tasks.transcribe import transcribe_and_summarize_task
 
         ml_options = {
-            "transcribe_model": meeting.get("transcribe_model") or "v3_ctc",
+            "transcribe_model": meeting.get("transcribe_model") or "v3_e2e_rnnt",
             "diarization_model": meeting.get("diarization_model") or "pyannote/speaker-diarization-community-1",
             "diarize_lib": meeting.get("diarize_lib") or "pyannote",
             "transcribe_lib": meeting.get("transcribe_lib") or "gigaam",

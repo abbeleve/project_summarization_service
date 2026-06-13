@@ -526,7 +526,7 @@ async def process_audio(
 
         # Подготовка опций для задачи
         options = {
-            "transcribe_model": transcribe_model or "v3_ctc",
+            "transcribe_model": transcribe_model or "v3_e2e_rnnt",
             "diarization_model": diarization_model or "pyannote/speaker-diarization-community-1",
             "diarize_lib": diarize_lib or "pyannote",
             "transcribe_lib": transcribe_lib or "gigaam",

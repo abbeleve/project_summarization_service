@@ -11,7 +11,7 @@ from datetime import datetime
 class TranscribeRequest(BaseModel):
     """Запрос на транскрибацию."""
     transcribe_lib: str = Field(default="gigaam", description="Библиотека транскрибации")
-    transcribe_model: str = Field(default="v3_ctc", description="Модель транскрибации")
+    transcribe_model: str = Field(default="v3_e2e_rnnt", description="Модель транскрибации")
     diarize_lib: str = Field(default="pyannote", description="Библиотека диаризации")
     diarization_model: str = Field(
         default="pyannote/speaker-diarization-community-1",

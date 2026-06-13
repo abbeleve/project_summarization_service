@@ -73,7 +73,7 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
         # Передаём URL в audio-ml — он сам скачает файл из MinIO
         data = {
             "file_url": file_url,
-            "transcribe_model": options.get("transcribe_model", "v3_ctc"),
+            "transcribe_model": options.get("transcribe_model", "v3_e2e_rnnt"),
             "diarization_model": options.get("diarization_model", "pyannote/speaker-diarization-community-1"),
             "diarize_lib": options.get("diarize_lib", "pyannote"),
             "transcribe_lib": options.get("transcribe_lib", "gigaam"),

@@ -37,7 +37,7 @@ class TokenResponse(Token):
 
 class MeetingModelSettings(BaseModel):
     """Настройки моделей для ML пайплайна."""
-    transcribe_model: Optional[str] = Field("v3_ctc", description="Модель транскрибации")
+    transcribe_model: Optional[str] = Field("v3_e2e_rnnt", description="Модель транскрибации")
     diarization_model: Optional[str] = Field("pyannote/speaker-diarization-community-1", description="Модель диаризации")
     diarize_lib: Optional[str] = Field("pyannote", description="Библиотека диаризации")
     transcribe_lib: Optional[str] = Field("gigaam", description="Библиотека транскрибации")

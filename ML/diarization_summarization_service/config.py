@@ -23,6 +23,14 @@ class Settings(BaseSettings):
         default="/app/models/whisper",
         description="Путь к модели Whisper"
     )
+    gigaam_model_path: str = Field(
+        default="/app/models/gigaam_v3_e2e_rnnt",
+        description="Путь к ONNX-модели GigaAM (v3_e2e_rnnt)"
+    )
+    gigaam_ctc_model_path: str = Field(
+        default="/app/models/gigaam_v3_e2e_ctc",
+        description="Путь к ONNX-модели GigaAM (v3_e2e_ctc)"
+    )
     
     # ===== LLM Настройки =====
     openai_api_key: str = Field(

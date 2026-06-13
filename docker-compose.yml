@@ -124,13 +124,6 @@ services:
     restart: on-failure
     volumes:
       - ./backend/api:/app
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
   celery-worker-meetings:
     build: ./backend/api
@@ -341,7 +334,7 @@ services:
   audio-ml:
     build:
       context: ./ML/diarization_summarization_service
-    mem_limit: 6g
+    mem_limit: 16g
     ports:
       - "8053:8053"
     volumes:
@@ -353,6 +346,8 @@ services:
       - ./ML/diarization_summarization_service/services:/app/services
       - ./ML/diarization_summarization_service/prompts:/app/prompts
       - ./ML/diarization_summarization_service/models/pyannote:/app/models/pyannote
+      - ./ML/diarization_summarization_service/models/gigaam_v3_e2e_rnnt:/app/models/gigaam_v3_e2e_rnnt
+      - ./ML/diarization_summarization_service/models/gigaam_v3_e2e_ctc:/app/models/gigaam_v3_e2e_ctc
     environment:
       - PYTHONUNBUFFERED=1
       - HF_API_KEY=${HF_API_KEY}

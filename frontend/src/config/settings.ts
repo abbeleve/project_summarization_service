@@ -6,10 +6,8 @@ export const SUPPORTED_FORMATS = ['wav', 'mp3', 'm4a', 'flac', 'ogg', 'mp4'];
 
 export const TRANSCRIBE_CONFIG: Record<string, string[]> = {
   gigaam: [
-    'v3_ctc',
-    'v3_rnnt',
-    'v3_e2e_ctc',
-    'v3_ssl'
+    'v3_e2e_rnnt',
+    'v3_e2e_ctc'
   ],
   whisper: [
     'large-v3'
@@ -97,7 +95,7 @@ export const MEETING_TYPES = [
 export type MeetingType = typeof MEETING_TYPES[number];
 
 export const DEFAULT_SETTINGS: ProcessingSettings = {
-  transcribeModel: 'v3_ctc',
+  transcribeModel: 'v3_e2e_rnnt',
   diarizationModel: 'pyannote/speaker-diarization-community-1',
   diarizeLib: 'pyannote',
   transcribeLib: 'gigaam',

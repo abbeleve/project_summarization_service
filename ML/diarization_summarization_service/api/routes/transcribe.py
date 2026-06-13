@@ -55,7 +55,7 @@ def _extract_audio_with_ffmpeg(input_path: Path, output_path: Path, sample_rate:
 async def transcribe(
     file: Optional[UploadFile] = File(None, description="Аудиофайл для транскрибации"),
     file_url: Optional[str] = Form(None, description="URL аудиофайла в MinIO (альтернатива file)"),
-    transcribe_model: str = Form("v3_ctc", description="Модель транскрибации"),
+    transcribe_model: str = Form("v3_e2e_rnnt", description="Модель транскрибации"),
     diarization_model: str = Form(
         "pyannote/speaker-diarization-community-1",
         description="Модель диаризации"

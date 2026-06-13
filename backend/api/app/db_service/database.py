@@ -377,7 +377,7 @@ class ScheduledMeeting(Base):
     transcribe_model: Mapped[Optional[str]] = mapped_column(
         String(50),
         nullable=True,
-        default="v3_ctc"
+        default="v3_e2e_rnnt"
     )
     diarization_model: Mapped[Optional[str]] = mapped_column(
         String(100),
@@ -1285,7 +1285,7 @@ class DataBaseManager:
         scheduled_at: datetime,
         title: Optional[str] = None,
         bot_name: Optional[str] = "Meeting Notetaker",
-        transcribe_model: Optional[str] = "v3_ctc",
+        transcribe_model: Optional[str] = "v3_e2e_rnnt",
         diarization_model: Optional[str] = "pyannote/speaker-diarization-community-1",
         diarize_lib: Optional[str] = "pyannote",
         transcribe_lib: Optional[str] = "gigaam",
