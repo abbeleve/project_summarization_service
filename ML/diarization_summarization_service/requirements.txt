@@ -23,11 +23,7 @@ tqdm>=4.65.0
 PyYAML>=6.0
 numpy>=1.24.0
 
-# ===== GigaAM v3_e2e_rnnt (ONNX Runtime) =====
-onnxruntime-gpu>=1.18.0
+# ===== GigaAM v3_e2e_rnnt (HTTP-клиент к микросервису) =====
+# ONNX Runtime запускается в отдельном контейнере (onnx-gigaam)
 sentencepiece>=0.2.0
 librosa>=0.10.0
-
-# ===== Совместимость cuDNN с PyTorch =====
-# PyTorch 2.12.0 собран под cuDNN 9.20.0 — система из CUDA-образа даёт 9.8.0
-nvidia-cudnn-cu13>=9.20.0

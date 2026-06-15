@@ -3,13 +3,15 @@
 
 Поддерживает два типа моделей:
   - Официальные модели GigaAM (v3_ctc и др.) через библиотеку gigaam
-  - ONNX-модели (v3_e2e_rnnt, v3_e2e_ctc) через gigaam.onnx_utils (load_onnx / infer_onnx)
+  - ONNX-модели (v3_e2e_rnnt, v3_e2e_ctc) через HTTP-клиент к отдельному микросервису
+    (onnx-gigaam), чтобы изолировать CUDA-контекст ONNX Runtime от PyTorch (pyannote).
 """
+import json
 import logging
+from pathlib import Path
 from typing import Dict, List, Optional
 
-import numpy as np
-import librosa
+import requests
 import torch
 import torchaudio
 from tqdm import tqdm
@@ -20,66 +22,103 @@ from core.diarization.base import DiarizationSegment
 
 logger = logging.getLogger(__name__)
 
-RNNT_MAX_SAMPLES = 3_000_000
-RNNT_OVERLAP = 16_000
 
-
-class GigaamRnntOnnxModel:
+class GigaamOnnxHttpClient:
     """
-    Inference-обёртка для GigaAM v3_e2e_rnnt через ONNX Runtime.
+    HTTP-клиент для GigaAM ONNX микросервиса.
 
-    Использует gigaam.onnx_utils.load_onnx / infer_onnx.
+    Отправляет аудиофайл + сегменты на onnx-gigaam:8056/transcribe,
+    получает сегменты с заполненным текстом.
     """
 
-    def __init__(self, model_dir: str, model_version: str = "v3_e2e_rnnt", device: str = "cuda"):
-        from gigaam.onnx_utils import load_onnx
+    def __init__(self, service_url: str = None, timeout: int = None):
+        self.service_url = service_url or settings.gigaam_onnx_service_url
+        self.timeout = timeout or settings.gigaam_onnx_timeout_sec
 
-        provider = "CUDAExecutionProvider" if device == "cuda" else "CPUExecutionProvider"
-        logger.info(f"Загрузка ONNX модели {model_version} из {model_dir} (provider={provider})")
+    def transcribe(
+        self,
+        segments: List[DiarizationSegment],
+        audio_path: str,
+    ) -> List[DiarizationSegment]:
+        """
+        Транскрибация сегментов через GigaAM ONNX микросервис.
 
-        self._sessions, self._model_cfg = load_onnx(model_dir, model_version, provider=provider)
+        Args:
+            segments: Список сегментов диаризации
+            audio_path: Путь к аудиофайлу
 
-        logger.info("ONNX сессии загружены")
+        Returns:
+            Список сегментов с заполненным текстом
+        """
+        try:
+            logger.info(
+                f"Отправка {len(segments)} сегментов в GigaAM ONNX сервис: "
+                f"{self.service_url}"
+            )
 
-    def transcribe(self, audio: np.ndarray) -> str:
-        """Транскрибация одного аудио-массива (16kHz, моно)."""
-        from gigaam.onnx_utils import infer_onnx
+            with open(audio_path, "rb") as f:
+                files = {"audio": (audio_path, f, "audio/wav")}
+                data = {
+                    "request": json.dumps(
+                        {"diarization_results": [seg.to_dict() for seg in segments]}
+                    )
+                }
 
-        result = infer_onnx([audio], self._model_cfg, self._sessions,
-                            batch_size=1, progress=False)
-        return result[0]
+                response = requests.post(
+                    self.service_url,
+                    files=files,
+                    data=data,
+                    timeout=self.timeout,
+                )
 
-    def _infer_batch(self, chunks: list[np.ndarray]) -> list[str]:
-        """Пакетная транскрибация нескольких numpy-массивов."""
-        from gigaam.onnx_utils import infer_onnx
+            if response.status_code != 200:
+                logger.error(
+                    f"GigaAM ONNX service error: "
+                    f"{response.status_code} - {response.text}"
+                )
+                raise RuntimeError(
+                    f"GigaAM ONNX service error: "
+                    f"{response.status_code} - {response.text}"
+                )
 
-        return infer_onnx(chunks, self._model_cfg, self._sessions,
-                          batch_size=len(chunks), progress=False)
+            transcribed_segments = response.json()
+            logger.info(
+                f"Получено сегментов от GigaAM ONNX сервиса: "
+                f"{len(transcribed_segments)}"
+            )
 
-    def transcribe_chunked(self, audio_path: str) -> str:
-        from gigaam.onnx_utils import infer_onnx
+            for i, segment in enumerate(segments):
+                if i < len(transcribed_segments):
+                    segment.text = transcribed_segments[i].get("Text", "")
 
-        waveform, _ = librosa.load(audio_path, sr=16000, mono=True)
+            logger.info(
+                f"Транскрибация через GigaAM ONNX сервис завершена: "
+                f"{len(segments)} сегментов"
+            )
+            return segments
 
-        chunks = []
-        start = 0
-        while start < len(waveform):
-            end = min(start + RNNT_MAX_SAMPLES, len(waveform))
-            chunks.append(waveform[start:end])
-            if end == len(waveform):
-                break
-            start += RNNT_MAX_SAMPLES - RNNT_OVERLAP
+        except requests.Timeout:
+            logger.error(
+                f"Таймаут запроса к GigaAM ONNX сервису ({self.timeout} сек)"
+            )
+            raise RuntimeError(
+                f"GigaAM ONNX service timeout after {self.timeout} seconds"
+            )
+        except requests.ConnectionError as e:
+            logger.error(
+                f"Ошибка подключения к GigaAM ONNX сервису "
+                f"({self.service_url}): {e}"
+            )
+            raise RuntimeError(
+                f"Failed to connect to GigaAM ONNX service "
+                f"at {self.service_url}: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка транскрибации GigaAM ONNX: {e}")
+            import traceback
 
-        logger.info(
-            f"Аудио разделено на {len(chunks)} чанк(ов) "
-            f"(max {RNNT_MAX_SAMPLES / 16000:.1f}с, overlap {RNNT_OVERLAP / 16000:.1f}с)"
-        )
-
-        # Передаём numpy-массивы напрямую — AudioDataset не будет вызывать torchaudio.load
-        results = infer_onnx(chunks, self._model_cfg, self._sessions,
-                            batch_size=len(chunks), progress=False)
-
-        return " ".join(results).strip()
+            traceback.print_exc()
+            raise RuntimeError(f"GigaAM ONNX transcription failed: {str(e)}") from e
 
 
 class GigaamTranscription(TranscriptionBase):
@@ -88,7 +127,7 @@ class GigaamTranscription(TranscriptionBase):
 
     Поддерживает:
       - Стандартные модели GigaAM (v3_ctc и др.) через библиотеку gigaam
-      - ONNX-модели (v3_e2e_rnnt) через gigaam.onnx_utils
+      - ONNX-модели (v3_e2e_rnnt, v3_e2e_ctc) через HTTP-клиент к микросервису
     """
 
     def __init__(self, sample_rate: int = None, chunk_duration: int = None):
@@ -97,33 +136,38 @@ class GigaamTranscription(TranscriptionBase):
         self._models_cache: Dict[str, any] = {}
 
     def _is_onnx_model(self, model_name: str) -> bool:
-        """Проверяет, является ли модель ONNX-моделью (поддерживает .onnx файлы)."""
+        """Проверяет, является ли модель ONNX-моделью (требует микросервис)."""
         return model_name in ("v3_e2e_rnnt", "v3_e2e_ctc")
 
     def _get_model(self, model_name: str) -> any:
         """Получение модели из кэша или загрузка новой."""
         if model_name not in self._models_cache:
             if self._is_onnx_model(model_name):
-                logger.info(f"Загрузка ONNX модели GigaAM: {model_name}")
-                # Определяем путь к модели по имени
-                if model_name == "v3_e2e_ctc":
-                    model_dir = settings.gigaam_ctc_model_path
-                else:
-                    model_dir = settings.gigaam_model_path
-                model = GigaamRnntOnnxModel(
-                    model_dir=model_dir,
-                    model_version=model_name,
-                    device="cuda",
+                logger.info(
+                    f"Создание HTTP-клиента для ONNX модели GigaAM: {model_name}"
                 )
+                model = GigaamOnnxHttpClient()
                 self._models_cache[model_name] = model
-                logger.info(f"ONNX модель {model_name} загружена из {model_dir}")
+                logger.info(
+                    f"HTTP-клиент для {model_name} создан "
+                    f"(URL: {settings.gigaam_onnx_service_url})"
+                )
             else:
-                logger.info(f"Загрузка библиотечной модели GigaAM: {model_name}")
+                logger.info(
+                    f"Загрузка библиотечной модели GigaAM: {model_name}"
+                )
                 import gigaam
-                self._models_cache[model_name] = gigaam.load_model(model_name, device="cuda")
-                logger.info(f"Модель GigaAM {model_name} загружена в память")
+
+                self._models_cache[model_name] = gigaam.load_model(
+                    model_name, device="cuda"
+                )
+                logger.info(
+                    f"Модель GigaAM {model_name} загружена в память"
+                )
         else:
-            logger.debug(f"Модель GigaAM {model_name} уже в памяти (переиспользование)")
+            logger.debug(
+                f"Модель GigaAM {model_name} уже в памяти (переиспользование)"
+            )
         return self._models_cache[model_name]
 
     def transcribe(
@@ -145,18 +189,26 @@ class GigaamTranscription(TranscriptionBase):
         """
         try:
             self.validate_audio_path(audio_path)
-            logger.info(f"Начало транскрибации с помощью GigaAM ({model_name})")
+            logger.info(
+                f"Начало транскрибации с помощью GigaAM ({model_name})"
+            )
 
-            waveform, sr = torchaudio.load(audio_path)
             model = self._get_model(model_name)
 
             if self._is_onnx_model(model_name):
-                self._transcribe_segments_onnx(model, waveform, sr, segments)
+                # ONNX модели — через HTTP к микросервису (без локального ORT)
+                model.transcribe(segments, audio_path)
             else:
+                # Библиотечные модели GigaAM — локально
+                waveform, sr = torchaudio.load(audio_path)
                 for segment in tqdm(segments, desc="Транскрибация"):
-                    segment.text = self._transcribe_segment(model, waveform, segment)
+                    segment.text = self._transcribe_segment(
+                        model, waveform, segment
+                    )
 
-            logger.info(f"Транскрибация завершена: {len(segments)} сегментов")
+            logger.info(
+                f"Транскрибация завершена: {len(segments)} сегментов"
+            )
             return segments
 
         except FileNotFoundError:
@@ -165,51 +217,9 @@ class GigaamTranscription(TranscriptionBase):
         except Exception as e:
             logger.error(f"Ошибка транскрибации: {e}")
             import traceback
+
             traceback.print_exc()
             raise RuntimeError(f"Transcription failed: {str(e)}") from e
-
-    def _transcribe_segments_onnx(
-        self,
-        model: GigaamRnntOnnxModel,
-        waveform: torch.Tensor,
-        sr: int,
-        segments: list[DiarizationSegment],
-    ):
-        """Транскрибация сегментов ONNX моделью (numpy, без torchaudio.load)."""
-        if sr != self.sample_rate:
-            resampler = torchaudio.transforms.Resample(sr, self.sample_rate)
-            waveform = resampler(waveform)
-        if waveform.shape[0] > 1:
-            waveform = torch.mean(waveform, dim=0, keepdim=True)
-
-        # Конвертируем в numpy один раз
-        audio_np = waveform[0].numpy().astype(np.float32)
-
-        for segment in tqdm(segments, desc="Транскрибация (ONNX)"):
-            start = int(segment.start * self.sample_rate)
-            end = int(segment.stop * self.sample_rate)
-
-            if end - start == 0:
-                segment.text = ""
-                continue
-
-            chunk = audio_np[start:end]
-
-            if len(chunk) > RNNT_MAX_SAMPLES:
-                # Для длинных сегментов — разбиваем на чанки вручную
-                sub_chunks = []
-                s = 0
-                while s < len(chunk):
-                    e = min(s + RNNT_MAX_SAMPLES, len(chunk))
-                    sub_chunks.append(chunk[s:e])
-                    if e == len(chunk):
-                        break
-                    s += RNNT_MAX_SAMPLES - RNNT_OVERLAP
-
-                results = model._infer_batch(sub_chunks)
-                segment.text = " ".join(results).strip()
-            else:
-                segment.text = model.transcribe(chunk)
 
     def _transcribe_segment(
         self,

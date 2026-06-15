@@ -117,6 +117,8 @@ services:
         condition: service_started
       audio-ml-whisper:
         condition: service_started
+      onnx-gigaam:
+        condition: service_started
       denoiser:
         condition: service_started
     networks:
@@ -346,8 +348,6 @@ services:
       - ./ML/diarization_summarization_service/services:/app/services
       - ./ML/diarization_summarization_service/prompts:/app/prompts
       - ./ML/diarization_summarization_service/models/pyannote:/app/models/pyannote
-      - ./ML/diarization_summarization_service/models/gigaam_v3_e2e_rnnt:/app/models/gigaam_v3_e2e_rnnt
-      - ./ML/diarization_summarization_service/models/gigaam_v3_e2e_ctc:/app/models/gigaam_v3_e2e_ctc
     environment:
       - PYTHONUNBUFFERED=1
       - HF_API_KEY=${HF_API_KEY}
@@ -356,6 +356,7 @@ services:
       - PYANNOTE_MODEL_PATH=${PYANNOTE_MODEL_PATH}
     depends_on:
       - audio-ml-whisper
+      - onnx-gigaam
     runtime: nvidia
     restart: unless-stopped
     networks:
@@ -448,6 +449,38 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
+
+  onnx-gigaam:
+    build:
+      context: ./ML/onnx_gigaam_service
+    mem_limit: 8g
+    ports:
+      - "8056:8056"
+    volumes:
+      - ./ML/onnx_gigaam_service/models/gigaam_v3_e2e_rnnt:/app/models/gigaam_v3_e2e_rnnt:ro
+      - ./ML/onnx_gigaam_service/models/gigaam_v3_e2e_ctc:/app/models/gigaam_v3_e2e_ctc:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - GIGAAM_MODEL_DIR=/app/models/gigaam_v3_e2e_rnnt
+      - GIGAAM_MODEL_VERSION=v3_e2e_rnnt
+    runtime: nvidia
+    restart: unless-stopped
+    networks:
+      - meeting-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8056/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: uvicorn main:app --host 0.0.0.0 --port 8056
 
   denoiser:
     build:

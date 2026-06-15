@@ -15,6 +15,11 @@ result.txt
 milvus_data/
 volumes/
 backend/api/app/models/speaker_embedding/
+ML/onnx_gigaam_service/models/
+
+.qwen
+clean.wav
+clean_6x.wav
 
 # Frontend
 frontend/node_modules/

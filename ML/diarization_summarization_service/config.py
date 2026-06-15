@@ -98,6 +98,16 @@ class Settings(BaseSettings):
         description="Уровень логирования"
     )
     
+    # ===== GigaAM ONNX сервис =====
+    gigaam_onnx_service_url: str = Field(
+        default="http://onnx-gigaam:8056/transcribe",
+        description="URL сервиса транскрибации GigaAM ONNX"
+    )
+    gigaam_onnx_timeout_sec: int = Field(
+        default=1800,
+        description="Таймаут запроса к GigaAM ONNX сервису (сек) — 30 мин для длинных аудио"
+    )
+
     # ===== Whisper сервис =====
     whisper_service_url: str = Field(
         default="http://audio-ml-whisper:8054/transcribe",
