@@ -10,7 +10,6 @@ from pydantic import BaseModel
 from faster_whisper import WhisperModel
 from tqdm import tqdm
 from faster_whisper.audio import decode_audio
-import soundfile as sf
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -68,22 +67,26 @@ async def transcribe_endpoint(
     audio: UploadFile = File(...)
 ):
     global model
-    logger.info(f"Получен запрос на транскрибацию. Размер аудио: {len(await audio.read())} байт")
-    
-    # Перематываем файл обратно после чтения
-    await audio.seek(0)
-    
+
     if model is None:
         logger.error("Модель не загружена!")
         raise HTTPException(status_code=503, detail="Model not loaded yet")
-    
+
+    if audio.size:
+        logger.info(f"Получен запрос на транскрибацию. Размер аудио: {audio.size} байт")
+    else:
+        logger.info("Получен запрос на транскрибацию. Размер аудио: неизвестен")
+
+    # Стримим HTTP body в temp-файл чанками по 8MB — без загрузки всего в RAM
+    CHUNK_SIZE = 8_388_608  # 8 MB
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tmp.write(await audio.read())
         audio_path = tmp.name
+        while chunk := await audio.read(CHUNK_SIZE):
+            tmp.write(chunk)
 
     try:
-        logger.info(f"Аудио сохранено во временный файл: {audio_path}")
-        
+        logger.info(f"Аудио сохранено во временный файл: {audio_path} ({os.path.getsize(audio_path)} байт)")
+
         if not os.path.isfile(audio_path):
             logger.error(f"Файл не найден: {audio_path}")
             raise HTTPException(status_code=400, detail="Audio file not saved")
@@ -91,25 +94,36 @@ async def transcribe_endpoint(
             logger.error(f"Файл пустой: {audio_path}")
             raise HTTPException(status_code=400, detail="Audio file is empty")
 
-        logger.info("Декодирование аудио...")
-        audio_waveform = decode_audio(audio_path)
-        
         request_data = json.loads(request)
         diarization_results = request_data["diarization_results"]
         logger.info(f"Количество сегментов для транскрибации: {len(diarization_results)}")
 
+        # Транскрибация сегментов — каждый загружается отдельно через offset/duration
+        # Никогда не загружаем весь файл в RAM.
         for index, timings in tqdm(enumerate(diarization_results)):
-            start_sample = int(timings["start"] * SAMPLE_RATE)
-            stop_sample = int(timings["stop"] * SAMPLE_RATE)
-            audio_chunk = audio_waveform[start_sample:stop_sample]
+            start = timings["start"]
+            stop = timings["stop"]
+            duration = stop - start
+            if duration <= 0:
+                continue
 
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as chunk_file:
-                sf.write(chunk_file.name, audio_chunk, SAMPLE_RATE)
-                logger.debug(f"Обработка сегмента {index + 1}/{len(diarization_results)} [{timings['start']:.2f}s - {timings['stop']:.2f}s]")
-                segments, _ = model.transcribe(chunk_file.name, beam_size=5, language="ru")
-                transcribed_text = "".join(segment.text for segment in segments)
-                diarization_results[index]["Text"] = transcribed_text
-                os.unlink(chunk_file.name)
+            logger.debug(
+                f"Сегмент {index + 1}/{len(diarization_results)} "
+                f"[{start:.2f}s - {stop:.2f}s] (длит. {duration:.2f}s)"
+            )
+
+            # decode_audio() поддерживает offset/duration — читает только нужный участок
+            audio_chunk = decode_audio(
+                audio_path,
+                sampling_rate=SAMPLE_RATE,
+                offset=start,
+                duration=duration,
+            )
+
+            # Передаём numpy array напрямую, без промежуточного WAV-файла
+            segments, _ = model.transcribe(audio_chunk, beam_size=5, language="ru")
+            transcribed_text = "".join(segment.text for segment in segments)
+            diarization_results[index]["Text"] = transcribed_text
 
         logger.info(f"Транскрибация завершена успешно. Обработано сегментов: {len(diarization_results)}")
         return JSONResponse(content=diarization_results)
