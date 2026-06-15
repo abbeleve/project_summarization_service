@@ -15,6 +15,7 @@ RUN pip install -r /app/requirements.txt
 WORKDIR /app
 
 RUN mkdir -p /app/models/whisper
+RUN mkdir -p /app/models/faster-distil-whisper-large-v3-ru
 
 EXPOSE 8054
 

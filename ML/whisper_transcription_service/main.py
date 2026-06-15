@@ -28,15 +28,15 @@ async def startup_event():
     logger.info("Начало загрузки модели Whisper large-v3...")
     try:
         # Проверяем переменную окружения для пути к модели
-        model_path = os.getenv("WHISPER_MODEL_PATH", "/app/models/faster-whisper-large-v3")
-        
+        model_path = os.getenv("WHISPER_MODEL_PATH", "/app/models/faster-distil-whisper-large-v3-ru-int8")
+
         if os.path.exists(model_path):
             logger.info(f"Загрузка модели из локального пути: {model_path}")
-            model = WhisperModel(model_path, device="cuda", compute_type="float16")
+            model = WhisperModel(model_path, device="cuda")
         else:
             # Fallback: загрузка из кэша Hugging Face
             logger.warning(f"Локальная модель не найдена по пути {model_path}, загрузка из Hugging Face...")
-            model = WhisperModel("large-v3", device="cuda", compute_type="float16")
+            model = WhisperModel("large-v3", device="cuda")
         
         logger.info("Модель Whisper успешно загружена!")
     except Exception as e:

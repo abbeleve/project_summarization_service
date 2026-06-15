@@ -427,10 +427,11 @@ services:
     volumes:
       - ./ML/whisper_transcription_service:/app
       - ./ML/whisper_transcription_service/models/faster-whisper-large-v3:/app/models/faster-whisper-large-v3:ro
+      - ./ML/whisper_transcription_service/models/faster-distil-whisper-large-v3-ru:/app/models/faster-distil-whisper-large-v3-ru:ro
     environment:
       - PYTHONUNBUFFERED=1
       - HF_API_KEY=${HF_API_KEY}
-      - WHISPER_MODEL_PATH=/app/models/faster-whisper-large-v3
+      - WHISPER_MODEL_PATH=${WHISPER_MODEL_PATH}
     runtime: nvidia
     restart: unless-stopped
     networks:
