@@ -82,46 +82,46 @@ async def transcribe_endpoint(
         f"Получен запрос. Аудио: {audio.filename}, размер: {audio.size} байт"
     )
 
-    # Сохраняем аудио во временный файл
+    # Стримим HTTP body в temp-файл чанками — без загрузки всего в RAM
+    CHUNK_SIZE = 8_388_608  # 8 MB
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tmp.write(await audio.read())
         audio_path = tmp.name
+        while chunk := await audio.read(CHUNK_SIZE):
+            tmp.write(chunk)
 
     try:
-        # librosa —> numpy (избегаем torchaudio.load → torchcodec → FFmpeg)
-        waveform, _ = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True)
-
         request_data: Dict[str, Any] = json.loads(request)
         diarization_results: List[Dict[str, Any]] = request_data["diarization_results"]
         logger.info(f"Сегментов: {len(diarization_results)}")
-        logger.info(
-            f"Аудио загружено: {len(waveform) / SAMPLE_RATE:.1f}с, "
-            f"{waveform.nbytes / 1024 / 1024:.1f} MB RAM, "
-            f"чанки по {RNNT_MAX_SAMPLES / SAMPLE_RATE:.0f}с"
-        )
 
-        # Собираем все чанки с индексом сегмента
+        # Собираем все чанки с индексом сегмента.
+        # Каждый сегмент загружаем отдельно через librosa(offset=, duration=),
+        # без полной загрузки всего аудио в RAM.
         chunk_list: List[Dict[str, Any]] = []  # {"seg_idx": int, "samples": np.ndarray}
 
         for seg_idx, seg in enumerate(diarization_results):
-            start = int(seg["start"] * SAMPLE_RATE)
-            stop = int(seg["stop"] * SAMPLE_RATE)
-            chunk = waveform[start:stop]
-
-            if len(chunk) == 0:
+            start_sec = seg["start"]
+            duration_sec = seg["stop"] - seg["start"]
+            if duration_sec <= 0:
                 continue
 
+            # Загружаем только этот сегмент
+            segment, _ = librosa.load(
+                audio_path, sr=SAMPLE_RATE, mono=True,
+                offset=start_sec, duration=duration_sec,
+            )
+
             # Сегменты длиннее лимита — дробим с перекрытием
-            if len(chunk) > RNNT_MAX_SAMPLES:
+            if len(segment) > RNNT_MAX_SAMPLES:
                 s = 0
-                while s < len(chunk):
-                    e = min(s + RNNT_MAX_SAMPLES, len(chunk))
-                    chunk_list.append({"seg_idx": seg_idx, "samples": chunk[s:e]})
-                    if e == len(chunk):
+                while s < len(segment):
+                    e = min(s + RNNT_MAX_SAMPLES, len(segment))
+                    chunk_list.append({"seg_idx": seg_idx, "samples": segment[s:e]})
+                    if e == len(segment):
                         break
                     s += RNNT_MAX_SAMPLES - RNNT_OVERLAP
             else:
-                chunk_list.append({"seg_idx": seg_idx, "samples": chunk})
+                chunk_list.append({"seg_idx": seg_idx, "samples": segment})
 
         if not chunk_list:
             return JSONResponse(content=diarization_results)
