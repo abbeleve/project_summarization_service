@@ -55,31 +55,29 @@ class NoiseSuppressionClient:
             
             logger.info(f"Отправка на шумоподавление: {audio_path}")
             
-            # Чтение файла
+            # Отправка файла — передаём file object напрямую (requests стримит чанками)
             with open(audio_path, "rb") as f:
-                file_content = f.read()
-            
-            # Отправка запроса
-            files = {"file": (Path(audio_path).name, file_content, "audio/wav")}
-            
-            response = requests.post(
-                self.service_url,
-                files=files,
-                timeout=self.timeout
-            )
-            
+                files = {"file": (Path(audio_path).name, f, "audio/wav")}
+                response = requests.post(
+                    self.service_url,
+                    files=files,
+                    timeout=self.timeout
+                )
+
             if response.status_code != 200:
                 raise RuntimeError(
                     f"Noise suppression service error: "
                     f"{response.status_code} - {response.text}"
                 )
-            
-            # Сохранение результата во временный файл
+
+            # Сохранение результата во временный файл (чанками, без resp.content)
             temp_fd, temp_path = tempfile.mkstemp(suffix="_clean.wav")
             os.close(temp_fd)
-            
+
             with open(temp_path, "wb") as f:
-                f.write(response.content)
+                for chunk in response.iter_content(chunk_size=8_388_608):
+                    if chunk:
+                        f.write(chunk)
             
             logger.info(f"Шумоподавление завершено: {temp_path}")
             return temp_path
@@ -117,26 +115,22 @@ class NoiseSuppressionClient:
                 raise FileNotFoundError(f"Audio file not found: {audio_path}")
             
             logger.info(f"Отправка на шумоподавление (bytes): {audio_path}")
-            
-            # Чтение файла
+
+            # Отправка файла — передаём file object напрямую (requests стримит чанками)
             with open(audio_path, "rb") as f:
-                file_content = f.read()
-            
-            # Отправка запроса
-            files = {"file": (Path(audio_path).name, file_content, "audio/wav")}
-            
-            response = requests.post(
-                self.service_url,
-                files=files,
-                timeout=self.timeout
-            )
-            
+                files = {"file": (Path(audio_path).name, f, "audio/wav")}
+                response = requests.post(
+                    self.service_url,
+                    files=files,
+                    timeout=self.timeout
+                )
+
             if response.status_code != 200:
                 raise RuntimeError(
                     f"Noise suppression service error: "
                     f"{response.status_code} - {response.text}"
                 )
-            
+
             logger.info(f"Шумоподавление завершено: {len(response.content)} байт")
             return response.content
             
