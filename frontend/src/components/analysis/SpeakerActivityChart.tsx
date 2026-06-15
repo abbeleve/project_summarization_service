@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { type TranscriptSegment } from '@/types/transcript';
 import { getSpeakerColor } from '@/utils/speakerColors';
 
@@ -94,13 +94,18 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
   };
 
   const data = getActivityData();
-  const speakers = segments.length > 0 
+  const speakers = segments.length > 0
     ? Array.from(new Set(segments.map(s => s.Speaker)))
     : [];
+  const intervalSeconds = timeInterval === '30s' ? 30 : timeInterval === '1m' ? 60 : 120;
 
   if (data.length === 0) {
     return null;
   }
+
+  // Фиксированная ширина колонки: при 30с → ~5мин видно, 1м → ~10мин, 2м → ~20мин
+  const BAR_GROUP_WIDTH = 60; // px на один интервал
+  const chartWidth = Math.max(data.length * BAR_GROUP_WIDTH, 400);
 
   return (
     <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-2xl p-5 border border-gray-200 dark:border-dark-base-700 space-y-4">
@@ -140,21 +145,32 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
         </div>
       </div>
 
-      <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} barCategoryGap="15%" barGap={0}>
+      {/* Скролляемый контейнер: max-content подстраивается под реальную ширину SVG */}
+      <div className="h-64 overflow-x-auto">
+        <div style={{ width: 'max-content' }}>
+          <BarChart
+            width={chartWidth}
+            height={256}
+            data={data}
+            barCategoryGap={4}
+            barGap={0}
+            style={{ maxWidth: 'none' }}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
             <XAxis
               dataKey="time"
               tick={{ fontSize: 12 }}
               tickLine={false}
               axisLine={false}
+              interval={Math.max(1, Math.floor(data.length / 15))}
             />
             <YAxis
+              domain={[0, intervalSeconds]}
               tick={{ fontSize: 12 }}
               tickLine={false}
               axisLine={false}
               label={{ value: 'сек', angle: -90, position: 'insideLeft', fontSize: 12 }}
+              width={40}
             />
             <Tooltip
               contentStyle={{
@@ -185,11 +201,11 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
               );
             })}
           </BarChart>
-        </ResponsiveContainer>
+        </div>
       </div>
 
       <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-        Показано время речи каждого спикера в разрезе временных интервалов
+        Показано время речи каждого спикера в разрезе временных интервалов. Скролльте по горизонтали.
       </p>
     </div>
   );

@@ -20,6 +20,7 @@ ML/onnx_gigaam_service/models/
 .qwen
 clean.wav
 clean_6x.wav
+clean_12x.wav
 
 # Frontend
 frontend/node_modules/
