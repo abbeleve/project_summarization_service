@@ -13,7 +13,7 @@ RUN apt-get update && \
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.9
 
 # Установим зависимости Python
-RUN python3.9 -m pip install torch torchaudio soundfile deepfilternet fastapi uvicorn python-multipart
+RUN python3.9 -m pip install torch torchaudio soundfile deepfilternet fastapi uvicorn python-multipart librosa
 
 # Копируем скрипты
 COPY denoise.py /app/denoise.py

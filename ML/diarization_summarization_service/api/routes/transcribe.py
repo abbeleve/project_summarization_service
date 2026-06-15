@@ -106,11 +106,12 @@ async def transcribe(
             file_size = input_path.stat().st_size
             logger.info(f"Файл скачан: {input_path} ({file_size} байт)")
         else:
-            # Прямая загрузка файла
+            # Прямая загрузка файла (чанками, без await file.read())
             audio_converter.validate_extension(file.filename)
             input_path = Path(temp_dir) / f"input{Path(file.filename).suffix}"
             with open(input_path, "wb") as f:
-                f.write(await file.read())
+                while chunk := await file.read(8_388_608):
+                    f.write(chunk)
             logger.info(f"Загружен файл: {input_path}")
 
         # Для видеофайлов — извлекаем только аудиодорожку через ffmpeg
@@ -207,7 +208,8 @@ async def diarize_only(
         input_path = Path(temp_dir) / f"input{Path(file.filename).suffix}"
 
         with open(input_path, "wb") as f:
-            f.write(await file.read())
+            while chunk := await file.read(8_388_608):
+                f.write(chunk)
 
         # Конвертация в WAV
         if input_path.suffix.lower() != '.wav':

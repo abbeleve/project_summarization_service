@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from faster_whisper import WhisperModel
 from tqdm import tqdm
-from faster_whisper.audio import decode_audio
+import librosa
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -112,16 +112,17 @@ async def transcribe_endpoint(
                 f"[{start:.2f}s - {stop:.2f}s] (длит. {duration:.2f}s)"
             )
 
-            # decode_audio() поддерживает offset/duration — читает только нужный участок
-            audio_chunk = decode_audio(
+            # librosa загружает с ресемплингом в 16kHz, только нужный участок
+            audio_chunk, _ = librosa.load(
                 audio_path,
-                sampling_rate=SAMPLE_RATE,
+                sr=SAMPLE_RATE,
+                mono=True,
                 offset=start,
-                duration=duration,
+                duration=(stop - start),
             )
 
             # Передаём numpy array напрямую, без промежуточного WAV-файла
-            segments, _ = model.transcribe(audio_chunk, beam_size=5, language="ru")
+            segments, _ = model.transcribe(audio_chunk, beam_size=1, language="ru")
             transcribed_text = "".join(segment.text for segment in segments)
             diarization_results[index]["Text"] = transcribed_text
 
