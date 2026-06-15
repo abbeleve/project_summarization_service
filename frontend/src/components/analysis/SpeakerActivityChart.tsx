@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { type TranscriptSegment } from '@/types/transcript';
-import { getSpeakerColor } from '@/utils/speakerColors';
+import { getSpeakerColor, getSpeakerColorBySeed } from '@/utils/speakerColors';
 
 interface SpeakerActivityChartProps {
   segments: TranscriptSegment[];
@@ -32,6 +32,25 @@ const getTailwindColorHex = (colorName: string): string => {
 
 export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) => {
   const [timeInterval, setTimeInterval] = useState<'30s' | '1m' | '2m'>('1m');
+
+  // Строим lookup цвета из аватарок (аналогично SpeakerDistributionChart)
+  const colorSeedLookup: Record<string, string | null | undefined> = {};
+  const dominantColorLookup: Record<string, string | null | undefined> = {};
+  for (const seg of segments) {
+    if (seg.Speaker) {
+      if (!colorSeedLookup[seg.Speaker]) colorSeedLookup[seg.Speaker] = seg.colorSeed;
+      if (!dominantColorLookup[seg.Speaker]) dominantColorLookup[seg.Speaker] = seg.dominantColor;
+    }
+  }
+
+  // Получаем цвет спикера с приоритетом: dominantColor из аватарки > хеш от user_id > хеш от имени
+  const getSpeakerHexColor = (speaker: string): string => {
+    const dominant = dominantColorLookup[speaker];
+    if (dominant) return dominant;
+    const seed = colorSeedLookup[speaker];
+    const color = seed ? getSpeakerColorBySeed(seed) : getSpeakerColor(speaker);
+    return getTailwindColorHex(color.bg.replace('bg-', ''));
+  };
 
   // Группируем сегменты по временным интервалам
   const getActivityData = () => {
@@ -188,7 +207,7 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
               iconSize={10}
             />
             {speakers.map((speaker) => {
-              const color = getTailwindColorHex(getSpeakerColor(speaker).bg.replace('bg-', ''));
+              const color = getSpeakerHexColor(speaker);
               return (
                 <Bar
                   key={speaker}
@@ -205,7 +224,11 @@ export const SpeakerActivityChart = ({ segments }: SpeakerActivityChartProps) =>
       </div>
 
       <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+<<<<<<< Updated upstream
         Показано время речи каждого спикера в разрезе временных интервалов. Скролльте по горизонтали.
+=======
+        Показано время речи каждого спикера в разрезе временных интервалов. Цвета взяты из аватарок.
+>>>>>>> Stashed changes
       </p>
     </div>
   );
