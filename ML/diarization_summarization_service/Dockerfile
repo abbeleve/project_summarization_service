@@ -14,11 +14,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Клонируем и устанавливаем GigaAM
-RUN git clone https://github.com/salute-developers/GigaAM.git /app/GigaAM && \
-    pip install -e /app/GigaAM
+# Клонирование GigaAM не требуется — ONNX-инференс в отдельном микросервисе
 
-RUN mkdir -p /app/models/pyannote /app/models/gigaam_v3_e2e_rnnt /app/models/gigaam_v3_e2e_ctc
+RUN mkdir -p /app/models/pyannote
 
 WORKDIR /app
 
