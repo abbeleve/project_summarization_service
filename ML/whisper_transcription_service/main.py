@@ -15,6 +15,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
+WHISPER_MAX_SAMPLES = 28_800_000  # 1800 секунд при 16кГц
+WHISPER_OVERLAP = 32_000          # 2 секунды перекрытие
 
 model = None
 
@@ -98,8 +100,9 @@ async def transcribe_endpoint(
         diarization_results = request_data["diarization_results"]
         logger.info(f"Количество сегментов для транскрибации: {len(diarization_results)}")
 
-        # Транскрибация сегментов — каждый загружается отдельно через offset/duration
-        # Никогда не загружаем весь файл в RAM.
+        # Транскрибация сегментов — каждый загружается отдельно через offset/duration.
+        # Сегменты длиннее WHISPER_MAX_SAMPLES дробятся на чанки с перекрытием.
+        # Загрузка в RAM — не более одного чанка за раз.
         for index, timings in tqdm(enumerate(diarization_results)):
             start = timings["start"]
             stop = timings["stop"]
@@ -107,23 +110,35 @@ async def transcribe_endpoint(
             if duration <= 0:
                 continue
 
-            logger.debug(
-                f"Сегмент {index + 1}/{len(diarization_results)} "
-                f"[{start:.2f}s - {stop:.2f}s] (длит. {duration:.2f}s)"
-            )
+            chunk_duration = WHISPER_MAX_SAMPLES / SAMPLE_RATE  # 1800 с
+            overlap_duration = WHISPER_OVERLAP / SAMPLE_RATE    # 2 с
 
-            # librosa загружает с ресемплингом в 16kHz, только нужный участок
-            audio_chunk, _ = librosa.load(
-                audio_path,
-                sr=SAMPLE_RATE,
-                mono=True,
-                offset=start,
-                duration=(stop - start),
-            )
+            if duration <= chunk_duration:
+                # Короткий сегмент — загружаем целиком
+                audio_chunk, _ = librosa.load(
+                    audio_path, sr=SAMPLE_RATE, mono=True,
+                    offset=start, duration=duration,
+                )
+                segments, _ = model.transcribe(audio_chunk, beam_size=1, language="ru")
+                transcribed_text = "".join(segment.text for segment in segments)
+            else:
+                # Длинный сегмент — грузим чанками по chunk_duration с перекрытием
+                chunk_texts = []
+                chunk_start = start
+                while chunk_start < stop:
+                    chunk_end = min(chunk_start + chunk_duration, stop)
+                    chunk_len = chunk_end - chunk_start
+                    audio_chunk, _ = librosa.load(
+                        audio_path, sr=SAMPLE_RATE, mono=True,
+                        offset=chunk_start, duration=chunk_len,
+                    )
+                    segments, _ = model.transcribe(audio_chunk, beam_size=1, language="ru")
+                    chunk_texts.append("".join(seg.text for seg in segments))
+                    if chunk_end >= stop:
+                        break
+                    chunk_start += chunk_duration - overlap_duration
+                transcribed_text = " ".join(chunk_texts).strip()
 
-            # Передаём numpy array напрямую, без промежуточного WAV-файла
-            segments, _ = model.transcribe(audio_chunk, beam_size=1, language="ru")
-            transcribed_text = "".join(segment.text for segment in segments)
             diarization_results[index]["Text"] = transcribed_text
 
         logger.info(f"Транскрибация завершена успешно. Обработано сегментов: {len(diarization_results)}")
