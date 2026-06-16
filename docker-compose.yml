@@ -462,7 +462,7 @@ services:
       - ./ML/onnx_gigaam_service/models/gigaam_v3_e2e_ctc:/app/models/gigaam_v3_e2e_ctc:ro
     environment:
       - PYTHONUNBUFFERED=1
-      - GIGAAM_MODEL_DIR=/app/models/gigaam_v3_e2e_rnnt
+      - GIGAAM_MODEL_PATH=${GIGAAM_MODEL_PATH}
       - GIGAAM_MODEL_VERSION=v3_e2e_rnnt
     runtime: nvidia
     restart: unless-stopped
@@ -507,6 +507,40 @@ services:
               count: 1
               capabilities: [gpu]
     command: uvicorn main:app --host 0.0.0.0 --port 8052
+
+  # ========================================================================
+  # FORCED-ALIGNER - Qwen3-ForcedAligner-0.6B word-level timestamp alignment
+  # ========================================================================
+  forced-aligner:
+    build:
+      context: ./ML/forced_aligner_service
+    mem_limit: 8g
+    ports:
+      - "8057:8057"
+    volumes:
+      - ./ML/forced_aligner_service:/app
+      - ./ML/forced_aligner_service/models/qwen3-0.6b:/app/models/qwen3-0.6b:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FORCED_ALIGNER_MODEL_PATH=${FORCED_ALIGNER_MODEL_PATH:-/app/models/qwen3-0.6b}
+    runtime: nvidia
+    restart: unless-stopped
+    networks:
+      - meeting-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8057/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    command: uvicorn main:app --host 0.0.0.0 --port 8057 --reload
 
 networks:
   meeting-network:

@@ -16,11 +16,13 @@ milvus_data/
 volumes/
 backend/api/app/models/speaker_embedding/
 ML/onnx_gigaam_service/models/
+ML/forced_aligner_service/models/qwen3-0.6b
 
 .qwen
 clean.wav
 clean_6x.wav
 clean_12x.wav
+test.txt
 
 # Frontend
 frontend/node_modules/

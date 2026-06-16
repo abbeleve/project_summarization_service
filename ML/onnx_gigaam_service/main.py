@@ -43,7 +43,7 @@ app = FastAPI(title="GigaAM ONNX Transcription Service", version="1.0")
 async def startup_event():
     global _model_cfg, _sessions, _model_version
 
-    model_dir = os.getenv("GIGAAM_MODEL_DIR", "/app/models/gigaam_v3_e2e_rnnt")
+    model_dir = os.getenv("GIGAAM_MODEL_PATH", "/app/models/gigaam_v3_e2e_rnnt")
     model_version = os.getenv("GIGAAM_MODEL_VERSION", "v3_e2e_rnnt")
     _model_version = model_version
 
