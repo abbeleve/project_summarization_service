@@ -267,6 +267,17 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
                 logger.warning(f"[{task_id}] Не удалось удалить scheduled_meeting: {e}")
 
         # === 8. Завершение ===
+        # Удаляем WAV из MinIO — фронтенду он не нужен, только MP3
+        wav_key = options.get("audio_key")
+        if wav_key:
+            try:
+                from app.db_service.minio_client import MinioClient
+                minio_cli = MinioClient()
+                minio_cli.delete_audio(wav_key)
+                logger.info(f"[{task_id}] WAV удалён из MinIO: {wav_key}")
+            except Exception as e:
+                logger.warning(f"[{task_id}] Не удалось удалить WAV из MinIO: {e}")
+
         logger.info(f"[{task_id}] Задача завершена успешно")
         update_task_status(task_id, "completed", {
             "step": "completed",
@@ -284,6 +295,17 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
     except Exception as exc:
         # === Обработка ошибок ===
         logger.error(f"[{task_id}] Ошибка обработки: {exc}")
+
+        # Удаляем WAV из MinIO при ошибке (чтобы не засорять)
+        wav_key = options.get("audio_key")
+        if wav_key:
+            try:
+                from app.db_service.minio_client import MinioClient
+                minio_cli = MinioClient()
+                minio_cli.delete_audio(wav_key)
+                logger.info(f"[{task_id}] WAV удалён из MinIO (ошибка): {wav_key}")
+            except Exception:
+                pass
 
         # Удаляем запись из scheduled_meetings при ошибке
         meeting_id = options.get("meeting_id")

@@ -4,6 +4,7 @@ from fastapi.middleware import Middleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
+import io
 import time
 import os
 import json
@@ -29,6 +30,7 @@ from .db_service.minio_client import MinioClient
 from .auth_service.jwt import jwt_service
 from .auth_service.middleware import AuthMiddleware
 from .voice.router import router as voice_router
+from .audio_utils import normalize_audio, guess_format
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -520,15 +522,42 @@ async def process_audio(
     print(f"transcribe_model: {transcribe_model}")
 
     try:
-        # Сохраняем аудиофайл в MinIO потоково (без загрузки всего в RAM)
         task_id_for_key = str(uuid4())
-        original_filename = file.filename or f"audio_{task_id_for_key[:8]}.webm"
-        audio_key = f"uploads/{current_user['user_id']}/{task_id_for_key}/{original_filename}"
-        minio.stream_upload_audio(audio_key, file)
+        file_bytes = await file.read()
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail="Empty audio file")
 
-        # Формируем публичный URL для плеера
-        recording_url = minio.get_audio_public_url(audio_key)
-        logger.info(f"Аудио сохранено в MinIO: {recording_url}")
+        original_filename = file.filename or f"audio_{task_id_for_key[:8]}.webm"
+        base = original_filename.rsplit(".", 1)[0] if "." in original_filename else original_filename
+
+        # === Шаг 1: MP3 для плеера на фронтенде ===
+        fmt = guess_format(file_bytes)
+        if fmt == 'mp3':
+            mp3_bytes = file_bytes  # уже MP3 — без перекодировки
+            logger.debug("MP3 original — сохранён как есть")
+        else:
+            # Конвертируем в MP3 16kHz через pydub
+            from pydub import AudioSegment
+            with io.BytesIO(file_bytes) as buf:
+                audio = AudioSegment.from_file(buf, format=fmt or 'webm')
+            audio = audio.set_frame_rate(16000).set_channels(1)
+            with io.BytesIO() as out:
+                audio.export(out, format='mp3', bitrate='64k')
+                mp3_bytes = out.getvalue()
+            del audio  # освободить RAM
+
+        mp3_key = f"uploads/{current_user['user_id']}/{task_id_for_key}/{base}.mp3"
+        minio.upload_audio(mp3_key, mp3_bytes, content_type="audio/mpeg")
+        recording_url = minio.get_audio_public_url(mp3_key)
+        del mp3_bytes  # освободить RAM
+
+        # === Шаг 2: WAV 16kHz для ML-пайплайна ===
+        wav_bytes = normalize_audio(file_bytes, original_filename)
+        wav_key = f"uploads/{current_user['user_id']}/{task_id_for_key}/{base}.wav"
+        minio.upload_audio(wav_key, wav_bytes, content_type="audio/wav")
+        del wav_bytes  # освободить RAM
+
+        logger.info(f"MP3 + WAV загружены в MinIO: {recording_url}")
 
         # Подготовка опций для задачи
         options = {
@@ -539,8 +568,8 @@ async def process_audio(
             "llm_model": llm_model or "deepseek/deepseek-v4-flash",
             "noise_sup_bool": noise_sup_bool,
             "user_id": current_user["user_id"],
-            "recording_url": recording_url,  # Публичный URL для плеера
-            "audio_key": audio_key,         # Ключ в MinIO для скачивания внутри Docker
+            "recording_url": recording_url,  # MP3 URL для плеера
+            "audio_key": wav_key,            # WAV ключ для ML-пайплайна
         }
 
         # Отправка задачи в Celery

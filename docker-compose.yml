@@ -81,7 +81,7 @@ services:
     networks:
       - meeting-network
     restart: on-failure
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     volumes:
       - ./backend/api:/app
   celery-worker-default:
