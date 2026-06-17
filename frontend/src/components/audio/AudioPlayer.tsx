@@ -11,9 +11,10 @@ interface AudioPlayerProps {
   title?: string;
   segments?: TranscriptSegment[];
   onTimeUpdate?: (time: number) => void;
+  onError?: () => void;
 }
 
-export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(({ src, title, segments, onTimeUpdate }, ref) => {
+export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(({ src, title, segments, onTimeUpdate, onError }, ref) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -30,19 +31,22 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(({ sr
 
     const updateDuration = () => setDuration(audio.duration);
     const togglePlaying = () => setIsPlaying(!audio.paused);
+    const handleError = () => onError?.();
 
     audio.addEventListener('timeupdate', updateTime);
     audio.addEventListener('loadedmetadata', updateDuration);
     audio.addEventListener('play', togglePlaying);
     audio.addEventListener('pause', togglePlaying);
+    audio.addEventListener('error', handleError);
 
     return () => {
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('loadedmetadata', updateDuration);
       audio.removeEventListener('play', togglePlaying);
       audio.removeEventListener('pause', togglePlaying);
+      audio.removeEventListener('error', handleError);
     };
-  }, [onTimeUpdate]);
+  }, [onTimeUpdate, onError]);
 
   useImperativeHandle(ref, () => ({
     seekTo: (time: number) => {

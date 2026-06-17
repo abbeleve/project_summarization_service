@@ -51,7 +51,7 @@ services:
 
   api:
     build: ./backend/api
-    mem_limit: 512m
+    mem_limit: 2g
     ports:
       - "8000:8000"
     environment:

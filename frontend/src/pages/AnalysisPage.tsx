@@ -40,6 +40,7 @@ export const AnalysisPage = () => {
   const [rightTab, setRightTab] = useState<'summary' | 'charts' | 'chat' | 'annotations'>('summary');
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [audioError, setAudioError] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -248,6 +249,16 @@ export const AnalysisPage = () => {
     setShowAnnotationPopup(true);
   };
 
+  // Конвертация Blob в URL для аудио (если есть)
+  const audioUrl = transcript?.audio_url || (transcript?.audio_blob
+    ? URL.createObjectURL(transcript.audio_blob)
+    : '');
+
+  // Сбрасываем audioError при смене транскрипции
+  useEffect(() => {
+    setAudioError(false);
+  }, [audioUrl]);
+
   if (!id) {
     return (
       <ErrorMessage 
@@ -438,11 +449,6 @@ export const AnalysisPage = () => {
     showToast('✅ Отчёт скачан', 'success');
   };
 
-  // Конвертация Blob в URL для аудио (если есть)
-  const audioUrl = transcript.audio_url || (transcript.audio_blob
-    ? URL.createObjectURL(transcript.audio_blob)
-    : '');
-
   return (
     <div className="-mx-6 px-6 space-y-6">
       {/* Шапка с кнопками навигации */}
@@ -504,12 +510,13 @@ export const AnalysisPage = () => {
       </div>
 
       {/* Аудиоплеер над транскрипцией и графиками */}
-      {audioUrl && (
+      {audioUrl && !audioError && (
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
           <AudioPlayer
             ref={audioPlayerRef}
             src={audioUrl}
             segments={segments}
+            onError={() => setAudioError(true)}
           />
         </div>
       )}
