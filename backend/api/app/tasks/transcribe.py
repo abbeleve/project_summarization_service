@@ -80,9 +80,9 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
             "noise_sup_bool": options.get("noise_sup_bool", "false")
         }
 
-        # Вызов audio-ml сервиса
+        # Вызов audio-ml сервиса (WhisperX pipeline)
         response = requests.post(
-            "http://audio-ml:8053/transcribe/",
+            "http://audio-ml:8053/transcribe_v2/",
             data=data,
             timeout=1200  # 20 минут на транскрибацию
         )
@@ -107,19 +107,30 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
             if enrolled:
                 logger.info(f"[{task_id}] Найдено {len(enrolled)} зарегистрированных голосовых профилей")
 
-                # Скачиваем аудио из MinIO для speaker identification
-                resp = requests.get(file_url, timeout=300)
+                # Скачиваем аудио во временный файл (не в RAM) для speaker identification
+                import tempfile
+                resp = requests.get(file_url, stream=True, timeout=300)
                 resp.raise_for_status()
-                audio_bytes = resp.content
+                tmp_audio = tempfile.NamedTemporaryFile(suffix=".audio", delete=False)
+                tmp_audio_path = tmp_audio.name
+                try:
+                    for chunk in resp.iter_content(chunk_size=8_388_608):
+                        if chunk:
+                            tmp_audio.write(chunk)
+                finally:
+                    tmp_audio.close()
 
-                speaker_label_map = _identify_speakers_by_embedding(
-                    None,  # db не нужен в dry_run
-                    None,  # transcript_id ещё не существует
-                    audio_bytes,
-                    transcript_segments,
-                    enrolled,
-                    dry_run=True,  # только возвращает маппинг, не трогает БД
-                )
+                try:
+                    speaker_label_map = _identify_speakers_by_embedding(
+                        None,  # db не нужен в dry_run
+                        None,  # transcript_id ещё не существует
+                        tmp_audio_path,
+                        transcript_segments,
+                        enrolled,
+                        dry_run=True,  # только возвращает маппинг, не трогает БД
+                    )
+                finally:
+                    os.unlink(tmp_audio_path)
         except Exception as e:
             logger.warning(f"[{task_id}] Speaker identification не удалась (продолжаем): {e}")
 
@@ -446,7 +457,7 @@ def _apply_speaker_labels_to_parts(
 def _identify_speakers_by_embedding(
     db: DataBaseManager,
     transcript_id: UUID,
-    file_bytes: bytes,
+    audio_path: str,
     transcript_segments: List[Dict[str, Any]],
     enrolled: List[Dict[str, Any]],
     dry_run: bool = False,
@@ -455,14 +466,15 @@ def _identify_speakers_by_embedding(
     Identify speakers by comparing voice embeddings against Qdrant profiles.
 
     Для каждого уникального SPEAKER_XX:
-      1. Вырезать до 30 секунд его аудио по таймингам из оригинального файла
+      1. Вырезать до 60 секунд его аудио через ffmpeg (pipe, без загрузки всего файла)
       2. Извлечь ECAPA-TDNN эмбеддинг
-      3. Найти ближайший profile в Qdrant (cosine similarity, threshold 0.6)
+      3. Найти ближайший profile в Qdrant (cosine similarity, threshold 0.5)
       4. Если найден — обновить все части транскрипции с этим спикером
 
     Если dry_run=True — только возвращает маппинг SPEAKER_XX → полное имя,
     не трогает БД.
     """
+    import subprocess
     from collections import defaultdict
 
     # Группируем тайминги по спикеру
@@ -477,16 +489,6 @@ def _identify_speakers_by_embedding(
     if not speaker_timestamps:
         return {}
 
-    # Загружаем оригинальное аудио через pydub (WebM/MP3 и т.д. — ffmpeg в контейнере есть)
-    try:
-        from pydub import AudioSegment
-        import io as io_module
-        with io_module.BytesIO(file_bytes) as buf:
-            full_audio = AudioSegment.from_file(buf)
-    except Exception as e:
-        logger.warning(f"Cannot load audio for speaker identification: {e}")
-        return {}
-
     # Импортируем voice-модули (могут отсутствовать в тестовом окружении)
     try:
         from app.voice.speaker_identification import extract_embedding_from_wav_bytes
@@ -495,48 +497,115 @@ def _identify_speakers_by_embedding(
         logger.warning(f"Voice modules not available: {e}")
         return {}
 
-    MAX_SECONDS = 30
+    MAX_SECONDS = 60
     label_to_name = {}
+    unique_tag = os.urandom(4).hex()
 
     for speaker_label, timestamps in speaker_timestamps.items():
-        # Склеиваем сегменты этого спикера, но не дольше MAX_SECONDS
-        speaker_audio = None
-        total_ms = 0
-        max_ms = MAX_SECONDS * 1000
-
+        # Берём до MAX_SECONDS аудио из сегментов этого спикера
+        cut_points = []
+        needed = 0.0
         for start_sec, end_sec in timestamps:
-            if total_ms >= max_ms:
+            dur = end_sec - start_sec
+            take = min(dur, MAX_SECONDS - needed)
+            if take <= 0:
                 break
-            start_ms = int(start_sec * 1000)
-            end_ms = int(end_sec * 1000)
-            seg = full_audio[start_ms:end_ms]
-            if speaker_audio is None:
-                speaker_audio = seg
+            cut_points.append((start_sec, take))
+            needed += take
+
+        if not cut_points:
+            continue
+
+        try:
+            wav_bytes: Optional[bytes] = None
+
+            if len(cut_points) == 1:
+                # Один сегмент — ffmpeg pipe без временных файлов
+                start_sec, dur = cut_points[0]
+                cmd = [
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-ss", f"{start_sec:.3f}",
+                    "-i", audio_path,
+                    "-t", f"{dur:.3f}",
+                    "-acodec", "pcm_s16le",
+                    "-ar", "16000",
+                    "-ac", "1",
+                    "-f", "wav",
+                    "pipe:1",
+                ]
+                proc = subprocess.run(cmd, capture_output=True, timeout=120)
+                proc.check_returncode()
+                wav_bytes = proc.stdout
             else:
-                speaker_audio = speaker_audio + seg
-            total_ms += len(seg)
+                # Несколько сегментов — вырезаем каждый и склеиваем через ffmpeg concat
+                part_paths = []
+                for idx, (ss, sd) in enumerate(cut_points):
+                    pp = f"/tmp/_spk_{speaker_label}_{unique_tag}_p{idx}.wav"
+                    subprocess.run([
+                        "ffmpeg", "-y", "-loglevel", "error",
+                        "-ss", f"{ss:.3f}",
+                        "-i", audio_path,
+                        "-t", f"{sd:.3f}",
+                        "-acodec", "pcm_s16le",
+                        "-ar", "16000",
+                        "-ac", "1",
+                        "-f", "wav",
+                        pp,
+                    ], capture_output=True, check=True, timeout=120)
+                    part_paths.append(pp)
 
-        if speaker_audio is None or len(speaker_audio) < 1000:
-            logger.debug(f"{speaker_label}: too short ({len(speaker_audio)//1000}s), skip")
+                # Concat demuxer
+                list_path = f"/tmp/_spk_{speaker_label}_{unique_tag}_list.txt"
+                with open(list_path, "w") as f:
+                    for pp in part_paths:
+                        f.write(f"file '{pp}'\n")
+
+                out_path = f"/tmp/_spk_{speaker_label}_{unique_tag}_merged.wav"
+                subprocess.run([
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-f", "concat",
+                    "-safe", "0",
+                    "-i", list_path,
+                    "-c", "copy",
+                    "-f", "wav",
+                    out_path,
+                ], capture_output=True, check=True, timeout=120)
+
+                with open(out_path, "rb") as f:
+                    wav_bytes = f.read()
+
+                # Cleanup temp files
+                for pp in part_paths:
+                    os.unlink(pp)
+                os.unlink(list_path)
+                os.unlink(out_path)
+
+            if wav_bytes is None or len(wav_bytes) < 16000:  # < 1 секунды
+                logger.debug(f"{speaker_label}: too short ({len(wav_bytes)} bytes), skip")
+                continue
+
+            # Извлекаем эмбеддинг
+            embedding = extract_embedding_from_wav_bytes(wav_bytes)
+            if embedding is None:
+                logger.debug(f"{speaker_label}: embedding extraction failed, skip")
+                continue
+
+            # Ищем в Qdrant
+            result = search_speaker(embedding=embedding, threshold=0.5)
+            if result:
+                user_id, full_name, score = result
+                label_to_name[speaker_label] = {"name": full_name, "user_id": user_id}
+                logger.info(f"{speaker_label} → {full_name} (score: {score:.4f})")
+
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"{speaker_label}: ffmpeg error: {e.stderr.decode(errors='replace')[:200]}")
             continue
-
-        # Экспортируем в WAV bytes
-        with io_module.BytesIO() as buf:
-            speaker_audio.export(buf, format="wav")
-            wav_bytes = buf.getvalue()
-
-        # Извлекаем эмбеддинг
-        embedding = extract_embedding_from_wav_bytes(wav_bytes)
-        if embedding is None:
-            logger.debug(f"{speaker_label}: embedding extraction failed, skip")
+        except subprocess.TimeoutExpired:
+            logger.warning(f"{speaker_label}: ffmpeg timeout")
             continue
-
-        # Ищем в Qdrant
-        result = search_speaker(embedding=embedding, threshold=0.5)
-        if result:
-            user_id, full_name, score = result
-            label_to_name[speaker_label] = {"name": full_name, "user_id": user_id}
-            logger.info(f"{speaker_label} → {full_name} (score: {score:.4f})")
+        except Exception as e:
+            logger.warning(f"{speaker_label}: processing error: {e}")
+            continue
 
     # Строим плоский маппинг SPEAKER_XX → полное имя
     name_map: Dict[str, str] = {}

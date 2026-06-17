@@ -181,3 +181,103 @@ async def transcribe_endpoint(
     finally:
         if os.path.exists(audio_path):
             os.unlink(audio_path)
+
+
+@app.post("/transcribe_full")
+async def transcribe_full_endpoint(
+    audio: UploadFile = File(...),
+):
+    """
+    Transcribe the ENTIRE audio file in one pass.
+
+    Reads the audio in offset-based chunks (RNNT_MAX_SAMPLES at a time)
+    via librosa.load(offset=, duration=) — never loads the full file into RAM.
+    Returns the concatenated full text.
+
+    Returns: {"text": "full transcription text"}
+    """
+    global _model_cfg, _sessions
+
+    if _sessions is None:
+        raise HTTPException(status_code=503, detail="Model not loaded yet")
+
+    logger.info(f"Full transcription request: {audio.filename}, size: {audio.size} bytes")
+
+    # Stream upload to temp file — no full-RAM buffering
+    CHUNK_SIZE = 8_388_608
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        audio_path = tmp.name
+        while chunk := await audio.read(CHUNK_SIZE):
+            tmp.write(chunk)
+
+    try:
+        if os.path.getsize(audio_path) == 0:
+            raise HTTPException(status_code=400, detail="Audio file is empty")
+
+        # Get total duration without loading audio into RAM
+        import soundfile as sf_info
+        info = sf_info.SoundFile(audio_path)
+        total_duration = info.frames / info.samplerate
+        info.close()
+        logger.info(f"Audio duration: {total_duration:.1f}s")
+
+        chunk_duration = RNNT_MAX_SAMPLES / SAMPLE_RATE  # ~75 s
+        overlap_duration = RNNT_OVERLAP / SAMPLE_RATE     # 1 s
+
+        from gigaam.onnx_utils import infer_onnx
+        import torch
+        import soundfile as sf
+
+        chunk_texts = []
+        offset = 0.0
+        chunk_idx = 0
+
+        while offset < total_duration:
+            seg_duration = min(chunk_duration, total_duration - offset)
+
+            # Load only this chunk — no full-file RAM usage
+            chunk_wave, _ = librosa.load(
+                audio_path, sr=SAMPLE_RATE, mono=True,
+                offset=offset, duration=seg_duration,
+            )
+
+            if len(chunk_wave) == 0:
+                break
+
+            # Save to temp wav and infer
+            chunk_path = os.path.join(
+                tempfile.gettempdir(), f"gigaam_full_chunk_{chunk_idx:04d}.wav"
+            )
+            sf.write(chunk_path, chunk_wave, SAMPLE_RATE)
+            try:
+                result = infer_onnx([chunk_path], _model_cfg, _sessions, progress=False)
+                chunk_texts.append(result[0])
+            finally:
+                if os.path.exists(chunk_path):
+                    os.unlink(chunk_path)
+
+            # Free GPU memory after every chunk
+            del chunk_wave
+            gc.collect()
+            torch.cuda.empty_cache()
+
+            if offset + seg_duration >= total_duration:
+                break
+            offset += chunk_duration - overlap_duration
+            chunk_idx += 1
+
+            if chunk_idx % 10 == 0:
+                logger.info(f"Full transcribe progress: {chunk_idx} chunks")
+
+        full_text = " ".join(chunk_texts).strip()
+        logger.info(f"Full transcription complete: {len(full_text)} chars")
+        return {"text": full_text}
+
+    except Exception as e:
+        logger.error(f"Full transcription error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if os.path.exists(audio_path):
+            os.unlink(audio_path)

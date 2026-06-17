@@ -109,6 +109,24 @@ class Settings(BaseSettings):
         default=1800,
         description="Таймаут запроса к Whisper сервису (сек) — 30 мин для длинных аудио"
     )
+
+    # ===== Full-audio transcription (WhisperX-style) =====
+    gigaam_onnx_full_url: str = Field(
+        default="http://onnx-gigaam:8056/transcribe_full",
+        description="URL полной транскрибации GigaAM ONNX (весь файл за 1 проход)"
+    )
+    whisper_full_url: str = Field(
+        default="http://audio-ml-whisper:8054/transcribe_full",
+        description="URL полной транскрибации Whisper (весь файл за 1 проход)"
+    )
+    forced_aligner_url: str = Field(
+        default="http://forced-aligner:8057/align",
+        description="URL сервиса forced alignment"
+    )
+    forced_aligner_timeout_sec: int = Field(
+        default=1800,
+        description="Таймаут запроса к forced-aligner (сек)"
+    )
     
     class Config:
         env_file = ".env"

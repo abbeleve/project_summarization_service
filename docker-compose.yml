@@ -458,6 +458,7 @@ services:
     ports:
       - "8056:8056"
     volumes:
+      - ./ML/onnx_gigaam_service/main.py:/app/main.py
       - ./ML/onnx_gigaam_service/models/gigaam_v3_e2e_rnnt:/app/models/gigaam_v3_e2e_rnnt:ro
       - ./ML/onnx_gigaam_service/models/gigaam_v3_e2e_ctc:/app/models/gigaam_v3_e2e_ctc:ro
     environment:

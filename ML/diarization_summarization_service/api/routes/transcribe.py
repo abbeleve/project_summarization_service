@@ -51,7 +51,7 @@ def _extract_audio_with_ffmpeg(input_path: Path, output_path: Path, sample_rate:
     return str(output_path)
 
 
-@router.post("/")
+# @router.post("/")  # DEPRECATED — use /transcribe_v2 instead (WhisperX pipeline)
 async def transcribe(
     file: Optional[UploadFile] = File(None, description="Аудиофайл для транскрибации"),
     file_url: Optional[str] = Form(None, description="URL аудиофайла в MinIO (альтернатива file)"),

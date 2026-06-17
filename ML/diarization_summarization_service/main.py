@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from api.routes.transcribe import router as transcribe_router
+from api.routes.transcribe_v2 import router as transcribe_v2_router
 from api.routes.summarize import router as summarize_router
 from dependencies import (
     get_diarization_singleton,
@@ -100,6 +101,7 @@ app.add_middleware(
 
 # Подключение роутов
 app.include_router(transcribe_router)
+app.include_router(transcribe_v2_router)
 app.include_router(summarize_router)
 
 
