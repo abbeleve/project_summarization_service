@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, String, Text, ForeignKey, CheckConstraint,
 from sqlalchemy.dialects.postgresql import UUID as UUIDType, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import bcrypt
 import os
 from dotenv import load_dotenv
@@ -453,6 +453,93 @@ class ScheduledMeeting(Base):
             'error': self.error,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat()
+        }
+
+
+class ProcessingMetrics(Base):
+    """
+    Модель для хранения метрик обработки аудиофайлов (аналитика).
+
+    Собирается после каждого вызова ASR (whisper или gigaam)
+    для последующей агрегации в админ-панели.
+    """
+    __tablename__ = 'ProcessingMetrics'
+
+    transcript_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Transcripts.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+        comment="ID транскрипции"
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Staff.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+        comment="ID пользователя, запустившего обработку"
+    )
+    audio_duration_sec: Mapped[float] = mapped_column(
+        nullable=False,
+        comment="Длительность аудиофайла в секундах"
+    )
+    transcribe_lib: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        comment="whisper или gigaam"
+    )
+    transcribe_model: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Модель ASR, например v3_e2e_rnnt, base, large-v3"
+    )
+    processing_duration_ms: Mapped[int] = mapped_column(
+        nullable=False,
+        comment="Время выполнения ASR в миллисекундах (ntp-скорректированное)"
+    )
+    diarize_lib: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Библиотека диаризации, например pyannote"
+    )
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(
+        nullable=True,
+        comment="Размер аудиофайла в байтах"
+    )
+    noise_suppression: Mapped[Optional[bool]] = mapped_column(
+        nullable=True,
+        comment="Было ли применено шумоподавление"
+    )
+    created_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+        comment="Время создания записи метрики"
+    )
+
+    transcript: Mapped["Transcript"] = relationship(
+        "Transcript",
+        foreign_keys=[transcript_id]
+    )
+    user: Mapped["Staff"] = relationship(
+        "Staff",
+        foreign_keys=[user_id]
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'transcript_id': str(self.transcript_id),
+            'user_id': str(self.user_id),
+            'audio_duration_sec': self.audio_duration_sec,
+            'transcribe_lib': self.transcribe_lib,
+            'transcribe_model': self.transcribe_model,
+            'processing_duration_ms': self.processing_duration_ms,
+            'diarize_lib': self.diarize_lib,
+            'file_size_bytes': self.file_size_bytes,
+            'noise_suppression': self.noise_suppression,
+            'created_at': self.created_at.isoformat()
         }
 
 
@@ -1423,3 +1510,267 @@ class DataBaseManager:
             except SQLAlchemyError as e:
                 print(f"Ошибка при удалении запланированного совещания: {e}")
                 return False
+
+    # ── Processing Metrics ──────────────────────────────────────────
+
+    def insert_processing_metrics(
+        self,
+        transcript_id: UUID,
+        user_id: UUID,
+        audio_duration_sec: float,
+        transcribe_lib: str,
+        processing_duration_ms: int,
+        transcribe_model: Optional[str] = None,
+        diarize_lib: Optional[str] = None,
+        file_size_bytes: Optional[int] = None,
+        noise_suppression: Optional[bool] = None,
+    ) -> Optional[UUID]:
+        """Сохранить метрики обработки аудиофайла."""
+        with self.session_scope() as session:
+            try:
+                metric = ProcessingMetrics(
+                    transcript_id=transcript_id,
+                    user_id=user_id,
+                    audio_duration_sec=audio_duration_sec,
+                    transcribe_lib=transcribe_lib,
+                    transcribe_model=transcribe_model,
+                    processing_duration_ms=processing_duration_ms,
+                    diarize_lib=diarize_lib,
+                    file_size_bytes=file_size_bytes,
+                    noise_suppression=noise_suppression,
+                )
+                session.add(metric)
+                session.flush()
+                return metric.id
+            except SQLAlchemyError as e:
+                print(f"Ошибка при сохранении метрик обработки: {e}")
+                return None
+
+    def get_analytics(self) -> Dict[str, Any]:
+        """
+        Агрегированные данные для админ-панели (аналитика).
+
+        Возвращает:
+          - user_activity: общая/активная статистика по пользователям и транскриптам
+          - asr_performance: среднее время обработки на час аудио (whisper / gigaam)
+          - daily_breakdown: статистика по дням (за последние 30 дней)
+        """
+        with self.session_scope() as session:
+            try:
+                session.execute(text("SET TIME ZONE 'Asia/Irkutsk'"))
+                now = func.now()
+
+                # ── User activity ──
+                total_users = session.query(func.count(Staff.id)).scalar() or 0
+
+                # Активные пользователи (создавшие хотя бы один транскрипт за период)
+                def active_users_since(days: int) -> int:
+                    cutoff = func.now() - text(f"INTERVAL '{days} days'")
+                    return (
+                        session.query(func.count(func.distinct(TranscriptAccess.employee_id)))
+                        .join(Transcript, TranscriptAccess.transcript_id == Transcript.id)
+                        .filter(Transcript.created_at >= cutoff)
+                        .scalar()
+                    ) or 0
+
+                active_users_7d = active_users_since(7)
+                active_users_30d = active_users_since(30)
+
+                total_transcripts = session.query(func.count(Transcript.id)).scalar() or 0
+
+                def transcripts_since(days: int) -> int:
+                    cutoff = func.now() - text(f"INTERVAL '{days} days'")
+                    return (
+                        session.query(func.count(Transcript.id))
+                        .filter(Transcript.created_at >= cutoff)
+                        .scalar()
+                    ) or 0
+
+                transcripts_7d = transcripts_since(7)
+                transcripts_30d = transcripts_since(30)
+
+                # ── ASR performance (per model) ──
+                def asr_stats(lib: str) -> Dict[str, Any]:
+                    rows = (
+                        session.query(
+                            ProcessingMetrics.processing_duration_ms,
+                            ProcessingMetrics.audio_duration_sec,
+                        )
+                        .filter(ProcessingMetrics.transcribe_lib == lib)
+                        .all()
+                    )
+                    count = len(rows)
+                    total_audio_sec = sum(r.audio_duration_sec for r in rows)
+                    total_audio_hours = total_audio_sec / 3600.0 if total_audio_sec else 0.0
+                    # Per-file: processing_duration_ms / (audio_duration_sec / 3600)
+                    # = сколько мс заняла обработка часа этого файла
+                    normalized = [
+                        r.processing_duration_ms / (r.audio_duration_sec / 3600.0)
+                        for r in rows if r.audio_duration_sec > 0
+                    ]
+                    avg_per_hour_ms = sum(normalized) / len(normalized) if normalized else 0.0
+                    return {
+                        "total_processed": count,
+                        "total_audio_hours": round(total_audio_hours, 2),
+                        "avg_processing_time_per_hour_ms": round(avg_per_hour_ms, 2),
+                    }
+
+                whisper_stats = asr_stats("whisper")
+                gigaam_stats = asr_stats("gigaam")
+
+                # ── Daily breakdown (last 30 days) ──
+                cutoff_30d = func.now() - text("INTERVAL '30 days'")
+                daily_rows = (
+                    session.query(
+                        func.date(Transcript.created_at).label("date"),
+                        func.count(func.distinct(TranscriptAccess.employee_id)).label("active_users"),
+                        func.count(Transcript.id).label("transcripts"),
+                    )
+                    .outerjoin(TranscriptAccess, TranscriptAccess.transcript_id == Transcript.id)
+                    .filter(Transcript.created_at >= cutoff_30d)
+                    .group_by(func.date(Transcript.created_at))
+                    .order_by(func.date(Transcript.created_at))
+                    .all()
+                )
+
+                daily_breakdown = [
+                    {
+                        "date": str(row.date),
+                        "active_users": row.active_users,
+                        "transcripts": row.transcripts,
+                    }
+                    for row in daily_rows
+                ]
+
+                # ── Processing breakdowns (hour / day / month) ──
+                # Hourly: last 24 hours (padded to always show 24 slots)
+                cutoff_24h = func.now() - text("INTERVAL '24 hours'")
+                hourly_rows = (
+                    session.query(
+                        func.date_trunc('hour', ProcessingMetrics.created_at).label("bucket"),
+                        func.count(ProcessingMetrics.id).label("processing_count"),
+                    )
+                    .filter(ProcessingMetrics.created_at >= cutoff_24h)
+                    .group_by(func.date_trunc('hour', ProcessingMetrics.created_at))
+                    .order_by(func.date_trunc('hour', ProcessingMetrics.created_at))
+                    .all()
+                )
+                _hour_map = {}
+                for row in hourly_rows:
+                    key = row.bucket.strftime("%Y-%m-%d %H:00") if hasattr(row.bucket, 'strftime') else str(row.bucket)
+                    _hour_map[key] = row.processing_count
+                # Pad to 24 hours
+                _tz_irkt = timezone(timedelta(hours=8))
+                _now_irkt = datetime.now(_tz_irkt).replace(minute=0, second=0, microsecond=0)
+                hourly_processing = []
+                for _i in range(23, -1, -1):  # oldest first
+                    _slot = _now_irkt - timedelta(hours=_i)
+                    _key = _slot.strftime("%Y-%m-%d %H:00")
+                    hourly_processing.append({"hour": _key, "count": _hour_map.get(_key, 0)})
+
+                # Daily (ProcessingMetrics): last 30 days
+                daily_processing_rows = (
+                    session.query(
+                        func.date(ProcessingMetrics.created_at).label("date"),
+                        func.count(ProcessingMetrics.id).label("processing_count"),
+                    )
+                    .filter(ProcessingMetrics.created_at >= cutoff_30d)
+                    .group_by(func.date(ProcessingMetrics.created_at))
+                    .order_by(func.date(ProcessingMetrics.created_at))
+                    .all()
+                )
+                _day_map = {str(r.date): r.processing_count for r in daily_processing_rows}
+                daily_processing = []
+                for _i in range(29, -1, -1):  # oldest first
+                    _slot = (_now_irkt - timedelta(days=_i)).strftime("%Y-%m-%d")
+                    daily_processing.append({"date": _slot, "count": _day_map.get(_slot, 0)})
+
+                # Monthly: last 12 months
+                cutoff_12m = func.now() - text("INTERVAL '12 months'")
+                monthly_rows = (
+                    session.query(
+                        func.date_trunc('month', ProcessingMetrics.created_at).label("bucket"),
+                        func.count(ProcessingMetrics.id).label("processing_count"),
+                    )
+                    .filter(ProcessingMetrics.created_at >= cutoff_12m)
+                    .group_by(func.date_trunc('month', ProcessingMetrics.created_at))
+                    .order_by(func.date_trunc('month', ProcessingMetrics.created_at))
+                    .all()
+                )
+                monthly_processing = [
+                    {"month": row.bucket.strftime("%Y-%m") if hasattr(row.bucket, 'strftime') else str(row.bucket), "count": row.processing_count}
+                    for row in monthly_rows
+                ]
+
+                # ── Weekly: last 12 weeks (3 months) ──
+                cutoff_3m = func.now() - text("INTERVAL '3 months'")
+                weekly_rows = (
+                    session.query(
+                        func.date_trunc('week', ProcessingMetrics.created_at).label("bucket"),
+                        func.count(ProcessingMetrics.id).label("processing_count"),
+                    )
+                    .filter(ProcessingMetrics.created_at >= cutoff_3m)
+                    .group_by(func.date_trunc('week', ProcessingMetrics.created_at))
+                    .order_by(func.date_trunc('week', ProcessingMetrics.created_at))
+                    .all()
+                )
+                weekly_processing = [
+                    {"week": row.bucket.strftime("%Y-%m-%d") if hasattr(row.bucket, 'strftime') else str(row.bucket), "count": row.processing_count}
+                    for row in weekly_rows
+                ]
+
+                # ── Hourly load (0-23, last 7 days) ──
+                cutoff_7d = func.now() - text("INTERVAL '7 days'")
+                load_rows = (
+                    session.query(
+                        func.extract('hour', ProcessingMetrics.created_at).label("hour"),
+                        func.count(ProcessingMetrics.id).label("count"),
+                        func.coalesce(func.avg(ProcessingMetrics.processing_duration_ms), 0).label("avg_ms"),
+                    )
+                    .filter(ProcessingMetrics.created_at >= cutoff_7d)
+                    .group_by(func.extract('hour', ProcessingMetrics.created_at))
+                    .order_by(func.extract('hour', ProcessingMetrics.created_at))
+                    .all()
+                )
+                load_by_hour = {int(r.hour): {"count": r.count, "avg_ms": round(float(r.avg_ms))} for r in load_rows}
+                hourly_load = [
+                    {
+                        "hour": f"{h:02d}:00",
+                        "count": load_by_hour.get(h, {}).get("count", 0),
+                        "avg_ms": load_by_hour.get(h, {}).get("avg_ms", 0),
+                    }
+                    for h in range(24)
+                ]
+
+                return {
+                    "user_activity": {
+                        "total_users": total_users,
+                        "active_users_7d": active_users_7d,
+                        "active_users_30d": active_users_30d,
+                        "total_transcripts": total_transcripts,
+                        "transcripts_7d": transcripts_7d,
+                        "transcripts_30d": transcripts_30d,
+                    },
+                    "asr_performance": {
+                        "whisper": whisper_stats,
+                        "gigaam": gigaam_stats,
+                    },
+                    "daily_breakdown": daily_breakdown,
+                    "hourly_processing": hourly_processing,
+                    "daily_processing": daily_processing,
+                    "weekly_processing": weekly_processing,
+                    "monthly_processing": monthly_processing,
+                    "hourly_load": hourly_load,
+                }
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении аналитики: {e}")
+                return {
+                    "user_activity": {},
+                    "asr_performance": {},
+                    "daily_breakdown": [],
+                    "hourly_processing": [],
+                    "daily_processing": [],
+                    "weekly_processing": [],
+                    "monthly_processing": [],
+                    "hourly_load": [],
+                }

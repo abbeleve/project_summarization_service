@@ -32,7 +32,40 @@ interface UserTranscriptsResponse {
   offset: number;
 }
 
-type Tab = 'users' | 'transcripts';
+type Tab = 'users' | 'transcripts' | 'analytics';
+
+interface AnalyticsData {
+  user_activity: {
+    total_users: number;
+    active_users_7d: number;
+    active_users_30d: number;
+    total_transcripts: number;
+    transcripts_7d: number;
+    transcripts_30d: number;
+  };
+  asr_performance: {
+    whisper: {
+      total_processed: number;
+      total_audio_hours: number;
+      avg_processing_time_per_hour_ms: number;
+    };
+    gigaam: {
+      total_processed: number;
+      total_audio_hours: number;
+      avg_processing_time_per_hour_ms: number;
+    };
+  };
+  daily_breakdown: {
+    date: string;
+    active_users: number;
+    transcripts: number;
+  }[];
+  hourly_processing: { hour: string; count: number }[];
+  daily_processing: { date: string; count: number }[];
+  weekly_processing: { week: string; count: number }[];
+  monthly_processing: { month: string; count: number }[];
+  hourly_load: { hour: string; count: number; avg_ms: number }[];
+}
 
 // ── Вкладка «Пользователи» ──
 function UsersTab({ users, stats, statsLoading }: {
@@ -450,6 +483,209 @@ function TranscriptsTab() {
   );
 }
 
+// ── Вкладка «Аналитика» ──
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts';
+
+function ChartCard({ title, data, xKey, yKey, color, barSize = 24 }: {
+  title: string; data: { [k: string]: string | number }[]; xKey: string; yKey: string; color: string; barSize?: number;
+}) {
+  return (
+    <div className="bg-white dark:bg-dark-base-800 rounded-2xl p-5 border border-gray-200 dark:border-dark-base-700">
+      <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">{title}</h3>
+      {data.length === 0 ? (
+        <p className="text-sm text-gray-400 dark:text-gray-500 py-8 text-center">Нет данных</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={data} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-gray-200 dark:text-dark-base-700" />
+            <XAxis dataKey={xKey} tick={{ fontSize: 10 }} interval="preserveStartEnd" angle={-20} textAnchor="end" height={40} className="text-gray-500 dark:text-gray-400" />
+            <YAxis tick={{ fontSize: 11 }} allowDecimals={false} className="text-gray-500 dark:text-gray-400" />
+            <Tooltip
+              contentStyle={{
+                borderRadius: 12, border: '1px solid #e5e7eb',
+                background: 'var(--color-bg, #fff)', fontSize: 13,
+              }}
+              labelStyle={{ fontWeight: 600 }}
+            />
+            <Bar dataKey={yKey} fill={color} radius={[6, 6, 0, 0]} barSize={barSize} />
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  );
+}
+
+function AnalyticsTab() {
+  const { data, isLoading, error } = useQuery<AnalyticsData>({
+    queryKey: ['admin', 'analytics'],
+    queryFn: async () => (await apiClient.get('/admin/analytics')).data,
+    refetchInterval: 15_000,
+    staleTime: 0,
+  });
+
+  const [chartRange, setChartRange] = useState<'1d' | '7d' | '30d' | '3m'>('30d');
+
+  const chartConfig = (() => {
+    if (chartRange === '1d') return { data: data?.hourly_processing ?? [], xKey: 'hour' as const, xLabel: 'час' as const };
+    if (chartRange === '7d') {
+      const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      return { data: (data?.daily_processing ?? []).filter(d => d.date >= cutoffStr), xKey: 'date' as const, xLabel: 'день' as const };
+    }
+    if (chartRange === '30d') return { data: data?.daily_processing ?? [], xKey: 'date' as const, xLabel: 'день' as const };
+    return { data: data?.weekly_processing ?? [], xKey: 'week' as const, xLabel: 'неделя' as const };
+  })();
+
+  const ranges = [
+    { key: '1d' as const, label: '1д' },
+    { key: '7d' as const, label: '7д' },
+    { key: '30d' as const, label: '30д' },
+    { key: '3m' as const, label: '3м' },
+  ];
+
+  if (isLoading) return <div className="flex justify-center py-20"><LoadingSpinner text="Загрузка аналитики..." size="sm" /></div>;
+  if (error) return <ErrorMessage message="Не удалось загрузить аналитику" />;
+  if (!data) return null;
+
+  const { user_activity: ua, asr_performance: asr } = data;
+
+  const PerfCard = ({ title, lib, icon }: { title: string; lib: typeof asr.whisper; icon: string }) => (
+    <div className="bg-white dark:bg-dark-base-800 rounded-2xl p-5 border border-gray-200 dark:border-dark-base-700">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
+          <span className="text-lg">{icon}</span>
+        </div>
+        <h3 className="font-semibold text-gray-900 dark:text-white">{title}</h3>
+      </div>
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Среднее время на час аудио</p>
+          <p className="text-xl font-bold text-gray-900 dark:text-white">
+            {lib.avg_processing_time_per_hour_ms > 0
+              ? `${(lib.avg_processing_time_per_hour_ms / 1000).toFixed(1)} сек`
+              : '—'}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 pt-1 border-t border-gray-100 dark:border-dark-base-700">
+          <div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Обработано</p>
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">{lib.total_processed}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Часов аудио</p>
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">{lib.total_audio_hours}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* User activity stats */}
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Активность пользователей</h2>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {[
+          { label: 'Всего пользователей', value: ua.total_users, icon: '👥', bg: 'bg-blue-100 dark:bg-blue-900/30' },
+          { label: 'Активны (7 дней)', value: ua.active_users_7d, icon: '⭐', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
+          { label: 'Активны (30 дней)', value: ua.active_users_30d, icon: '🌟', bg: 'bg-teal-100 dark:bg-teal-900/30' },
+          { label: 'Всего транскрипций', value: ua.total_transcripts, icon: '📄', bg: 'bg-indigo-100 dark:bg-indigo-900/30' },
+          { label: 'За 7 дней', value: ua.transcripts_7d, icon: '📈', bg: 'bg-violet-100 dark:bg-violet-900/30' },
+          { label: 'За 30 дней', value: ua.transcripts_30d, icon: '📊', bg: 'bg-amber-100 dark:bg-amber-900/30' },
+        ].map((s, i) => (
+          <div key={i} className="bg-white dark:bg-dark-base-800 rounded-2xl p-4 border border-gray-200 dark:border-dark-base-700">
+            <div className="flex items-center gap-2.5">
+              <div className={`w-9 h-9 rounded-xl ${s.bg} flex items-center justify-center shrink-0`}>
+                <span className="text-base">{s.icon}</span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">{s.label}</p>
+                <p className="text-lg font-bold text-gray-900 dark:text-white">{s.value}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ASR Performance */}
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Производительность ASR</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <PerfCard title="Whisper" lib={asr.whisper} icon="🎤" />
+        <PerfCard title="GigaAM" lib={asr.gigaam} icon="🧠" />
+      </div>
+
+      {/* Processing chart with range switcher */}
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Обработки аудиофайлов</h2>
+      <div className="bg-white dark:bg-dark-base-800 rounded-2xl p-5 border border-gray-200 dark:border-dark-base-700">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Количество обработанных файлов</h3>
+          <div className="flex gap-1 p-0.5 bg-gray-100 dark:bg-dark-base-700 rounded-lg">
+            {ranges.map(r => (
+              <button key={r.key} onClick={() => setChartRange(r.key)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all cursor-pointer ${
+                  chartRange === r.key
+                    ? 'bg-white dark:bg-dark-base-600 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                }`}
+              >{r.label}</button>
+            ))}
+          </div>
+        </div>
+        {chartConfig.data.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500 py-8 text-center">Нет данных</p>
+        ) : (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={chartConfig.data} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-gray-200 dark:text-dark-base-700" />
+              <XAxis dataKey={chartConfig.xKey} tick={{ fontSize: 10 }} className="text-gray-500 dark:text-gray-400" />
+              <YAxis tick={{ fontSize: 11 }} allowDecimals={false} className="text-gray-500 dark:text-gray-400" />
+              <Tooltip
+                contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', background: 'var(--color-bg, #fff)', fontSize: 13 }}
+                labelStyle={{ fontWeight: 600 }}
+              />
+              <Bar dataKey="count" fill="#6366f1" radius={[6, 6, 0, 0]} name="Обработано" />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 text-center">
+          По {chartConfig.xLabel} — выберите период
+        </p>
+      </div>
+
+      {/* Daily breakdown table */}
+      {data.daily_breakdown.length > 0 && (
+        <>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Ежедневная активность (30 дней)</h2>
+          <div className="bg-white dark:bg-dark-base-800 rounded-2xl border border-gray-200 dark:border-dark-base-700 overflow-hidden">
+            <div className="max-h-72 overflow-y-auto">
+              <table className="w-full">
+                <thead className="sticky top-0 bg-white dark:bg-dark-base-800">
+                  <tr className="border-b border-gray-100 dark:border-dark-base-700">
+                    <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 px-5 py-3">Дата</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 px-5 py-3">Активные пользователи</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 px-5 py-3">Транскрипции</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.daily_breakdown.map((row) => (
+                    <tr key={row.date} className="border-b border-gray-100 dark:border-dark-base-700 hover:bg-gray-50 dark:hover:bg-dark-base-700/50 transition-colors">
+                      <td className="px-5 py-3 text-sm text-gray-900 dark:text-white">{row.date}</td>
+                      <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-300">{row.active_users}</td>
+                      <td className="px-5 py-3 text-sm text-gray-600 dark:text-gray-300">{row.transcripts}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Главный компонент ──
 export const AdminPage = () => {
   const { user, isAuthenticated } = useAuth();
@@ -470,6 +706,7 @@ export const AdminPage = () => {
   const tabs: { key: Tab; label: string; icon: string }[] = [
     { key: 'users', label: 'Пользователи', icon: '👥' },
     { key: 'transcripts', label: 'Транскрипции', icon: '📄' },
+    { key: 'analytics', label: 'Аналитика', icon: '📊' },
   ];
 
   return (
@@ -501,6 +738,8 @@ export const AdminPage = () => {
       )}
 
       {activeTab === 'transcripts' && <TranscriptsTab />}
+
+      {activeTab === 'analytics' && <AnalyticsTab />}
     </div>
   );
 };

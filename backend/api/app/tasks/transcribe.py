@@ -4,6 +4,7 @@ Celery задачи для обработки аудио.
 import json
 import logging
 import os
+import time
 import requests
 from uuid import UUID
 from typing import Dict, Any, Optional, List
@@ -51,6 +52,7 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
     """
     task_id = self.request.id
     logger.info(f"Начало обработки задачи {task_id}")
+    _task_start_time = time.perf_counter()
 
     try:
         # === 1. Транскрибация (вызов audio-ml сервиса) ===
@@ -288,6 +290,23 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
                 logger.info(f"[{task_id}] WAV удалён из MinIO: {wav_key}")
             except Exception as e:
                 logger.warning(f"[{task_id}] Не удалось удалить WAV из MinIO: {e}")
+
+        # === 9. Сохраняем метрики обработки для аналитики ===
+        _total_duration_ms = int((time.perf_counter() - _task_start_time) * 1000)
+        try:
+            db.insert_processing_metrics(
+                transcript_id=transcript_id,
+                user_id=user_id,
+                audio_duration_sec=float(ml_result.get("duration", 0.0)),
+                transcribe_lib=options.get("transcribe_lib", "gigaam"),
+                transcribe_model=options.get("transcribe_model"),
+                processing_duration_ms=_total_duration_ms,
+                diarize_lib=options.get("diarize_lib"),
+                noise_suppression=options.get("noise_sup_bool") == "true",
+            )
+            logger.info(f"[{task_id}] Метрики обработки сохранены")
+        except Exception as e:
+            logger.warning(f"[{task_id}] Не удалось сохранить метрики: {e}")
 
         logger.info(f"[{task_id}] Задача завершена успешно")
         update_task_status(task_id, "completed", {

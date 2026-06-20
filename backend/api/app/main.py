@@ -1474,6 +1474,20 @@ async def admin_get_stats(
         raise HTTPException(500, f"Ошибка получения статистики: {str(e)}")
 
 
+@app.get("/admin/analytics")
+async def admin_get_analytics(
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Получить расширенную аналитику сервиса (только для админа)"""
+    try:
+        analytics = db.get_analytics()
+        return analytics
+    except Exception as e:
+        logger.error(f"Error fetching analytics: {str(e)}")
+        raise HTTPException(500, f"Ошибка получения аналитики: {str(e)}")
+
+
 @app.get("/admin/users/{user_id}/transcripts")
 async def admin_get_user_transcripts(
     user_id: str,
