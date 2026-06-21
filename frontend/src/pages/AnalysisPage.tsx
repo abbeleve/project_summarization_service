@@ -2,7 +2,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useTranscripts } from '@/hooks/useTranscripts';
 import { useAnnotations } from '@/hooks/useAnnotations';
+import { useCRMTasks } from '@/hooks/useCRM';
 import { transcriptsApi } from '@/api/transcripts';
+import type { MeetingTask } from '@/types/transcript';
 import { voiceApi, usersApi } from '@/api/voice';
 import { getDominantColorsMap } from '@/utils/dominantColor';
 import { SpeakerDistributionChart } from '@/components/analysis/SpeakerDistributionChart';
@@ -39,6 +41,8 @@ export const AnalysisPage = () => {
   const [annotationNote, setAnnotationNote] = useState('');
   const [rightTab, setRightTab] = useState<'summary' | 'charts' | 'chat' | 'annotations'>('summary');
   const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [tasksExpanded, setTasksExpanded] = useState(true);
+  const [keyPointsExpanded, setKeyPointsExpanded] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [audioError, setAudioError] = useState(false);
 
@@ -56,27 +60,62 @@ export const AnalysisPage = () => {
     { id: 'u5', name: 'Михаил Соколов', email: 'mikhail.sokolov@company.ru' },
   ];
 
-  // Переопределения значений поверх LLM-предложений, индексируются по позиции задачи.
-  const [taskOverrides, setTaskOverrides] = useState<
-    Record<number, { assignee?: string; deadline?: string }>
-  >({});
-  const [openAssigneeFor, setOpenAssigneeFor] = useState<number | null>(null);
-  const [openDeadlineFor, setOpenDeadlineFor] = useState<number | null>(null);
+  // ===== CRM (MeetingTasks) =====
+  const {
+    tasks: meetingTasks,
+    isLoading: crmTasksLoading,
+    isSendAllPending,
+    sendAllToCRM,
+    sendOneToCRM,
+    isSendingOne,
+    updateTask,
+  } = useCRMTasks(transcript?.summary_id ?? null);
 
-  const getAssignee = (idx: number, fallback?: string) =>
-    taskOverrides[idx]?.assignee ?? fallback ?? '';
-  const getDeadline = (idx: number, fallback?: string) =>
-    taskOverrides[idx]?.deadline ?? fallback ?? '';
+  const [openAssigneeFor, setOpenAssigneeFor] = useState<string | null>(null);
+  const [openDeadlineFor, setOpenDeadlineFor] = useState<string | null>(null);
+  const [editingDescriptionId, setEditingDescriptionId] = useState<string | null>(null);
+  const [editingDescriptionText, setEditingDescriptionText] = useState('');
+  const unsentTasks = meetingTasks.filter((t) => !t.sent_to_crm);
+  const sentTasks = meetingTasks.filter((t) => t.sent_to_crm);
+  const hasTasks = meetingTasks.length > 0;
 
-  const handleSendToCRM = () => {
-    const tasks = transcript.tasks ?? [];
-    const payload = tasks.map((t, idx) => ({
-      description: t.description,
-      assignee: getAssignee(idx, t.assignee) || null,
-      deadline: getDeadline(idx, t.deadline) || null,
-    }));
-    console.log('[CRM export] payload:', payload);
-    showToast(`Отправлено ${payload.length} задач в CRM (mock)`, 'success');
+  const handleSendAllToCRM = async () => {
+    if (!transcript?.summary_id) return;
+    if (unsentTasks.length === 0) {
+      showToast('Все задачи уже отправлены', 'error');
+      return;
+    }
+    sendAllToCRM(undefined, {
+      onSuccess: (res) => {
+        if (res.status === 'ok' || res.status === 'partial') {
+          showToast(`Отправлено ${res.sent} из ${res.total} задач в CRM`, 'success');
+        } else {
+          showToast(res.status === 'error' ? 'Ошибка отправки' : JSON.stringify(res), 'error');
+        }
+      },
+      onError: (err) => {
+        const msg = err instanceof Error ? err.message : 'Ошибка отправки в CRM';
+        showToast(msg, 'error');
+      },
+    });
+  };
+
+  const handleSendOne = (taskId: string) => {
+    sendOneToCRM(taskId, {
+      onSuccess: (res) => {
+        if (res.status === 'ok') {
+          showToast('Задача отправлена в CRM', 'success');
+        } else if (res.status === 'already_sent') {
+          showToast('Задача уже была отправлена', 'error');
+        } else {
+          showToast(res.message || 'Ошибка отправки', 'error');
+        }
+      },
+      onError: (err) => {
+        const msg = err instanceof Error ? err.message : 'Ошибка отправки';
+        showToast(msg, 'error');
+      },
+    });
   };
 
   const ANNOTATION_COLORS = [
@@ -699,238 +738,376 @@ export const AnalysisPage = () => {
                     </div>
                   )}
 
-                  {/* Ключевые моменты — каждый в отдельном блоке */}
-                  {(transcript.key_points || []).length > 0 && (
+                  {/* Задачи (action items) — MeetingTask */}
+                  {hasTasks && (
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">🔑</span>
-                        <h4 className="text-2xl font-bold text-amber-900 dark:text-amber-300">
-                          Ключевые моменты
+                      <button
+                        onClick={() => setTasksExpanded(!tasksExpanded)}
+                        className="w-full flex items-center gap-2 text-left"
+                      >
+                        <span className="text-lg">✅</span>
+                        <h4 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300 flex-1">
+                          Задачи
                         </h4>
-                      </div>
-                      {(transcript.key_points || []).map((point, idx) => (
-                        <div
-                          key={idx}
-                          className="border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 shadow-md"
-                        >
-                          <div className="flex items-start gap-3">
-                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">
-                              {idx + 1}
-                            </span>
-                            <p className="text-amber-900 dark:text-amber-100 text-sm leading-relaxed">
-                              {point}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Задачи (action items) */}
-                  {(transcript.tasks ?? []).length > 0 && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">✅</span>
-                          <h4 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">
-                            Задачи
-                          </h4>
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-medium">
-                            {transcript.tasks!.length}
+                        {crmTasksLoading ? (
+                          <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800/40 text-gray-400 text-xs">
+                            загрузка…
                           </span>
-                        </div>
-                        <button
-                          onClick={handleSendToCRM}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 transition-colors shadow-sm"
-                          title="Отправить задачи в CRM (Weeek)"
-                        >
-                          📤 Отправить в CRM
-                        </button>
-                      </div>
-                      {(transcript.tasks ?? []).map((task, idx) => {
-                        const assigneeValue = getAssignee(idx, task.assignee);
-                        const deadlineValue = getDeadline(idx, task.deadline);
-                        return (
-                          <div
-                            key={idx}
-                            className="border-l-4 border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 shadow-md"
-                          >
-                            <div className="flex items-start gap-3">
-                              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">
-                                {idx + 1}
-                              </span>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-emerald-900 dark:text-emerald-100 text-sm leading-relaxed">
-                                  {task.description}
-                                </p>
-                                <div
-                                  className="flex flex-wrap gap-2 mt-2"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {/* Assignee — кликабельный бейдж с поповером */}
-                                  <div className="relative">
-                                    <button
-                                      onClick={() =>
-                                        setOpenAssigneeFor(
-                                          openAssigneeFor === idx ? null : idx
-                                        )
-                                      }
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${
-                                        assigneeValue
-                                          ? 'bg-emerald-100 dark:bg-emerald-800/40 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-200 dark:hover:bg-emerald-700/50'
-                                          : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700/50'
-                                      }`}
-                                      title="Назначить ответственного"
-                                    >
-                                      👤 {assigneeValue || 'Назначить'}
-                                    </button>
-                                    {openAssigneeFor === idx && (
-                                      <div className="absolute z-20 mt-1 left-0 w-56 rounded-lg bg-white dark:bg-dark-base-800 shadow-xl border border-gray-200 dark:border-dark-base-700 py-1">
-                                        {[
-                                          { id: '', name: '— Не назначать —' },
-                                          ...HARDCODED_ASSIGNEES,
-                                        ].map((user) => (
-                                          <button
-                                            key={user.id || 'none'}
-                                            onClick={() => {
-                                              setTaskOverrides((prev) => ({
-                                                ...prev,
-                                                [idx]: {
-                                                  ...(prev[idx] ?? {}),
-                                                  assignee: user.id ? user.name : '',
-                                                },
-                                              }));
-                                              setOpenAssigneeFor(null);
-                                            }}
-                                            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-dark-base-700 ${
-                                              assigneeValue ===
-                                                (user.id ? user.name : '') &&
-                                              'bg-emerald-50 dark:bg-emerald-900/30'
-                                            }`}
-                                          >
-                                            {user.name}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-medium">
+                            {sentTasks.length > 0
+                              ? `${unsentTasks.length} / ${meetingTasks.length}`
+                              : meetingTasks.length}
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-400 px-1 select-none">
+                          {tasksExpanded ? '▲' : '▼'}
+                        </span>
+                      </button>
+                      <div
+                        className="overflow-hidden transition-all ease-out"
+                        style={{
+                          maxHeight: tasksExpanded ? '5000px' : '0px',
+                          opacity: tasksExpanded ? 1 : 0,
+                          transitionDuration: tasksExpanded ? '400ms' : '200ms',
+                        }}
+                      >
+                        <div className="space-y-2 pt-2">
 
-                                  {/* Deadline — кликабельный бейдж + пресеты в один клик */}
-                                  <div className="flex flex-wrap items-center gap-1">
-                                    <button
-                                      onClick={() => {
-                                        if (deadlineValue) {
-                                          setTaskOverrides((prev) => ({
-                                            ...prev,
-                                            [idx]: { ...(prev[idx] ?? {}), deadline: '' },
-                                          }));
-                                        } else {
-                                          const today = new Date()
-                                            .toISOString()
-                                            .slice(0, 10);
-                                          setTaskOverrides((prev) => ({
-                                            ...prev,
-                                            [idx]: {
-                                              ...(prev[idx] ?? {}),
-                                              deadline: today,
-                                            },
-                                          }));
-                                        }
-                                        setOpenDeadlineFor(null);
-                                      }}
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${
-                                        deadlineValue
-                                          ? 'bg-amber-100 dark:bg-amber-800/40 text-amber-800 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-700/50'
-                                          : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700/50'
-                                      }`}
-                                      title={
-                                        deadlineValue
-                                          ? 'Убрать срок'
-                                          : 'Установить срок'
-                                      }
-                                    >
-                                      ⏰{' '}
-                                      {deadlineValue
-                                        ? new Date(deadlineValue).toLocaleDateString(
-                                            'ru-RU',
-                                            { day: '2-digit', month: '2-digit', year: 'numeric' }
-                                          )
-                                        : 'Срок'}
-                                    </button>
+                          {unsentTasks.length > 0 && (
+                            <div className="flex justify-end">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleSendAllToCRM(); }}
+                                disabled={isSendAllPending}
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-wait transition-colors shadow-sm cursor-pointer"
+                              >
+                                {isSendAllPending
+                                  ? 'Отправка…'
+                                  : `📤 Отправить всё (${unsentTasks.length})`}
+                              </button>
+                            </div>
+                          )}
 
-                                    {[
-                                      { label: 'Сегодня', days: 0 },
-                                      { label: 'Завтра', days: 1 },
-                                      { label: 'Неделя', days: 7 },
-                                      { label: 'Месяц', days: 30 },
-                                    ].map((p) => {
-                                      const d = new Date();
-                                      d.setDate(d.getDate() + p.days);
-                                      const iso = d.toISOString().slice(0, 10);
-                                      const active = deadlineValue === iso;
-                                      return (
-                                        <button
-                                          key={p.label}
-                                          onClick={() => {
-                                            setTaskOverrides((prev) => ({
-                                              ...prev,
-                                              [idx]: {
-                                                ...(prev[idx] ?? {}),
-                                                deadline: iso,
-                                              },
-                                            }));
-                                            setOpenDeadlineFor(null);
+                          {meetingTasks.map((task: MeetingTask) => {
+                            const isSent = task.sent_to_crm;
+                            const containerClass = isSent
+                              ? 'border-l-4 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/20 rounded-lg p-4 shadow-sm opacity-60'
+                              : 'border-l-4 border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 shadow-md';
+
+                            return (
+                              <div key={task.id} className={containerClass}>
+                                <div className="flex items-start gap-3">
+                                  <span
+                                    className={`flex-shrink-0 w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center mt-0.5 ${
+                                      isSent
+                                        ? 'bg-gray-400'
+                                        : 'bg-emerald-500'
+                                    }`}
+                                  >
+                                    {meetingTasks.indexOf(task) + 1}
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    {isSent ? (
+                                      <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400 line-through">
+                                        {task.description}
+                                      </p>
+                                    ) : editingDescriptionId === task.id ? (
+                                      <div className="space-y-1">
+                                        <textarea
+                                          autoFocus
+                                          value={editingDescriptionText}
+                                          onChange={(e) => setEditingDescriptionText(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Escape') {
+                                              setEditingDescriptionId(null);
+                                              setEditingDescriptionText('');
+                                            }
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                              e.preventDefault();
+                                              if (editingDescriptionText.trim()) {
+                                                updateTask({
+                                                  taskId: task.id,
+                                                  description: editingDescriptionText.trim(),
+                                                });
+                                              }
+                                              setEditingDescriptionId(null);
+                                              setEditingDescriptionText('');
+                                            }
                                           }}
-                                          className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
-                                            active
-                                              ? 'bg-amber-500 text-white'
-                                              : 'bg-amber-50/60 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/40 border border-amber-200 dark:border-amber-700/30'
-                                          }`}
-                                        >
-                                          {p.label}
-                                        </button>
-                                      );
-                                    })}
-
-                                    {openDeadlineFor === idx ? (
-                                      <input
-                                        type="date"
-                                        autoFocus
-                                        value={
-                                          deadlineValue
-                                            ? deadlineValue.match(/^\d{4}-\d{2}-\d{2}/)
-                                              ? deadlineValue.slice(0, 10)
-                                              : ''
-                                            : ''
-                                        }
-                                        onChange={(e) =>
-                                          setTaskOverrides((prev) => ({
-                                            ...prev,
-                                            [idx]: {
-                                              ...(prev[idx] ?? {}),
-                                              deadline: e.target.value,
-                                            },
-                                          }))
-                                        }
-                                        onBlur={() => setOpenDeadlineFor(null)}
-                                        className="px-2 py-0.5 rounded-md text-xs border border-amber-300 dark:border-amber-700 bg-white dark:bg-dark-base-800 text-amber-900 dark:text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 [color-scheme] dark:opacity-100"
-                                      />
+                                          onBlur={() => {
+                                            if (editingDescriptionText.trim() && editingDescriptionText.trim() !== task.description) {
+                                              updateTask({
+                                                taskId: task.id,
+                                                description: editingDescriptionText.trim(),
+                                              });
+                                            }
+                                            setEditingDescriptionId(null);
+                                            setEditingDescriptionText('');
+                                          }}
+                                          className="w-full border border-emerald-300 dark:border-emerald-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-dark-base-800 text-emerald-900 dark:text-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
+                                          rows={3}
+                                        />
+                                        <p className="text-[10px] text-gray-400">
+                                          ↵ Enter — сохранить · Esc — отмена · Shift+↵ — новая строка
+                                        </p>
+                                      </div>
                                     ) : (
-                                      <button
-                                        onClick={() => setOpenDeadlineFor(idx)}
-                                        className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-50/60 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/40 border border-amber-200 dark:border-amber-700/30 transition-colors"
-                                        title="Выбрать произвольную дату"
+                                      <p
+                                        className="text-sm leading-relaxed text-emerald-900 dark:text-emerald-100 cursor-pointer hover:bg-emerald-100/50 dark:hover:bg-emerald-800/30 rounded px-1 -mx-1 transition-colors"
+                                        onClick={() => {
+                                          setEditingDescriptionId(task.id);
+                                          setEditingDescriptionText(task.description);
+                                        }}
+                                        title="Редактировать задачу"
                                       >
-                                        📅 Своя
-                                      </button>
+                                        {task.description}
+                                      </p>
+                                    )}
+
+                                    {isSent ? (
+                                      /* Отправленная — только информация */
+                                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-green-100 dark:bg-green-800/30 text-green-700 dark:text-green-300 text-[10px] font-medium">
+                                          ✅ Отправлено в Weeek
+                                        </span>
+                                        {task.sent_at && (
+                                          <span className="text-[10px] text-gray-400">
+                                            {new Date(task.sent_at).toLocaleDateString(
+                                              'ru-RU',
+                                              { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }
+                                            )}
+                                          </span>
+                                        )}
+                                        {task.assignee && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800/40 text-gray-600 dark:text-gray-400 text-[10px]">
+                                            👤 {task.assignee}
+                                          </span>
+                                        )}
+                                        {task.deadline && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800/40 text-gray-600 dark:text-gray-400 text-[10px]">
+                                            ⏰ {new Date(task.deadline).toLocaleDateString(
+                                                'ru-RU',
+                                                { day: '2-digit', month: '2-digit', year: 'numeric' }
+                                              )}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      /* Неотправленная — редактирование */
+                                      <div
+                                        className="flex flex-wrap items-start gap-2 mt-2"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        {/* Assignee — кликабельный бейдж с поповером */}
+                                        <div className="relative">
+                                          <button
+                                            onClick={() =>
+                                              setOpenAssigneeFor(
+                                                openAssigneeFor === task.id ? null : task.id
+                                              )
+                                            }
+                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${
+                                              task.assignee
+                                                ? 'bg-emerald-100 dark:bg-emerald-800/40 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-200 dark:hover:bg-emerald-700/50'
+                                                : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700/50'
+                                            }`}
+                                            title="Назначить ответственного"
+                                          >
+                                            👤 {task.assignee || 'Назначить'}
+                                          </button>
+                                          {openAssigneeFor === task.id && (
+                                            <div className="absolute z-20 mt-1 left-0 w-56 rounded-lg bg-white dark:bg-dark-base-800 shadow-xl border border-gray-200 dark:border-dark-base-700 py-1">
+                                              {[
+                                                { id: '', name: '— Не назначать —' },
+                                                ...HARDCODED_ASSIGNEES,
+                                              ].map((user) => (
+                                                <button
+                                                  key={user.id || 'none'}
+                                                  onClick={() => {
+                                                    const newAssignee = user.id ? user.name : '';
+                                                    updateTask({
+                                                      taskId: task.id,
+                                                      assignee: newAssignee,
+                                                    });
+                                                    setOpenAssigneeFor(null);
+                                                  }}
+                                                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-dark-base-700 ${
+                                                    task.assignee ===
+                                                      (user.id ? user.name : '') &&
+                                                    'bg-emerald-50 dark:bg-emerald-900/30'
+                                                  }`}
+                                                >
+                                                  {user.name}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        {/* Deadline — пресеты + свой date */}
+                                        <div className="flex flex-wrap items-center gap-1">
+                                          <button
+                                            onClick={() => {
+                                              if (task.deadline) {
+                                                updateTask({
+                                                  taskId: task.id,
+                                                  deadline: '',
+                                                });
+                                              } else {
+                                                const today = new Date()
+                                                  .toISOString()
+                                                  .slice(0, 10);
+                                                updateTask({
+                                                  taskId: task.id,
+                                                  deadline: today,
+                                                });
+                                              }
+                                              setOpenDeadlineFor(null);
+                                            }}
+                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${
+                                              task.deadline
+                                                ? 'bg-amber-100 dark:bg-amber-800/40 text-amber-800 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-700/50'
+                                                : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700/50'
+                                            }`}
+                                            title={task.deadline ? 'Убрать срок' : 'Установить срок'}
+                                          >
+                                            ⏰{' '}
+                                            {task.deadline
+                                              ? new Date(task.deadline).toLocaleDateString('ru-RU', {
+                                                  day: '2-digit',
+                                                  month: '2-digit',
+                                                  year: 'numeric',
+                                                })
+                                              : 'Срок'}
+                                          </button>
+
+                                          {[
+                                            { label: 'Сегодня', days: 0 },
+                                            { label: 'Завтра', days: 1 },
+                                            { label: 'Неделя', days: 7 },
+                                            { label: 'Месяц', days: 30 },
+                                          ].map((p) => {
+                                            const d = new Date();
+                                            d.setDate(d.getDate() + p.days);
+                                            const iso = d.toISOString().slice(0, 10);
+                                            const active = task.deadline === iso;
+                                            return (
+                                              <button
+                                                key={p.label}
+                                                onClick={() => {
+                                                  updateTask({
+                                                    taskId: task.id,
+                                                    deadline: iso,
+                                                  });
+                                                  setOpenDeadlineFor(null);
+                                                }}
+                                                className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
+                                                  active
+                                                    ? 'bg-amber-500 text-white'
+                                                    : 'bg-amber-50/60 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/40 border border-amber-200 dark:border-amber-700/30'
+                                                }`}
+                                              >
+                                                {p.label}
+                                              </button>
+                                            );
+                                          })}
+
+                                          {openDeadlineFor === task.id ? (
+                                            <input
+                                              type="date"
+                                              autoFocus
+                                              value={
+                                                task.deadline
+                                                  ? task.deadline.match(/^\d{4}-\d{2}-\d{2}/)
+                                                    ? task.deadline.slice(0, 10)
+                                                    : ''
+                                                  : ''
+                                              }
+                                              onChange={(e) =>
+                                                updateTask({
+                                                  taskId: task.id,
+                                                  deadline: e.target.value,
+                                                })
+                                              }
+                                              onBlur={() => setOpenDeadlineFor(null)}
+                                              className="px-2 py-0.5 rounded-md text-xs border border-amber-300 dark:border-amber-700 bg-white dark:bg-dark-base-800 text-amber-900 dark:text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 [color-scheme] dark:opacity-100"
+                                            />
+                                          ) : (
+                                            <button
+                                              onClick={() => setOpenDeadlineFor(task.id)}
+                                              className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-50/60 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/40 border border-amber-200 dark:border-amber-700/30 transition-colors"
+                                              title="Выбрать произвольную дату"
+                                            >
+                                              📅 Своя
+                                            </button>
+                                          )}
+                                        </div>
+
+                                        {/* Кнопка отправить одну задачу */}
+                                        <button
+                                          onClick={() => handleSendOne(task.id)}
+                                          disabled={isSendingOne}
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-emerald-500/80 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-wait transition-colors cursor-pointer"
+                                          title="Отправить эту задачу"
+                                        >
+                                          {isSendingOne ? '…' : '📤 Отправить'}
+                                        </button>
+                                      </div>
                                     )}
                                   </div>
                                 </div>
                               </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ключевые моменты — каждый в отдельном блоке */}
+                  {(transcript.key_points || []).length > 0 && (
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => setKeyPointsExpanded(!keyPointsExpanded)}
+                        className="w-full flex items-center gap-2 text-left"
+                      >
+                        <span className="text-lg">🔑</span>
+                        <h4 className="text-2xl font-bold text-amber-900 dark:text-amber-300 flex-1">
+                          Ключевые моменты
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-medium">
+                          {(transcript.key_points || []).length}
+                        </span>
+                        <span className="text-xs text-gray-400 px-1 select-none">
+                          {keyPointsExpanded ? '▲' : '▼'}
+                        </span>
+                      </button>
+                      <div
+                        className="overflow-hidden transition-all ease-out"
+                        style={{
+                          maxHeight: keyPointsExpanded ? '5000px' : '0px',
+                          opacity: keyPointsExpanded ? 1 : 0,
+                          transitionDuration: keyPointsExpanded ? '400ms' : '200ms',
+                        }}
+                      >
+                        <div className="space-y-2 pt-2">
+                          {(transcript.key_points || []).map((point, idx) => (
+                            <div
+                              key={idx}
+                              className="border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 shadow-md"
+                            >
+                              <div className="flex items-start gap-3">
+                                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">
+                                  {idx + 1}
+                                </span>
+                                <p className="text-amber-900 dark:text-amber-100 text-sm leading-relaxed">
+                                  {point}
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   )}
                   </div>

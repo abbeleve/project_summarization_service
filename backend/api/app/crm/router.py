@@ -43,6 +43,7 @@ class MeetingTaskOut(BaseModel):
 
 class UpdateTaskRequest(BaseModel):
     """Редактирование задачи."""
+    description: Optional[str] = Field(None, description="Описание задачи")
     assignee: Optional[str] = Field(None, description="Ответственный")
     deadline: Optional[str] = Field(None, description="Дедлайн")
 
@@ -165,6 +166,7 @@ async def update_task(task_id: str, body: UpdateTaskRequest, request: Request):
 
     success = db.update_meeting_task(
         task_id=tid,
+        description=body.description,
         assignee=body.assignee,
         deadline=body.deadline,
     )

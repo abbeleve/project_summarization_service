@@ -32,6 +32,7 @@ export interface Transcript {
   created_at: string;
   summary: string | null;
   key_points: string[] | null;
+  summary_id: string | null;
   meeting_type: string;
   parts: TranscriptPart[];
   segments?: TranscriptSegment[];
@@ -46,6 +47,18 @@ export interface TaskItem {
   description: string;
   assignee?: string;
   deadline?: string;
+}
+
+export interface MeetingTask {
+  id: string;
+  summary_id: string;
+  description: string;
+  assignee: string;
+  deadline: string;
+  sent_to_crm: boolean;
+  sent_at: string | null;
+  crm_task_id: string | null;
+  created_at: string | null;
 }
 
 export interface TranscriptWithTasks extends Transcript {

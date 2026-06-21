@@ -1108,6 +1108,7 @@ async def get_transcript(
             "parts": parts,
             "summary": summary_data.get('text') if summary_data else None,
             "key_points": summary_data.get('key_points') if summary_data else None,
+            "summary_id": summary_data.get('id') if summary_data else None,
             "tasks": summary_data.get('tasks') if summary_data else None,
             "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
             "audio_url": audio_url

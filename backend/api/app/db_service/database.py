@@ -1361,15 +1361,18 @@ class DataBaseManager:
     def update_meeting_task(
         self,
         task_id: UUID,
+        description: Optional[str] = None,
         assignee: Optional[str] = None,
         deadline: Optional[str] = None,
     ) -> bool:
-        """Обновляет assignee/deadline задачи (без отправки в CRM)."""
+        """Обновляет поля задачи (без отправки в CRM)."""
         with self.session_scope() as session:
             try:
                 task = session.get(MeetingTask, task_id)
                 if not task:
                     return False
+                if description is not None:
+                    task.description = description
                 if assignee is not None:
                     task.assignee = assignee
                 if deadline is not None:
