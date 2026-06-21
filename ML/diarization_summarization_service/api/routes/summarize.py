@@ -6,6 +6,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from api.schemas.summarize import (
     SummarizeRequest,
     SummarizeResponse,
+    TaskItemModel,
     ClassifyRequest,
     ClassifyResponse,
     AskRequest,
@@ -46,6 +47,7 @@ async def summarize(
             title=result.get("title", ""),
             summary=result.get("summary", ""),
             key_points=result.get("key_points", []),
+            tasks=[TaskItemModel(**t) for t in result.get("tasks", [])],
             meeting_type=None
         )
         

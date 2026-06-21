@@ -5,6 +5,15 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
 
+# ===== Задачи (action items) =====
+
+class TaskItemModel(BaseModel):
+    """Задача / action item, извлечённая из текста совещания (для CRM)."""
+    description: str = Field(..., description="Описание задачи — что нужно сделать")
+    assignee: str = Field(default="", description="Ответственный (если указан)")
+    deadline: str = Field(default="", description="Срок / дедлайн (если указан)")
+
+
 # ===== Схемы для суммаризации =====
 
 class SummarizeRequest(BaseModel):
@@ -18,6 +27,7 @@ class SummarizeResponse(BaseModel):
     title: str = Field(..., description="Заголовок совещания")
     summary: str = Field(..., description="Краткое содержание")
     key_points: List[str] = Field(..., description="Ключевые пункты")
+    tasks: List[TaskItemModel] = Field(default_factory=list, description="Задачи (action items) для CRM")
     meeting_type: Optional[str] = Field(None, description="Тип совещания")
 
 

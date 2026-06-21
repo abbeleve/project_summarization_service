@@ -616,7 +616,7 @@ export const AnalysisPage = () => {
             {/* Контент вкладок — заполняет оставшееся место */}
             <div className="flex-1 overflow-hidden min-h-0">
               {rightTab === 'summary' && (
-                <div className="h-full overflow-y-auto space-y-6 pr-2">
+                <div className="h-full overflow-y-auto space-y-3 pr-2">
                   {/* Суммаризация — сворачиваемая */}
                   <button
                     onClick={() => setSummaryExpanded(!summaryExpanded)}
@@ -669,7 +669,7 @@ export const AnalysisPage = () => {
 
                   {/* Ключевые моменты — каждый в отдельном блоке */}
                   {(transcript.key_points || []).length > 0 && (
-                    <div className="space-y-4">
+                    <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <span className="text-lg">🔑</span>
                         <h4 className="text-2xl font-bold text-amber-900 dark:text-amber-300">
@@ -688,6 +688,52 @@ export const AnalysisPage = () => {
                             <p className="text-amber-900 dark:text-amber-100 text-sm leading-relaxed">
                               {point}
                             </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Задачи (action items) */}
+                  {(transcript.tasks ?? []).length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">✅</span>
+                        <h4 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">
+                          Задачи
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-medium">
+                          {transcript.tasks!.length}
+                        </span>
+                      </div>
+                      {(transcript.tasks ?? []).map((task, idx) => (
+                        <div
+                          key={idx}
+                          className="border-l-4 border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 shadow-md"
+                        >
+                          <div className="flex items-start gap-3">
+                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">
+                              {idx + 1}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-emerald-900 dark:text-emerald-100 text-sm leading-relaxed">
+                                {task.description}
+                              </p>
+                              {(task.assignee || task.deadline) && (
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  {task.assignee && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-800/40 text-emerald-800 dark:text-emerald-200 text-xs">
+                                      👤 {task.assignee}
+                                    </span>
+                                  )}
+                                  {task.deadline && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-800/40 text-amber-800 dark:text-amber-200 text-xs">
+                                      ⏰ {task.deadline}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}

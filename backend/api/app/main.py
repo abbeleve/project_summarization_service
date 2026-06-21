@@ -953,6 +953,7 @@ async def search_transcripts(
                 "created_at": row[3].isoformat() if row[3] else None,
                 "summary": summary_data.get('text') if summary_data else None,
                 "key_points": summary_data.get('key_points') if summary_data else None,
+                "tasks": summary_data.get('tasks') if summary_data else None,
                 "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
                 "speakers": list(speakers),
                 "duration": duration,
@@ -1043,6 +1044,7 @@ async def get_user_transcripts(
                 "created_at": transcript_data.get('created_at'),
                 "summary": summary_data.get('text') if summary_data else None,
                 "key_points": summary_data.get('key_points') if summary_data else None,
+                "tasks": summary_data.get('tasks') if summary_data else None,
                 "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
                 "speakers": list(speakers),
                 "duration": duration,
@@ -1104,6 +1106,7 @@ async def get_transcript(
             "parts": parts,
             "summary": summary_data.get('text') if summary_data else None,
             "key_points": summary_data.get('key_points') if summary_data else None,
+            "tasks": summary_data.get('tasks') if summary_data else None,
             "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
             "audio_url": audio_url
         }

@@ -189,6 +189,7 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
         summary_text = summary_json.get("summary", "")
         key_points = summary_json.get("key_points", [])
         meeting_type = summary_json.get("meeting_type", "Не определено")
+        tasks = summary_json.get("tasks", [])
         
         # Вставляем транскрипцию
         transcript_id = db.insert_transcripts(
@@ -220,7 +221,8 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
                 transcript_id=transcript_id,
                 text=summary_text,
                 key_points=key_points,
-                meeting_type=meeting_type
+                meeting_type=meeting_type,
+                tasks=tasks
             )
         
         # Сохраняем recording_url если передан (для плеера на фронтенде)

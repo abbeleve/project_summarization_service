@@ -39,6 +39,17 @@ export interface Transcript {
   duration?: number;
   audio_blob?: Blob;
   audio_url?: string;
+  tasks?: TaskItem[] | null;
+}
+
+export interface TaskItem {
+  description: string;
+  assignee?: string;
+  deadline?: string;
+}
+
+export interface TranscriptWithTasks extends Transcript {
+  tasks?: TaskItem[] | null;
 }
 
 export interface ProcessingSettings {

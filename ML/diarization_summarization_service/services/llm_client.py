@@ -192,8 +192,20 @@ class LLMClient:
                                     "type": "array",
                                     "items": {"type": "string"}
                                 },
+                                "tasks": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "description": {"type": "string"},
+                                            "assignee": {"type": "string"},
+                                            "deadline": {"type": "string"}
+                                        },
+                                        "required": ["description", "assignee", "deadline"]
+                                    }
+                                }
                             },
-                            "required": ["title", "summary", "key_points"]
+                            "required": ["title", "summary", "key_points", "tasks"]
                         }
                     },
                 }
@@ -220,12 +232,20 @@ class LLMClient:
                     raise
             
             # Валидация результата
-            for key in ["title", "summary", "key_points"]:
+            for key in ["title", "summary", "key_points", "tasks"]:
                 if key not in result:
                     raise ValueError(f"Отсутствует поле: {key}")
-            
+
             if not isinstance(result["key_points"], list):
                 raise ValueError("key_points должен быть списком")
+            if not isinstance(result["tasks"], list):
+                raise ValueError("tasks должен быть списком")
+            for t in result["tasks"]:
+                if not isinstance(t, dict):
+                    raise ValueError("Каждый элемент tasks должен быть объектом")
+                for field in ("description", "assignee", "deadline"):
+                    if field not in t:
+                        raise ValueError(f"В задаче отсутствует поле: {field}")
             
             logger.info(f"Суммаризация завершена: {result.get('title', 'no title')}")
             return result

@@ -308,6 +308,13 @@ class Summary(Base):
         nullable=True
     )
 
+    tasks: Mapped[Optional[List[Dict[str, str]]]] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=list,
+        comment="Задачи / action items (description, assignee, deadline) для CRM"
+    )
+
     transcript: Mapped["Transcript"] = relationship(
         "Transcript",
         back_populates="summaries"
@@ -318,7 +325,8 @@ class Summary(Base):
             'id': str(self.id),
             'transcript_id': str(self.transcript_id),
             'text': self.text,
-            'key_points': self.key_points if self.key_points else []
+            'key_points': self.key_points if self.key_points else [],
+            'tasks': self.tasks if self.tasks else [],
         }
 
 
@@ -1105,9 +1113,10 @@ class DataBaseManager:
 
     def insert_summaries(self,
                         transcript_id: UUID,
-                        text: str, 
+                        text: str,
                         key_points: Optional[List[str]] = None,
-                        meeting_type: Optional[str] = None) -> Optional[UUID]:
+                        meeting_type: Optional[str] = None,
+                        tasks: Optional[List[Dict[str, str]]] = None) -> Optional[UUID]:
         with self.session_scope() as session:
             try:
                 transcript = session.get(Transcript, transcript_id)
@@ -1118,7 +1127,8 @@ class DataBaseManager:
                     transcript_id=transcript_id,
                     text=text,
                     key_points=key_points or [],
-                    meeting_type=meeting_type
+                    meeting_type=meeting_type,
+                    tasks=tasks or []
                 )
                 session.add(summary)
                 session.flush()
@@ -1159,7 +1169,8 @@ class DataBaseManager:
                         'transcript_id': str(summary.transcript_id),
                         'text': summary.text,
                         'key_points': summary.key_points if summary.key_points else [],
-                        'meeting_type': summary.meeting_type
+                        'meeting_type': summary.meeting_type,
+                        'tasks': summary.tasks if summary.tasks else []
                     }
                 return None
             except SQLAlchemyError as e:
