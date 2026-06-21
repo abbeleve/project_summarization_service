@@ -216,14 +216,23 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
             )
         
         # Вставляем суммаризацию
+        summary_id = None
         if summary_text:
-            db.insert_summaries(
+            summary_id = db.insert_summaries(
                 transcript_id=transcript_id,
                 text=summary_text,
                 key_points=key_points,
                 meeting_type=meeting_type,
                 tasks=tasks
             )
+
+        # Вставляем отдельные записи в MeetingTasks (по одной на задачу)
+        if summary_id and tasks:
+            inserted = db.bulk_insert_meeting_tasks(
+                summary_id=summary_id,
+                tasks_data=tasks,
+            )
+            logger.info(f"[{task_id}] Вставлено {inserted} задач в MeetingTasks")
         
         # Сохраняем recording_url если передан (для плеера на фронтенде)
         recording_url = options.get("recording_url")

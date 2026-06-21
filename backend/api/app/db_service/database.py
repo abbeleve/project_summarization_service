@@ -350,6 +350,11 @@ class Summary(Base):
         "Transcript",
         back_populates="summaries"
     )
+    meeting_tasks: Mapped[List["MeetingTask"]] = relationship(
+        "MeetingTask",
+        back_populates="summary",
+        cascade="all, delete-orphan"
+    )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -358,6 +363,67 @@ class Summary(Base):
             'text': self.text,
             'key_points': self.key_points if self.key_points else [],
             'tasks': self.tasks if self.tasks else [],
+        }
+
+
+class MeetingTask(Base):
+    """
+    Индивидуальная задача (action item) из совещания.
+    Каждая задача имеет свой статус отправки в CRM.
+    """
+    __tablename__ = 'MeetingTasks'
+
+    summary_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Summaries.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    assignee: Mapped[str] = mapped_column(
+        Text, nullable=False, default="",
+        comment="Ответственный (может быть отредактирован пользователем)"
+    )
+    deadline: Mapped[str] = mapped_column(
+        Text, nullable=False, default="",
+        comment="Дедлайн (может быть отредактирован пользователем)"
+    )
+    sent_to_crm: Mapped[bool] = mapped_column(
+        nullable=False, default=False,
+        comment="Отправлено ли в CRM"
+    )
+    sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Время отправки в CRM"
+    )
+    crm_task_id: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="ID задачи в Weeek (ответ от CRM)"
+    )
+    created_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    summary: Mapped["Summary"] = relationship(
+        "Summary",
+        back_populates="meeting_tasks"
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'summary_id': str(self.summary_id),
+            'description': self.description,
+            'assignee': self.assignee,
+            'deadline': self.deadline,
+            'sent_to_crm': self.sent_to_crm,
+            'sent_at': self.sent_at.isoformat() if self.sent_at else None,
+            'crm_task_id': self.crm_task_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -1236,7 +1302,137 @@ class DataBaseManager:
             except SQLAlchemyError as e:
                 print(f"Ошибка при удалении резюме: {e}")
                 return False
-            
+
+    # ===== MeetingTask (задачи для CRM) =====
+
+    def bulk_insert_meeting_tasks(
+        self,
+        summary_id: UUID,
+        tasks_data: List[Dict[str, str]],
+    ) -> int:
+        """
+        Массовая вставка задач в MeetingTasks.
+
+        Args:
+            summary_id: ID суммаризации
+            tasks_data: список {description, assignee, deadline}
+
+        Returns:
+            Количество вставленных задач
+        """
+        count = 0
+        with self.session_scope() as session:
+            try:
+                summary = session.get(Summary, summary_id)
+                if not summary:
+                    return 0
+
+                for task in tasks_data:
+                    mt = MeetingTask(
+                        summary_id=summary_id,
+                        description=task.get("description", ""),
+                        assignee=task.get("assignee", ""),
+                        deadline=task.get("deadline", ""),
+                    )
+                    session.add(mt)
+                    count += 1
+
+                session.flush()
+                return count
+            except SQLAlchemyError as e:
+                print(f"Ошибка при массовой вставке задач: {e}")
+                return 0
+
+    def select_meeting_tasks_by_summary_id(
+        self, summary_id: UUID
+    ) -> List[Dict[str, Any]]:
+        """Возвращает список задач для суммаризации."""
+        with self.session_scope() as session:
+            try:
+                tasks = (
+                    session.query(MeetingTask)
+                    .filter(MeetingTask.summary_id == summary_id)
+                    .order_by(MeetingTask.created_at)
+                    .all()
+                )
+                return [t.to_dict() for t in tasks]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении задач: {e}")
+                return []
+
+    def select_meeting_task_by_id(self, task_id: UUID) -> Optional[Dict[str, Any]]:
+        """Возвращает задачу по ID."""
+        with self.session_scope() as session:
+            try:
+                task = session.get(MeetingTask, task_id)
+                return task.to_dict() if task else None
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении задачи: {e}")
+                return None
+
+    def update_meeting_task(
+        self,
+        task_id: UUID,
+        assignee: Optional[str] = None,
+        deadline: Optional[str] = None,
+    ) -> bool:
+        """Обновляет assignee/deadline задачи (без отправки в CRM)."""
+        with self.session_scope() as session:
+            try:
+                task = session.get(MeetingTask, task_id)
+                if not task:
+                    return False
+                if assignee is not None:
+                    task.assignee = assignee
+                if deadline is not None:
+                    task.deadline = deadline
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при обновлении задачи: {e}")
+                return False
+
+    def mark_meeting_task_sent(
+        self,
+        task_id: UUID,
+        crm_task_id: Optional[str] = None,
+    ) -> bool:
+        """Помечает задачу как отправленную в CRM."""
+        with self.session_scope() as session:
+            try:
+                task = session.get(MeetingTask, task_id)
+                if not task:
+                    return False
+                if task.sent_to_crm:
+                    return True  # уже отправлено
+                task.sent_to_crm = True
+                task.sent_at = datetime.now(timezone.utc)
+                if crm_task_id is not None:
+                    task.crm_task_id = crm_task_id
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при отметке задачи отправленной: {e}")
+                return False
+
+    def select_unsent_meeting_tasks(
+        self, summary_id: UUID
+    ) -> List[Dict[str, Any]]:
+        """Возвращает неотправленные задачи для суммаризации."""
+        with self.session_scope() as session:
+            try:
+                tasks = (
+                    session.query(MeetingTask)
+                    .filter(
+                        MeetingTask.summary_id == summary_id,
+                        MeetingTask.sent_to_crm == False,
+                    )
+                    .order_by(MeetingTask.created_at)
+                    .all()
+                )
+                return [t.to_dict() for t in tasks]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении неотправленных задач: {e}")
+                return []
+
     def insert_chat_message(self, transcript_id: UUID, employee_id: UUID, role: str, content: str) -> Optional[UUID]:
         with self.session_scope() as session:
             try:
