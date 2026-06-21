@@ -190,7 +190,7 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
         key_points = summary_json.get("key_points", [])
         meeting_type = summary_json.get("meeting_type", "Не определено")
         tasks = summary_json.get("tasks", [])
-        
+
         # Вставляем транскрипцию
         transcript_id = db.insert_transcripts(
             text=original_text,
@@ -223,7 +223,6 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
                 text=summary_text,
                 key_points=key_points,
                 meeting_type=meeting_type,
-                tasks=tasks
             )
 
         # Вставляем отдельные записи в MeetingTasks (по одной на задачу)
