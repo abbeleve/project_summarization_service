@@ -10,6 +10,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision: str = 'add_processing_metrics'
@@ -19,6 +20,11 @@ depends_on: Union[str, None] = None
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    if 'ProcessingMetrics' in inspector.get_table_names():
+        return  # таблица уже создана через Base.metadata.create_all()
+
     op.create_table(
         'ProcessingMetrics',
         sa.Column('id', UUID(as_uuid=True), primary_key=True, server_default=sa.text('gen_random_uuid()'), index=True, nullable=False),

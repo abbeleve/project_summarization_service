@@ -3,7 +3,7 @@ version: '3.8'
 services:
   redis:
     image: redis:7-alpine
-    mem_limit: 256m
+    mem_limit: 512m
     ports:
       - "6379:6379"
     networks:
@@ -17,7 +17,7 @@ services:
 
   redis-commander:
     image: rediscommander/redis-commander:latest
-    mem_limit: 128m
+    mem_limit: 256m
     environment:
       - REDIS_HOSTS=local:redis:6379
     ports:
@@ -51,7 +51,7 @@ services:
 
   api:
     build: ./backend/api
-    mem_limit: 2g
+    mem_limit: 4g
     ports:
       - "8000:8000"
     environment:
@@ -130,7 +130,7 @@ services:
   celery-worker-meetings:
     build: ./backend/api
     container_name: celery_worker_meetings
-    mem_limit: 1g
+    mem_limit: 2g
     command: >
       celery -A app.celery_app worker
       --loglevel=info
@@ -233,7 +233,7 @@ services:
   minio:
     image: minio/minio:latest
     container_name: minio
-    mem_limit: 1g
+    mem_limit: 2g
     command: server /data --console-address ":9001"
     ports:
       - "9000:9000"   # S3 API

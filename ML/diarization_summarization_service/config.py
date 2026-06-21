@@ -80,7 +80,7 @@ class Settings(BaseSettings):
         description="Максимум токенов для LLM"
     )
     llm_timeout_sec: int = Field(
-        default=120,
+        default=180,
         description="Таймаут запроса к LLM (сек)"
     )
     

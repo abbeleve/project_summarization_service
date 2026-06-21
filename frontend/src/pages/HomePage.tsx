@@ -6,6 +6,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { getSpeakerColor } from '@/utils/speakerColors';
 
 const RECENT_LIMIT = 9;
 
@@ -313,9 +314,29 @@ export const HomePage = () => {
 
                 {/* Speakers row */}
                 {(tr.speakers?.length ?? 0) > 0 && (
-                  <div className="flex items-center gap-1.5 mt-4 pt-4 border-t border-gray-100 dark:border-dark-base-700 text-sm text-gray-400 dark:text-gray-500">
+                  <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100 dark:border-dark-base-700 text-sm text-gray-400 dark:text-gray-500">
                     <span>🗣️</span>
-                    <span>{tr.speakers?.length || 0} спикер{(tr.speakers?.length ?? 0) > 1 ? 'а' : ''}</span>
+                    <div className="flex items-center -space-x-2">
+                      {tr.speakers!.slice(0, 3).map((sp, idx) => {
+                        const palette = getSpeakerColor(sp);
+                        const initials = sp.replace('SPEAKER_', '').replace(/[^a-zA-Zа-яА-ЯёЁ0-9]/g, '').slice(0, 2).toUpperCase() || '?';
+                        return (
+                          <div
+                            key={`${sp}-${idx}`}
+                            className={`w-6 h-6 rounded-full ${palette.bg} ring-2 ring-white dark:ring-dark-base-800 flex items-center justify-center text-[10px] font-bold text-white shadow-sm`}
+                            title={sp}
+                          >
+                            {initials}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {(tr.speakers?.length ?? 0) > 3 && (
+                      <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-dark-base-700 ring-2 ring-white dark:ring-dark-base-800 flex items-center justify-center text-[10px] font-semibold text-gray-600 dark:text-gray-300 shadow-sm">
+                        +{tr.speakers!.length - 3}
+                      </div>
+                    )}
+                    <span className="ml-1">{tr.speakers?.length || 0} спикер{(tr.speakers?.length ?? 0) > 1 ? 'а' : ''}</span>
                   </div>
                 )}
 

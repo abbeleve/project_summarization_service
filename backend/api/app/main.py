@@ -1974,15 +1974,36 @@ async def startup_event():
         alembic_cfg = Config("alembic.ini")
         command.upgrade(alembic_cfg, "head")
 
+    # Сначала применяем миграции (Alembic — единственный источник правды для схемы)
+    # Если БД недоступна, миграции упадут, и ретрай-луп ниже их перезапустит
     for attempt in range(max_retries):
         try:
-            print(f"🔄 Попытка инициализации БД {attempt + 1}/{max_retries}...")
+            print(f"🔄 Попытка применения миграций {attempt + 1}/{max_retries}...")
+            run_migrations()
+            print("✅ Миграции БД успешно применены")
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print(f"⚠️ Миграции не применились: {e}. Повтор через {retry_delay} сек...")
+                time.sleep(retry_delay)
+            else:
+                print(f"❌ Не удалось применить миграции после {max_retries} попыток: {e}")
+                # Не падаем — возможно БД поднимется позже
+    else:
+        # Цикл ни разу не выполнил break (все попытки миграций провалились)
+        print("⚠️ Пропускаем инициализацию БД — PostgreSQL недоступен")
+
+    # После миграций — инициализация данных (тестовые пользователи, create_all для таблиц
+    # не покрытых миграциями, если такие есть)
+    for attempt in range(max_retries):
+        try:
+            print(f"🔄 Попытка инициализации данных {attempt + 1}/{max_retries}...")
             db = DataBaseManager()
-            
+
             # Создаем тестового пользователя, если нет пользователей
             users = db.select_staff()
             print(f"📊 Найдено пользователей в БД: {len(users)}")
-            
+
             if not users:
                 print("👤 Создаем тестового пользователя...")
                 try:
@@ -1995,14 +2016,14 @@ async def startup_event():
                         password="test"
                     )
                     print("✅ Создан тестовый пользователь: test/test")
-                    
+
                     # Генерируем тестовые данные только если БД была пустой
                     try:
                         gen_fake_data(db)
                         print("✅ Тестовые данные сгенерированы")
                     except Exception as e:
                         print(f"⚠️ Не удалось сгенерировать тестовые данные: {e}")
-                        
+
                 except Exception as e:
                     # Ошибка уникальности - пользователь уже существует
                     if "duplicate key" in str(e).lower() or "unique" in str(e).lower():
@@ -2013,26 +2034,16 @@ async def startup_event():
                 print("ℹ️ В базе уже есть пользователи, пропускаем создание тестовых")
 
             print("✅ База данных инициализирована успешно")
-
-            # Применяем alembic миграции (добавление новых колонок и т.д.)
-            try:
-                run_migrations()
-                print("✅ Миграции БД успешно применены")
-            except Exception as e:
-                print(f"⚠️ Не удалось применить миграции: {e}")
-
             return
-            
+
         except Exception as e:
             if attempt < max_retries - 1:
                 print(f"⚠️ Попытка {attempt + 1}/{max_retries}: "
-                      f"Не удалось инициализировать БД: {e}. Повтор через {retry_delay} сек...")
+                      f"Не удалось инициализировать данные: {e}. Повтор через {retry_delay} сек...")
                 time.sleep(retry_delay)
             else:
-                print(f"❌ Не удалось инициализировать БД после {max_retries} попыток: {e}")
+                print(f"❌ Не удалось инициализировать данные после {max_retries} попыток: {e}")
                 # Не падаем, а продолжаем работу - БД может быть доступна позже
-
-    run_migrations()
 
 @app.get("/health")
 async def health_check():
