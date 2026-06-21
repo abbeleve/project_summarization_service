@@ -30,6 +30,7 @@ from .db_service.minio_client import MinioClient
 from .auth_service.jwt import jwt_service
 from .auth_service.middleware import AuthMiddleware
 from .voice.router import router as voice_router
+from .crm.router import router as crm_router
 from .audio_utils import normalize_audio, guess_format
 
 # Настройка логирования
@@ -63,6 +64,7 @@ async def auth_middleware_wrapper(request: Request, call_next):
 
 # Include routers
 app.include_router(voice_router)
+app.include_router(crm_router)
 
 # Функция для получения БД
 def get_db():

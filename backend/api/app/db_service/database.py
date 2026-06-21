@@ -12,6 +12,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Шифрование чувствительных данных (API токены и т.п.)
+try:
+    from cryptography.fernet import Fernet
+    _CRYPTO_KEY = os.getenv("CRM_ENCRYPTION_KEY")
+    if _CRYPTO_KEY:
+        _CIPHER = Fernet(_CRYPTO_KEY.encode() if isinstance(_CRYPTO_KEY, str) else _CRYPTO_KEY)
+    else:
+        _CIPHER = None
+except ImportError:
+    _CIPHER = None
+
+
+def encrypt_token(plain_token: str) -> str:
+    """Шифрует API токен. Без ключа возвращает как есть (fallback)."""
+    if _CIPHER is None:
+        return plain_token
+    return _CIPHER.encrypt(plain_token.encode()).decode()
+
+
+def decrypt_token(encrypted_token: str) -> str:
+    """Расшифровывает API токен. Без ключа возвращает как есть."""
+    if _CIPHER is None:
+        return encrypted_token
+    return _CIPHER.decrypt(encrypted_token.encode()).decode()
+
 class Base(DeclarativeBase):
     __abstract__ = True
 
@@ -42,6 +67,11 @@ class Staff(Base):
         nullable=True,
         comment="Ключ объекта в MinIO (avatars/{user_id})"
     )
+    weeek_api_token: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Зашифрованный API токен Weeek для интеграции CRM"
+    )
 
     celery_tasks: Mapped[List["CeleryTask"]] = relationship(
         "CeleryTask",
@@ -67,7 +97,8 @@ class Staff(Base):
             'email': self.email,
             'login': self.login,
             'role': self.role,
-            'avatar_key': self.avatar_key
+            'avatar_key': self.avatar_key,
+            # weeek_api_token НЕ включён — never expose via API
         }
 
 
