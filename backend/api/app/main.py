@@ -509,6 +509,7 @@ async def process_audio(
     transcribe_lib: Optional[str] = Form(None),
     llm_model: Optional[str] = Form(None),
     noise_sup_bool: str = Form("false"),
+    meeting_title: Optional[str] = Form(None),
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db),
     minio: MinioClient = Depends(get_minio)
@@ -560,6 +561,7 @@ async def process_audio(
         del wav_bytes  # освободить RAM
 
         logger.info(f"MP3 + WAV загружены в MinIO: {recording_url}")
+        logger.info(f"meeting_title received: {meeting_title!r}")
 
         # Подготовка опций для задачи
         options = {
@@ -569,6 +571,7 @@ async def process_audio(
             "transcribe_lib": transcribe_lib or "gigaam",
             "llm_model": llm_model or "deepseek/deepseek-v4-flash",
             "noise_sup_bool": noise_sup_bool,
+            "meeting_title": meeting_title,
             "user_id": current_user["user_id"],
             "recording_url": recording_url,  # MP3 URL для плеера
             "audio_key": wav_key,            # WAV ключ для ML-пайплайна

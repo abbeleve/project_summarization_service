@@ -186,6 +186,14 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
         # Извлекаем summary данные
         summary_json = summary_result.get("summary", {}) if isinstance(summary_result, dict) else {}
         title = summary_json.get("title", f"Запись от {task_id[:8]}")
+
+        # Если пользователь указал название заранее — используем его, не переопределяем LLM
+        user_title = options.get("meeting_title")
+        logger.info(f"[{task_id}] meeting_title from options: {user_title!r}")
+        if user_title and user_title.strip():
+            title = user_title.strip()
+            logger.info(f"[{task_id}] Title overridden by user: {title}")
+
         summary_text = summary_json.get("summary", "")
         key_points = summary_json.get("key_points", [])
         meeting_type = summary_json.get("meeting_type", "Не определено")

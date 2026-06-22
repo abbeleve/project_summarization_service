@@ -72,6 +72,7 @@ export interface ProcessingSettings {
   transcribeLib: string;
   llmModel: string;
   noiseSuppression: boolean;
+  meetingTitle?: string;
 }
 
 export interface ProcessAudioResponse {

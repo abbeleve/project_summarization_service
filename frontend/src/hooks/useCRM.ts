@@ -61,11 +61,22 @@ export const useCRMTasks = (summaryId: string | null) => {
   };
 };
 
-/** Хук для списка проектов Weeek. */
-export const useCRMProjects = () => {
+/** Хук: статус подключения CRM (есть ли у пользователя сохранённый API-токен Weeek). */
+export const useCRMStatus = () => {
+  return useQuery<{ connected: boolean }, Error>({
+    queryKey: ['crm-status'],
+    queryFn: crmApi.getStatus,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+};
+
+/** Хук для списка проектов Weeek. Запрос уходит только при подключённой CRM. */
+export const useCRMProjects = (enabled = true) => {
   return useQuery({
     queryKey: ['crm-projects'],
     queryFn: crmApi.getProjects,
+    enabled,
     staleTime: 60_000,
   });
 };
@@ -91,10 +102,11 @@ export const useCRMProjectBoardColumns = (boardId: number | null) => {
 };
 
 /** Хук для списка участников workspace Weeek (назначаемых на задачи). */
-export const useCRMWorskpaceMembers = () => {
+export const useCRMWorskpaceMembers = (enabled = true) => {
   return useQuery({
     queryKey: ['crm-workspace-members'],
     queryFn: () => crmApi.getWorkspaceMembers(),
+    enabled,
     staleTime: 120_000,
   });
 };
