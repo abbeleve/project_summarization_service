@@ -1404,6 +1404,19 @@ class DataBaseManager:
                 print(f"Ошибка при отметке задачи отправленной: {e}")
                 return False
 
+    def delete_meeting_task(self, task_id: UUID) -> bool:
+        """Удаляет задачу из БД."""
+        with self.session_scope() as session:
+            try:
+                task = session.get(MeetingTask, task_id)
+                if not task:
+                    return False
+                session.delete(task)
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при удалении задачи: {e}")
+                return False
+
     def select_unsent_meeting_tasks(
         self, summary_id: UUID
     ) -> List[Dict[str, Any]]:

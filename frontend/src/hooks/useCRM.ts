@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { crmApi } from '@/api/crm';
+import { crmApi, type SendTaskBody } from '@/api/crm';
 import type { MeetingTask } from '@/types/transcript';
 
 export const useCRMTasks = (summaryId: string | null) => {
@@ -14,7 +14,7 @@ export const useCRMTasks = (summaryId: string | null) => {
 
   /** Отправить все неотправленные задачи в CRM. */
   const sendAllMutation = useMutation({
-    mutationFn: () => crmApi.sendAllTasks(summaryId!),
+    mutationFn: (body?: SendTaskBody) => crmApi.sendAllTasks(summaryId!, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['crm-tasks', summaryId] });
     },
@@ -22,7 +22,8 @@ export const useCRMTasks = (summaryId: string | null) => {
 
   /** Отправить одну задачу в CRM. */
   const sendOneMutation = useMutation({
-    mutationFn: (taskId: string) => crmApi.sendTask(taskId),
+    mutationFn: (args: { taskId: string; body?: SendTaskBody }) =>
+      crmApi.sendTask(args.taskId, args.body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['crm-tasks', summaryId] });
     },
@@ -37,6 +38,14 @@ export const useCRMTasks = (summaryId: string | null) => {
     },
   });
 
+  /** Удалить задачу. */
+  const deleteMutation = useMutation({
+    mutationFn: (taskId: string) => crmApi.deleteTask(taskId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['crm-tasks', summaryId] });
+    },
+  });
+
   return {
     tasks: tasksQuery.data ?? [],
     isLoading: tasksQuery.isLoading,
@@ -46,8 +55,49 @@ export const useCRMTasks = (summaryId: string | null) => {
     sendOneToCRM: sendOneMutation.mutate,
     isSendingOne: sendOneMutation.isPending,
     updateTask: updateMutation.mutate,
+    deleteTask: deleteMutation.mutate,
+    isDeleting: deleteMutation.isPending,
     refetch: tasksQuery.refetch,
   };
+};
+
+/** Хук для списка проектов Weeek. */
+export const useCRMProjects = () => {
+  return useQuery({
+    queryKey: ['crm-projects'],
+    queryFn: crmApi.getProjects,
+    staleTime: 60_000,
+  });
+};
+
+/** Хук для списка досок проекта Weeek. */
+export const useCRMProjectBoards = (projectId: number | null) => {
+  return useQuery({
+    queryKey: ['crm-boards', projectId],
+    queryFn: () => crmApi.getProjectBoards(projectId!),
+    enabled: projectId != null,
+    staleTime: 60_000,
+  });
+};
+
+/** Хук для списка колонок доски Weeek. */
+export const useCRMProjectBoardColumns = (boardId: number | null) => {
+  return useQuery({
+    queryKey: ['crm-columns', boardId],
+    queryFn: () => crmApi.getBoardColumns(boardId!),
+    enabled: boardId != null,
+    staleTime: 60_000,
+  });
+};
+
+/** Хук для списка участников проекта Weeek (назначаемых на задачи). */
+export const useCRMProjectMembers = (projectId: number | null) => {
+  return useQuery({
+    queryKey: ['crm-members', projectId],
+    queryFn: () => crmApi.getProjectMembers(projectId!),
+    enabled: projectId != null,
+    staleTime: 120_000,
+  });
 };
 
 export default useCRMTasks;

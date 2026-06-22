@@ -2,9 +2,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useTranscripts } from '@/hooks/useTranscripts';
 import { useAnnotations } from '@/hooks/useAnnotations';
-import { useCRMTasks } from '@/hooks/useCRM';
+import { useCRMTasks, useCRMProjects, useCRMProjectBoards, useCRMProjectBoardColumns, useCRMProjectMembers } from '@/hooks/useCRM';
 import { transcriptsApi } from '@/api/transcripts';
 import type { MeetingTask } from '@/types/transcript';
+import type { WeeekProject, WeeekBoard, WeeekBoardColumn, SendTaskBody } from '@/api/crm';
 import { voiceApi, usersApi } from '@/api/voice';
 import { getDominantColorsMap } from '@/utils/dominantColor';
 import { SpeakerDistributionChart } from '@/components/analysis/SpeakerDistributionChart';
@@ -51,14 +52,20 @@ export const AnalysisPage = () => {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Хардкод для MVP — в будущем придёт из CRM (Weeek) через /api/assignees.
-  const HARDCODED_ASSIGNEES = [
-    { id: 'u1', name: 'Иван Петров', email: 'ivan.petrov@company.ru' },
-    { id: 'u2', name: 'Анна Смирнова', email: 'anna.smirnova@company.ru' },
-    { id: 'u3', name: 'Дмитрий Кузнецов', email: 'dmitry.kuznetsov@company.ru' },
-    { id: 'u4', name: 'Елена Васильева', email: 'elena.vasileva@company.ru' },
-    { id: 'u5', name: 'Михаил Соколов', email: 'mikhail.sokolov@company.ru' },
-  ];
+  // ===== Выбор project → board → column для отправки =====
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [selectedBoardId, setSelectedBoardId] = useState<number | null>(null);
+  const [selectedColumnId, setSelectedColumnId] = useState<number | null>(null);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const [showBoardPicker, setShowBoardPicker] = useState(false);
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+
+  const { data: projects = [], isLoading: projectsLoading } = useCRMProjects();
+  const { data: boards = [], isLoading: boardsLoading } = useCRMProjectBoards(selectedProjectId);
+  const { data: columns = [], isLoading: columnsLoading } = useCRMProjectBoardColumns(selectedBoardId);
+
+  // Участники выбранного проекта из Weeek для назначения задач
+  const { data: memberList = [] } = useCRMProjectMembers(selectedProjectId);
 
   // ===== CRM (MeetingTasks) =====
   const {
@@ -69,12 +76,65 @@ export const AnalysisPage = () => {
     sendOneToCRM,
     isSendingOne,
     updateTask,
+    deleteTask,
+    isDeleting,
   } = useCRMTasks(transcript?.summary_id ?? null);
 
   const [openAssigneeFor, setOpenAssigneeFor] = useState<string | null>(null);
   const [openDeadlineFor, setOpenDeadlineFor] = useState<string | null>(null);
+  const [draftDeadline, setDraftDeadline] = useState('');
   const [editingDescriptionId, setEditingDescriptionId] = useState<string | null>(null);
   const [editingDescriptionText, setEditingDescriptionText] = useState('');
+
+  // Локальный выбор assignee и deadline — НЕ сохраняется в БД, сбрасывается при смене транскрипции
+  const [localAssignees, setLocalAssignees] = useState<Record<string, string>>({});
+  const [localDeadlines, setLocalDeadlines] = useState<Record<string, string>>({});
+  // Сброс локального выбора при переходе на другой `/analysis/:id`
+  useEffect(() => {
+    setLocalAssignees({});
+    setLocalDeadlines({});
+    setTaskWeeekUserIds({});
+    setOpenAssigneeFor(null);
+    setOpenDeadlineFor(null);
+  }, [id]);
+
+  /** Сбросить выбор board/column при смене проекта. */
+  const handleProjectSelect = (project: WeeekProject | null) => {
+    setSelectedProjectId(project?.id ?? null);
+    setSelectedBoardId(null);
+    setSelectedColumnId(null);
+    setShowProjectPicker(false);
+  };
+  const handleBoardSelect = (board: WeeekBoard | null) => {
+    setSelectedBoardId(board?.id ?? null);
+    setSelectedColumnId(null);
+    setShowBoardPicker(false);
+  };
+  const handleColumnSelect = (col: WeeekBoardColumn | null) => {
+    setSelectedColumnId(col?.id ?? null);
+    setShowColumnPicker(false);
+  };
+
+  const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
+  const selectedBoard = boards.find((b) => b.id === selectedBoardId) ?? null;
+  const selectedColumn = columns.find((c) => c.id === selectedColumnId) ?? null;
+
+  /** Собрать SendTaskBody из текущего выбора. */
+  const getSendBody = (taskId?: string): SendTaskBody | undefined => {
+    if (!selectedProjectId) return undefined;
+    const body: SendTaskBody = { project_id: selectedProjectId, board_column_id: selectedColumnId };
+    if (taskId && taskWeeekUserIds[taskId]) {
+      body.user_id = taskWeeekUserIds[taskId];
+    }
+    if (taskId && localDeadlines[taskId]) {
+      body.deadline = localDeadlines[taskId];
+    }
+    return body;
+  };
+
+  // Отслеживаем Weeek user_id для каждого task (заполняется при выборе assignee)
+  const [taskWeeekUserIds, setTaskWeeekUserIds] = useState<Record<string, string>>({});
+
   const unsentTasks = meetingTasks.filter((t) => !t.sent_to_crm);
   const sentTasks = meetingTasks.filter((t) => t.sent_to_crm);
   const hasTasks = meetingTasks.length > 0;
@@ -85,7 +145,11 @@ export const AnalysisPage = () => {
       showToast('Все задачи уже отправлены', 'error');
       return;
     }
-    sendAllToCRM(undefined, {
+    if (!selectedProjectId) {
+      showToast('Сначала выберите проект в Weeek', 'error');
+      return;
+    }
+    sendAllToCRM(getSendBody(), {
       onSuccess: (res) => {
         if (res.status === 'ok' || res.status === 'partial') {
           showToast(`Отправлено ${res.sent} из ${res.total} задач в CRM`, 'success');
@@ -101,7 +165,11 @@ export const AnalysisPage = () => {
   };
 
   const handleSendOne = (taskId: string) => {
-    sendOneToCRM(taskId, {
+    if (!selectedProjectId) {
+      showToast('Сначала выберите проект в Weeek', 'error');
+      return;
+    }
+    sendOneToCRM({ taskId, body: getSendBody(taskId) }, {
       onSuccess: (res) => {
         if (res.status === 'ok') {
           showToast('Задача отправлена в CRM', 'success');
@@ -765,7 +833,7 @@ export const AnalysisPage = () => {
                         </span>
                       </button>
                       <div
-                        className="overflow-hidden transition-all ease-out"
+                        className={`transition-all ease-out ${tasksExpanded ? 'overflow-visible' : 'overflow-hidden'}`}
                         style={{
                           maxHeight: tasksExpanded ? '5000px' : '0px',
                           opacity: tasksExpanded ? 1 : 0,
@@ -774,11 +842,155 @@ export const AnalysisPage = () => {
                       >
                         <div className="space-y-2 pt-2">
 
+                          {/* Каскадный выбор: проект → доска → колонка */}
+                          {unsentTasks.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-2 px-1">
+                              {/* Проект */}
+                              <div className="relative">
+                                <button
+                                  onClick={() => { setShowProjectPicker(!showProjectPicker); setShowBoardPicker(false); setShowColumnPicker(false); }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                                    selectedProject
+                                      ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                                      : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600'
+                                  }`}
+                                >
+                                  📁 {selectedProject ? selectedProject.name : 'Проект'}
+                                  <span className="text-[10px] opacity-60">{projectsLoading ? '…' : '▼'}</span>
+                                </button>
+                                {showProjectPicker && (
+                                  <div className="absolute z-30 mt-1 left-0 w-64 rounded-lg bg-white dark:bg-dark-base-800 shadow-xl border border-gray-200 dark:border-dark-base-700 py-1 max-h-48 overflow-y-auto">
+                                    <button
+                                      onClick={() => handleProjectSelect(null)}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-dark-base-700"
+                                    >
+                                      — Не выбрано —
+                                    </button>
+                                    {projects.map((p) => (
+                                      <button
+                                        key={p.id}
+                                        onClick={() => handleProjectSelect(p)}
+                                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-dark-base-700 ${
+                                          selectedProjectId === p.id
+                                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
+                                            : ''
+                                        }`}
+                                      >
+                                        {p.name}
+                                      </button>
+                                    ))}
+                                    {projects.length === 0 && !projectsLoading && (
+                                      <p className="px-3 py-2 text-xs text-gray-400">Нет проектов</p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Доска */}
+                              <div className="relative">
+                                <button
+                                  onClick={() => { if (selectedProjectId) { setShowBoardPicker(!showBoardPicker); setShowProjectPicker(false); setShowColumnPicker(false); } }}
+                                  disabled={!selectedProjectId}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                                    !selectedProjectId
+                                      ? 'bg-gray-50 dark:bg-gray-800/20 text-gray-300 dark:text-gray-600 cursor-not-allowed'
+                                      : selectedBoard
+                                        ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                                        : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600'
+                                  }`}
+                                >
+                                  📋 {selectedBoard ? selectedBoard.name : 'Доска'}
+                                  {selectedProjectId && <span className="text-[10px] opacity-60">{boardsLoading ? '…' : '▼'}</span>}
+                                </button>
+                                {showBoardPicker && (
+                                  <div className="absolute z-30 mt-1 left-0 w-64 rounded-lg bg-white dark:bg-dark-base-800 shadow-xl border border-gray-200 dark:border-dark-base-700 py-1 max-h-48 overflow-y-auto">
+                                    <button
+                                      onClick={() => handleBoardSelect(null)}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-dark-base-700"
+                                    >
+                                      — Не выбрано —
+                                    </button>
+                                    {boards.map((b) => (
+                                      <button
+                                        key={b.id}
+                                        onClick={() => handleBoardSelect(b)}
+                                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-dark-base-700 ${
+                                          selectedBoardId === b.id
+                                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
+                                            : ''
+                                        }`}
+                                      >
+                                        {b.name}
+                                      </button>
+                                    ))}
+                                    {boards.length === 0 && !boardsLoading && (
+                                      <p className="px-3 py-2 text-xs text-gray-400">Нет досок</p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Колонка */}
+                              <div className="relative">
+                                <button
+                                  onClick={() => { if (selectedBoardId) { setShowColumnPicker(!showColumnPicker); setShowProjectPicker(false); setShowBoardPicker(false); } }}
+                                  disabled={!selectedBoardId}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                                    !selectedBoardId
+                                      ? 'bg-gray-50 dark:bg-gray-800/20 text-gray-300 dark:text-gray-600 cursor-not-allowed'
+                                      : selectedColumn
+                                        ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                                        : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600'
+                                  }`}
+                                >
+                                  📌 {selectedColumn ? selectedColumn.name : 'Колонка'}
+                                  {selectedBoardId && <span className="text-[10px] opacity-60">{columnsLoading ? '…' : '▼'}</span>}
+                                </button>
+                                {showColumnPicker && (
+                                  <div className="absolute z-30 mt-1 left-0 w-64 rounded-lg bg-white dark:bg-dark-base-800 shadow-xl border border-gray-200 dark:border-dark-base-700 py-1 max-h-48 overflow-y-auto">
+                                    <button
+                                      onClick={() => handleColumnSelect(null)}
+                                      className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-dark-base-700"
+                                    >
+                                      — Не выбрано —
+                                    </button>
+                                    {columns.map((c) => (
+                                      <button
+                                        key={c.id}
+                                        onClick={() => handleColumnSelect(c)}
+                                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-dark-base-700 ${
+                                          selectedColumnId === c.id
+                                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
+                                            : ''
+                                        }`}
+                                      >
+                                        {c.name}
+                                      </button>
+                                    ))}
+                                    {columns.length === 0 && !columnsLoading && (
+                                      <p className="px-3 py-2 text-xs text-gray-400">Нет колонок</p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              <span className="text-[10px] text-gray-400 ml-auto">
+                                {selectedProject
+                                  ? selectedColumn
+                                    ? `→ ${selectedProject.name} / ${selectedBoard?.name} / ${selectedColumn.name}`
+                                    : selectedBoard
+                                      ? `→ ${selectedProject.name} / ${selectedBoard.name} / …`
+                                      : `→ ${selectedProject.name} / …`
+                                  : 'Выберите проект'}
+                              </span>
+                            </div>
+                          )}
+
                           {unsentTasks.length > 0 && (
                             <div className="flex justify-end">
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleSendAllToCRM(); }}
-                                disabled={isSendAllPending}
+                                disabled={isSendAllPending || !selectedProjectId}
                                 className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-wait transition-colors shadow-sm cursor-pointer"
                               >
                                 {isSendAllPending
@@ -891,6 +1103,18 @@ export const AnalysisPage = () => {
                                               )}
                                           </span>
                                         )}
+                                        <button
+                                          onClick={() => {
+                                            if (window.confirm('Удалить задачу?')) {
+                                              deleteTask(task.id);
+                                            }
+                                          }}
+                                          disabled={isDeleting}
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer disabled:opacity-50"
+                                          title="Удалить задачу"
+                                        >
+                                          🗑️
+                                        </button>
                                       </div>
                                     ) : (
                                       /* Неотправленная — редактирование */
@@ -898,7 +1122,7 @@ export const AnalysisPage = () => {
                                         className="flex flex-wrap items-start gap-2 mt-2"
                                         onClick={(e) => e.stopPropagation()}
                                       >
-                                        {/* Assignee — кликабельный бейдж с поповером */}
+                                        {/* Assignee — выбор из участников Weeek (локально, не сохраняется в БД) */}
                                         <div className="relative">
                                           <button
                                             onClick={() =>
@@ -907,32 +1131,38 @@ export const AnalysisPage = () => {
                                               )
                                             }
                                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${
-                                              task.assignee
+                                              (localAssignees[task.id] ?? task.assignee)
                                                 ? 'bg-emerald-100 dark:bg-emerald-800/40 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-200 dark:hover:bg-emerald-700/50'
                                                 : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700/50'
                                             }`}
                                             title="Назначить ответственного"
                                           >
-                                            👤 {task.assignee || 'Назначить'}
+                                            👤 {(localAssignees[task.id] ?? task.assignee) || 'Назначить'}
                                           </button>
                                           {openAssigneeFor === task.id && (
-                                            <div className="absolute z-20 mt-1 left-0 w-56 rounded-lg bg-white dark:bg-dark-base-800 shadow-xl border border-gray-200 dark:border-dark-base-700 py-1">
+                                            <div className="absolute z-20 mt-1 left-0 w-56 max-h-60 overflow-y-auto rounded-lg bg-white dark:bg-dark-base-800 shadow-xl border border-gray-200 dark:border-dark-base-700 py-1">
                                               {[
                                                 { id: '', name: '— Не назначать —' },
-                                                ...HARDCODED_ASSIGNEES,
+                                                ...memberList,
                                               ].map((user) => (
                                                 <button
                                                   key={user.id || 'none'}
                                                   onClick={() => {
                                                     const newAssignee = user.id ? user.name : '';
-                                                    updateTask({
-                                                      taskId: task.id,
-                                                      assignee: newAssignee,
-                                                    });
+                                                    setLocalAssignees((prev) => ({ ...prev, [task.id]: newAssignee }));
+                                                    if (user.id) {
+                                                      setTaskWeeekUserIds((prev) => ({ ...prev, [task.id]: user.id }));
+                                                    } else {
+                                                      setTaskWeeekUserIds((prev) => {
+                                                        const copy = { ...prev };
+                                                        delete copy[task.id];
+                                                        return copy;
+                                                      });
+                                                    }
                                                     setOpenAssigneeFor(null);
                                                   }}
                                                   className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-dark-base-700 ${
-                                                    task.assignee ===
+                                                    (localAssignees[task.id] ?? task.assignee) ===
                                                       (user.id ? user.name : '') &&
                                                     'bg-emerald-50 dark:bg-emerald-900/30'
                                                   }`}
@@ -944,36 +1174,33 @@ export const AnalysisPage = () => {
                                           )}
                                         </div>
 
-                                        {/* Deadline — пресеты + свой date */}
+                                        {/* Deadline — пресеты + свой date (локально, не сохраняется в БД) */}
                                         <div className="flex flex-wrap items-center gap-1">
                                           <button
                                             onClick={() => {
-                                              if (task.deadline) {
-                                                updateTask({
-                                                  taskId: task.id,
-                                                  deadline: '',
+                                              const current = localDeadlines[task.id] ?? task.deadline;
+                                              if (current) {
+                                                setLocalDeadlines((prev) => {
+                                                  const copy = { ...prev };
+                                                  delete copy[task.id];
+                                                  return copy;
                                                 });
                                               } else {
-                                                const today = new Date()
-                                                  .toISOString()
-                                                  .slice(0, 10);
-                                                updateTask({
-                                                  taskId: task.id,
-                                                  deadline: today,
-                                                });
+                                                const today = new Date().toISOString().slice(0, 10);
+                                                setLocalDeadlines((prev) => ({ ...prev, [task.id]: today }));
                                               }
                                               setOpenDeadlineFor(null);
                                             }}
                                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${
-                                              task.deadline
+                                              (localDeadlines[task.id] ?? task.deadline)
                                                 ? 'bg-amber-100 dark:bg-amber-800/40 text-amber-800 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-700/50'
                                                 : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700/50'
                                             }`}
-                                            title={task.deadline ? 'Убрать срок' : 'Установить срок'}
+                                            title={(localDeadlines[task.id] ?? task.deadline) ? 'Убрать срок' : 'Установить срок'}
                                           >
                                             ⏰{' '}
-                                            {task.deadline
-                                              ? new Date(task.deadline).toLocaleDateString('ru-RU', {
+                                            {(localDeadlines[task.id] ?? task.deadline)
+                                              ? new Date(localDeadlines[task.id] ?? task.deadline).toLocaleDateString('ru-RU', {
                                                   day: '2-digit',
                                                   month: '2-digit',
                                                   year: 'numeric',
@@ -990,15 +1217,13 @@ export const AnalysisPage = () => {
                                             const d = new Date();
                                             d.setDate(d.getDate() + p.days);
                                             const iso = d.toISOString().slice(0, 10);
-                                            const active = task.deadline === iso;
+                                            const effectiveDeadline = localDeadlines[task.id] ?? task.deadline;
+                                            const active = effectiveDeadline === iso;
                                             return (
                                               <button
                                                 key={p.label}
                                                 onClick={() => {
-                                                  updateTask({
-                                                    taskId: task.id,
-                                                    deadline: iso,
-                                                  });
+                                                  setLocalDeadlines((prev) => ({ ...prev, [task.id]: iso }));
                                                   setOpenDeadlineFor(null);
                                                 }}
                                                 className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
@@ -1016,25 +1241,27 @@ export const AnalysisPage = () => {
                                             <input
                                               type="date"
                                               autoFocus
-                                              value={
-                                                task.deadline
-                                                  ? task.deadline.match(/^\d{4}-\d{2}-\d{2}/)
-                                                    ? task.deadline.slice(0, 10)
-                                                    : ''
-                                                  : ''
-                                              }
-                                              onChange={(e) =>
-                                                updateTask({
-                                                  taskId: task.id,
-                                                  deadline: e.target.value,
-                                                })
-                                              }
-                                              onBlur={() => setOpenDeadlineFor(null)}
+                                              value={draftDeadline}
+                                              onChange={(e) => setDraftDeadline(e.target.value)}
+                                              onBlur={() => {
+                                                if (draftDeadline) {
+                                                  setLocalDeadlines((prev) => ({ ...prev, [task.id]: draftDeadline }));
+                                                }
+                                                setOpenDeadlineFor(null);
+                                              }}
                                               className="px-2 py-0.5 rounded-md text-xs border border-amber-300 dark:border-amber-700 bg-white dark:bg-dark-base-800 text-amber-900 dark:text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 [color-scheme] dark:opacity-100"
                                             />
                                           ) : (
                                             <button
-                                              onClick={() => setOpenDeadlineFor(task.id)}
+                                              onClick={() => {
+                                                const effectiveDeadline = localDeadlines[task.id] ?? task.deadline;
+                                                const current =
+                                                  effectiveDeadline?.match(/^\d{4}-\d{2}-\d{2}/)
+                                                    ? effectiveDeadline.slice(0, 10)
+                                                    : new Date().toISOString().slice(0, 10);
+                                                setDraftDeadline(current);
+                                                setOpenDeadlineFor(task.id);
+                                              }}
                                               className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-50/60 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/40 border border-amber-200 dark:border-amber-700/30 transition-colors"
                                               title="Выбрать произвольную дату"
                                             >
@@ -1051,6 +1278,19 @@ export const AnalysisPage = () => {
                                           title="Отправить эту задачу"
                                         >
                                           {isSendingOne ? '…' : '📤 Отправить'}
+                                        </button>
+                                        {/* Кнопка удалить задачу */}
+                                        <button
+                                          onClick={() => {
+                                            if (window.confirm('Удалить задачу?')) {
+                                              deleteTask(task.id);
+                                            }
+                                          }}
+                                          disabled={isDeleting}
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer disabled:opacity-50"
+                                          title="Удалить задачу"
+                                        >
+                                          🗑️
                                         </button>
                                       </div>
                                     )}
