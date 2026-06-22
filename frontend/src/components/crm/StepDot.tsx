@@ -4,6 +4,9 @@ interface StepDotProps {
   active: boolean;
   done: boolean;
   disabled?: boolean;
+  /** CRM не подключена. Принудительно серый, как disabled, но в приоритете
+   *  (на случай, если `active/done` уже выставлен из предыдущего состояния). */
+  locked?: boolean;
   loading?: boolean;
   icon: string;
   label: string;
@@ -13,8 +16,9 @@ interface StepDotProps {
   onClick: () => void;
 }
 
-export const StepDot = ({ active, done, disabled, loading, icon, label, open, dropdown, onClick }: StepDotProps) => {
-  const stateClass = disabled
+export const StepDot = ({ active, done, disabled, locked, loading, icon, label, open, dropdown, onClick }: StepDotProps) => {
+  const inactive = locked || disabled;
+  const stateClass = inactive
     ? 'bg-gray-100 text-gray-300 dark:bg-white/[0.02] dark:text-gray-600 cursor-not-allowed'
     : done
       ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/30 hover:bg-emerald-200 dark:hover:bg-emerald-500/25'
@@ -26,15 +30,17 @@ export const StepDot = ({ active, done, disabled, loading, icon, label, open, dr
     <div className="relative inline-flex">
       <button
         type="button"
-        onClick={onClick}
-        disabled={disabled}
+        onClick={inactive ? undefined : onClick}
+        aria-disabled={inactive}
+        disabled={inactive}
+        title={locked ? 'Сначала подключите Weeek API в Настройках' : undefined}
         className={`inline-flex items-center gap-1.5 pl-2 pr-3 h-8 rounded-full text-xs font-medium transition-colors ${stateClass}`}
       >
         <span className={`w-4 h-4 rounded-full inline-flex items-center justify-center text-[10px] ${done ? 'bg-emerald-500 text-white' : active ? 'bg-white/40 dark:bg-white/10' : 'bg-gray-200 dark:bg-white/5'}`}>
           {done ? '✓' : loading ? '…' : icon}
         </span>
         <span className="max-w-[12rem] truncate">{label}</span>
-        {!disabled && <span className="text-[9px] opacity-60">{open ? '▲' : '▼'}</span>}
+        {!inactive && <span className="text-[9px] opacity-60">{open ? '▲' : '▼'}</span>}
       </button>
       {open && dropdown}
     </div>

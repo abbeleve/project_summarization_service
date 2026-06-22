@@ -16,6 +16,8 @@ export interface TaskCardCallbacks {
   onSend: (taskId: string) => void;
   onDelete: (taskId: string) => void;
   onSaveDescription: (taskId: string, description: string) => void;
+  /** Если true — CRM не подключена: блокируем assignee/deadline/send. */
+  crmDisabled?: boolean;
 }
 
 interface TaskCardProps {
@@ -23,6 +25,8 @@ interface TaskCardProps {
   index: number;
   members: WeeekMember[];
   cb: TaskCardCallbacks;
+  /** false — не показывать номер (для отправленных задач) */
+  showNumber?: boolean;
 }
 
 const formatDateTime = (iso: string) =>
@@ -35,7 +39,7 @@ const formatDate = (iso: string) =>
     day: '2-digit', month: '2-digit', year: 'numeric',
   });
 
-export const TaskCard = ({ task, index, members, cb }: TaskCardProps) => {
+export const TaskCard = ({ task, index, members, cb, showNumber = true }: TaskCardProps) => {
   const isSent = task.sent_to_crm;
   const [showTrashConfirm, setShowTrashConfirm] = useState(false);
   const [editingDesc, setEditingDesc] = useState(false);
@@ -64,10 +68,12 @@ export const TaskCard = ({ task, index, members, cb }: TaskCardProps) => {
           className={`flex-shrink-0 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center mt-0.5 ${
             isSent
               ? 'bg-gray-200 text-gray-500 dark:bg-white/[0.06] dark:text-gray-500'
-              : 'bg-emerald-500 text-white dark:bg-emerald-500 dark:text-white'
+              : showNumber
+                ? 'bg-emerald-500 text-white dark:bg-emerald-500 dark:text-white'
+                : 'bg-gray-100 text-transparent dark:bg-white/[0.03]'
           }`}
         >
-          {index + 1}
+          {showNumber ? index + 1 : '✓'}
         </span>
 
         <div className="flex-1 min-w-0">
@@ -156,6 +162,7 @@ export const TaskCard = ({ task, index, members, cb }: TaskCardProps) => {
                 <AssigneePicker
                   members={members}
                   value={pickerValueId}
+                  disabled={cb.crmDisabled}
                   onChange={(choice) => {
                     if (!choice) {
                       cb.setLocalAssignees((prev) => ({ ...prev, [task.id]: '' }));
@@ -168,6 +175,7 @@ export const TaskCard = ({ task, index, members, cb }: TaskCardProps) => {
                 />
                 <DeadlinePicker
                   value={effectiveDeadline}
+                  disabled={cb.crmDisabled}
                   onChange={(iso) => {
                     if (iso === null) {
                       cb.setLocalDeadlines((prev) => { const c = { ...prev }; delete c[task.id]; return c; });
@@ -178,10 +186,15 @@ export const TaskCard = ({ task, index, members, cb }: TaskCardProps) => {
                 />
                 <button
                   type="button"
-                  onClick={cb.onSend.bind(null, task.id)}
-                  disabled={cb.isSendingOne}
-                  className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md text-[11px] font-medium bg-emerald-600 text-white ring-1 ring-emerald-400/40 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-wait transition-all shadow-sm dark:bg-emerald-500/85 dark:ring-emerald-400/30 dark:hover:bg-emerald-500 dark:shadow-emerald-900/30"
-                  title="Отправить эту задачу"
+                  onClick={cb.crmDisabled ? undefined : cb.onSend.bind(null, task.id)}
+                  aria-disabled={cb.crmDisabled || cb.isSendingOne}
+                  disabled={cb.crmDisabled || cb.isSendingOne}
+                  className={`inline-flex items-center gap-1.5 h-7 px-3 rounded-md text-[11px] font-medium transition-all shadow-sm ${
+                    cb.crmDisabled
+                      ? 'bg-gray-200 text-gray-400 ring-1 ring-gray-300 dark:bg-white/[0.04] dark:text-gray-500 dark:ring-white/10 cursor-not-allowed'
+                      : 'bg-emerald-600 text-white ring-1 ring-emerald-400/40 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-wait dark:bg-emerald-500/85 dark:ring-emerald-400/30 dark:hover:bg-emerald-500 dark:shadow-emerald-900/30'
+                  }`}
+                  title={cb.crmDisabled ? 'Сначала подключите Weeek API в Настройках' : 'Отправить эту задачу'}
                 >
                   {cb.isSendingOne ? '⏳' : '📤'}
                   <span>{cb.isSendingOne ? 'Отправка…' : 'Отправить'}</span>

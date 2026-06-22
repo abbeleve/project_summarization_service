@@ -57,12 +57,14 @@ export const AudioUploader = ({
   const [denoisedFile, setDenoisedFile] = useState<Blob | null>(null);
   const [isDenoising, setIsDenoising] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState<TooltipId>(null);
+  const [title, setTitle] = useState('');
 
   // Предзагрузка файла из внешнего источника (drag-n-drop на тайл)
   useEffect(() => {
     if (initialFile) {
       setFile(initialFile);
       setDenoisedFile(null);
+      setTitle('');
     }
   }, [initialFile]);
 
@@ -79,6 +81,7 @@ export const AudioUploader = ({
     if (acceptedFiles[0]) {
       setFile(acceptedFiles[0]);
       setDenoisedFile(null);
+      setTitle('');
     }
   }, []);
 
@@ -111,9 +114,10 @@ export const AudioUploader = ({
       const fileToProcess = settings.noiseSuppression && denoisedFile
         ? new File([denoisedFile], `denoised_${file.name}`, { type: 'audio/wav' })
         : file;
-      onProcess(fileToProcess, settings);
+      onProcess(fileToProcess, { ...settings, meetingTitle: title || undefined });
       setFile(null);
       setDenoisedFile(null);
+      setTitle('');
     }
   };
 
@@ -170,7 +174,7 @@ export const AudioUploader = ({
               </div>
             </div>
             <button
-              onClick={() => { setFile(null); setDenoisedFile(null); }}
+              onClick={() => { setFile(null); setDenoisedFile(null); setTitle(''); }}
               className="w-8 h-8 rounded-full bg-white dark:bg-dark-base-800 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center justify-center transition-colors text-gray-400 hover:text-red-500 shadow-sm"
               disabled={isProcessing}
             >
@@ -196,6 +200,28 @@ export const AudioUploader = ({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Meeting title input */}
+      {file && (
+        <div className="bg-gradient-to-br from-gray-50 to-white dark:from-dark-base-800 dark:to-dark-base-900 rounded-2xl p-5 border border-gray-200 dark:border-dark-base-700">
+          <label className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-md shrink-0">
+              <span className="text-lg">📋</span>
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Название совещания</p>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Не указано (будет определено автоматически)"
+                disabled={isProcessing}
+                className="w-full bg-white dark:bg-dark-base-800 border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-400 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent transition-all disabled:opacity-50"
+              />
+            </div>
+          </label>
         </div>
       )}
 

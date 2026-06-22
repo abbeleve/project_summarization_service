@@ -4,6 +4,8 @@ import { Popover } from './Popover';
 interface DeadlinePickerProps {
   value: string | undefined;
   onChange: (iso: string | null) => void;
+  /** CRM не подключена — кнопка триггера должна быть серой и некликабельной. */
+  disabled?: boolean;
 }
 
 const PRESETS: Array<{ label: string; days: number }> = [
@@ -26,33 +28,39 @@ const formatRu = (iso: string) =>
     year: 'numeric',
   });
 
-export const DeadlinePicker = ({ value, onChange }: DeadlinePickerProps) => {
+export const DeadlinePicker = ({ value, onChange, disabled }: DeadlinePickerProps) => {
   const [mode, setMode] = useState<'picker' | 'specific'>('picker');
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
     <Popover
+      disabled={disabled}
       trigger={(open, toggle) => {
         const hasValue = !!value;
+        const disabledClasses = 'bg-gray-100 text-gray-300 ring-1 ring-dashed ring-gray-300 cursor-not-allowed dark:bg-white/[0.02] dark:text-gray-600 dark:ring-white/10';
         return (
           <button
             type="button"
-            onClick={() => {
+            onClick={disabled ? undefined : () => {
               setMode('picker');
               toggle();
             }}
+            aria-disabled={disabled}
+            disabled={disabled}
             className={`group inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] font-medium transition-colors ${
-              hasValue
-                ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-300 hover:bg-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:ring-amber-400/30 dark:hover:bg-amber-500/25'
-                : open
-                  ? 'bg-gray-100 text-gray-700 ring-1 ring-gray-300 dark:bg-white/5 dark:text-gray-300 dark:ring-white/15'
-                  : 'bg-gray-50 text-gray-400 ring-1 ring-dashed ring-gray-300 hover:bg-gray-100 hover:text-gray-600 dark:bg-white/[0.03] dark:text-gray-400 dark:ring-white/10 dark:hover:bg-white/5 dark:hover:text-gray-300'
+              disabled
+                ? disabledClasses
+                : hasValue
+                  ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-300 hover:bg-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:ring-amber-400/30 dark:hover:bg-amber-500/25'
+                  : open
+                    ? 'bg-gray-100 text-gray-700 ring-1 ring-gray-300 dark:bg-white/5 dark:text-gray-300 dark:ring-white/15'
+                    : 'bg-gray-50 text-gray-400 ring-1 ring-dashed ring-gray-300 hover:bg-gray-100 hover:text-gray-600 dark:bg-white/[0.03] dark:text-gray-400 dark:ring-white/10 dark:hover:bg-white/5 dark:hover:text-gray-300'
             }`}
-            title={hasValue ? 'Изменить срок' : 'Установить срок'}
+            title={disabled ? 'Сначала подключите Weeek API в Настройках' : hasValue ? 'Изменить срок' : 'Установить срок'}
           >
             <span aria-hidden>⏰</span>
             <span>{hasValue ? formatRu(value!) : 'Срок'}</span>
-            <span className="opacity-60 text-[9px]">{open ? '▲' : '▼'}</span>
+            {!disabled && <span className="opacity-60 text-[9px]">{open ? '▲' : '▼'}</span>}
           </button>
         );
       }}

@@ -6,16 +6,21 @@ interface PopoverProps {
   children: (close: () => void) => ReactNode;
   align?: 'left' | 'right';
   className?: string;
+  /** Если true — popover нельзя открыть (например, CRM отключена). */
+  disabled?: boolean;
 }
 
-export const Popover = ({ trigger, children, align = 'left', className = '' }: PopoverProps) => {
+export const Popover = ({ trigger, children, align = 'left', className = '', disabled }: PopoverProps) => {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
-  const toggle = () => setOpen((prev) => !prev);
+  const toggle = () => {
+    if (disabled) return;
+    setOpen((prev) => !prev);
+  };
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || disabled) return;
     const onClick = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
@@ -30,7 +35,7 @@ export const Popover = ({ trigger, children, align = 'left', className = '' }: P
       document.removeEventListener('mousedown', onClick);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [open, disabled]);
 
   return (
     <div ref={containerRef} className={`relative inline-flex ${className}`}>

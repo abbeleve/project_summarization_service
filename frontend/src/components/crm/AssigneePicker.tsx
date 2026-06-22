@@ -7,6 +7,8 @@ interface AssigneePickerProps {
   /** Текущее значение — id выбранного члена (или null если "не назначать"). */
   value: string | null;
   onChange: (member: { id: string; name: string } | null) => void;
+  /** CRM не подключена — кнопка триггера должна быть серой и некликабельной. */
+  disabled?: boolean;
 }
 
 /** Резолвит id → имя для отображения; ищет в списке members. */
@@ -15,27 +17,33 @@ const resolveMember = (members: WeeekMember[], id: string | null) => {
   return members.find((m) => m.id === id) ?? { id, name: `User #${id}` };
 };
 
-export const AssigneePicker = ({ members, value, onChange }: AssigneePickerProps) => {
+export const AssigneePicker = ({ members, value, onChange, disabled }: AssigneePickerProps) => {
   const selected = resolveMember(members, value);
   const triggerColor = getWeeekMemberColor(selected?.id ?? '');
 
   return (
     <Popover
+      disabled={disabled}
       trigger={(open, toggle) => {
         const hasValue = !!selected;
         const initial = selected?.name?.[0]?.toUpperCase() ?? '?';
+        const disabledClasses = 'bg-gray-100 text-gray-300 ring-1 ring-dashed ring-gray-300 cursor-not-allowed dark:bg-white/[0.02] dark:text-gray-600 dark:ring-white/10';
         return (
           <button
             type="button"
-            onClick={toggle}
+            onClick={disabled ? undefined : toggle}
+            aria-disabled={disabled}
+            disabled={disabled}
             className={`group inline-flex items-center gap-1.5 h-7 pl-1.5 pr-2.5 rounded-md text-[11px] font-medium transition-colors ${
-              hasValue
-                ? `${triggerColor.bg} ${triggerColor.text} ring-1 ${triggerColor.ring}/30 hover:brightness-125`
-                : open
-                  ? 'bg-gray-100 text-gray-700 ring-1 ring-gray-300 dark:bg-white/5 dark:text-gray-300 dark:ring-white/15'
-                  : 'bg-gray-50 text-gray-400 ring-1 ring-dashed ring-gray-300 hover:bg-gray-100 hover:text-gray-600 dark:bg-white/[0.03] dark:text-gray-400 dark:ring-white/10 dark:hover:bg-white/5 dark:hover:text-gray-300'
+              disabled
+                ? disabledClasses
+                : hasValue
+                  ? `${triggerColor.bg} ${triggerColor.text} ring-1 ${triggerColor.ring}/30 hover:brightness-125`
+                  : open
+                    ? 'bg-gray-100 text-gray-700 ring-1 ring-gray-300 dark:bg-white/5 dark:text-gray-300 dark:ring-white/15'
+                    : 'bg-gray-50 text-gray-400 ring-1 ring-dashed ring-gray-300 hover:bg-gray-100 hover:text-gray-600 dark:bg-white/[0.03] dark:text-gray-400 dark:ring-white/10 dark:hover:bg-white/5 dark:hover:text-gray-300'
             }`}
-            title="Назначить ответственного"
+            title={disabled ? 'Сначала подключите Weeek API в Настройках' : 'Назначить ответственного'}
           >
             <span
               className={`w-3.5 h-3.5 rounded-full inline-flex items-center justify-center text-[9px] font-bold ring-1 ring-gray-300 dark:ring-white/15 ${
@@ -49,7 +57,7 @@ export const AssigneePicker = ({ members, value, onChange }: AssigneePickerProps
             <span className="max-w-[10rem] truncate">
               {selected?.name ?? 'Назначить'}
             </span>
-            <span className="opacity-60 text-[9px]">{open ? '▲' : '▼'}</span>
+            {!disabled && <span className="opacity-60 text-[9px]">{open ? '▲' : '▼'}</span>}
           </button>
         );
       }}

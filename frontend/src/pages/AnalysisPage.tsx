@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useTranscripts } from '@/hooks/useTranscripts';
 import { useAnnotations } from '@/hooks/useAnnotations';
-import { useCRMTasks, useCRMProjects, useCRMProjectBoards, useCRMProjectBoardColumns, useCRMWorskpaceMembers } from '@/hooks/useCRM';
+import { useCRMTasks, useCRMProjects, useCRMProjectBoards, useCRMProjectBoardColumns, useCRMWorskpaceMembers, useCRMStatus } from '@/hooks/useCRM';
 import { transcriptsApi } from '@/api/transcripts';
 import type { MeetingTask } from '@/types/transcript';
 import type { WeeekProject, WeeekBoard, WeeekBoardColumn, SendTaskBody } from '@/api/crm';
@@ -41,6 +41,8 @@ export const AnalysisPage = () => {
     endChar: number;
   } | null>(null);
   const [showAnnotationPopup, setShowAnnotationPopup] = useState(false);
+  const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
+  const [popupAbove, setPopupAbove] = useState(true);
   const [selectedColor, setSelectedColor] = useState('yellow');
   const [annotationNote, setAnnotationNote] = useState('');
   const [rightTab, setRightTab] = useState<'summary' | 'charts' | 'chat' | 'annotations'>('summary');
@@ -64,12 +66,18 @@ export const AnalysisPage = () => {
   const [showBoardPicker, setShowBoardPicker] = useState(false);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
 
-  const { data: projects = [], isLoading: projectsLoading } = useCRMProjects();
+  // Статус подключения Weeek. `crmConnected === null` пока запрос в полёте.
+  const { data: crmStatus } = useCRMStatus();
+  const crmConnected = crmStatus?.connected === true;
+
+  // Запросы к Weeek уходят только когда ключ подключён — иначе бэкенд отдаёт 400
+  // и UX становится непонятным ("пусто, не работает, почему?").
+  const { data: projects = [], isLoading: projectsLoading } = useCRMProjects(crmConnected);
   const { data: boards = [], isLoading: boardsLoading } = useCRMProjectBoards(selectedProjectId);
   const { data: columns = [], isLoading: columnsLoading } = useCRMProjectBoardColumns(selectedBoardId);
 
   // Участники workspace из Weeek для назначения задач
-  const { data: memberList = [] } = useCRMWorskpaceMembers();
+  const { data: memberList = [] } = useCRMWorskpaceMembers(crmConnected);
 
   // ===== CRM (MeetingTasks) =====
   const {
@@ -293,19 +301,19 @@ export const AnalysisPage = () => {
 
     const range = selection.getRangeAt(0);
     const container = range.commonAncestorContainer.parentElement?.closest('[data-part-id]');
-    
+
     if (!container) return;
 
     const partId = container.getAttribute('data-part-id')!;
-    
+
     // Находим элемент с текстом (p тег внутри TranscriptSegment)
     const textElement = container.querySelector('p');
     if (!textElement) return;
-    
+
     // Получаем полный текст из элемента
     const fullText = textElement.textContent || '';
     const selectedText = selection.toString();
-    
+
     // Находим позицию выделенного текста в полном тексте
     const startChar = fullText.indexOf(selectedText);
     if (startChar === -1) {
@@ -314,6 +322,32 @@ export const AnalysisPage = () => {
     }
     const endChar = startChar + selectedText.length;
 
+    // Получаем координаты выделения для позиционирования попапа
+    const rect = range.getBoundingClientRect();
+    const popupWidth = 380;
+    const popupHeight = 340;
+    const gap = 12;
+
+    // По умолчанию — над выделением
+    let x = rect.left + rect.width / 2 - popupWidth / 2;
+    let y = rect.top - popupHeight - gap;
+    let above = true;
+
+    // Коррекция по X: не выезжаем за левый край
+    if (x < 16) x = 16;
+    // Коррекция по X: не выезжаем за правый край
+    if (x + popupWidth > window.innerWidth - 16) {
+      x = window.innerWidth - popupWidth - 16;
+    }
+
+    // Если над выделением не помещается — показываем снизу
+    if (y < 8) {
+      y = rect.bottom + gap;
+      above = false;
+    }
+
+    setPopupPosition({ x, y });
+    setPopupAbove(above);
     setSelectedText({
       text: selectedText,
       partId,
@@ -339,6 +373,8 @@ export const AnalysisPage = () => {
       setSelectedText(null);
       setSelectedColor('yellow');
       setAnnotationNote('');
+      setPopupPosition(null);
+      setPopupAbove(true);
       window.getSelection()?.removeAllRanges();
       showToast('✅ Аннотация создана', 'success');
     } catch (err: any) {
@@ -404,6 +440,24 @@ export const AnalysisPage = () => {
     });
     setShowAnnotationPopup(true);
   };
+
+  // Закрытие попапа по Escape
+  useEffect(() => {
+    if (!showAnnotationPopup) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowAnnotationPopup(false);
+        setSelectedText(null);
+        setSelectedColor('yellow');
+        setAnnotationNote('');
+        setPopupPosition(null);
+        setPopupAbove(true);
+        window.getSelection()?.removeAllRanges();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showAnnotationPopup]);
 
   // Конвертация Blob в URL для аудио (если есть)
   const audioUrl = transcript?.audio_url || (transcript?.audio_blob
@@ -1012,11 +1066,13 @@ export const AnalysisPage = () => {
                             </div>
                           )}
 
-                          {meetingTasks.map((task: MeetingTask, idx: number) => (
+                          {/* Сначала неотправленные (с номерами), потом выполненные (только ✓) */}
+                          {[...unsentTasks, ...sentTasks].map((task: MeetingTask, idx: number) => (
                             <TaskCard
                               key={task.id}
                               task={task}
                               index={idx}
+                              showNumber={!task.sent_to_crm}
                               members={memberList}
                               cb={{
                                 localAssignees,
@@ -1077,10 +1133,10 @@ export const AnalysisPage = () => {
                           {(transcript.key_points || []).map((point, idx) => (
                             <div
                               key={idx}
-                              className="border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 shadow-md"
+                              className="group/kp border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 shadow-md transition-all duration-200 ease-out hover:bg-amber-100 hover:shadow-lg hover:border-amber-600 dark:hover:bg-amber-900/30 dark:hover:border-amber-400 dark:hover:shadow-[0_6px_24px_-6px_rgba(245,158,11,0.25)] cursor-default"
                             >
                               <div className="flex items-start gap-3">
-                                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">
+                                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center mt-0.5 transition-transform duration-200 group-hover/kp:scale-110">
                                   {idx + 1}
                                 </span>
                                 <p className="text-amber-900 dark:text-amber-100 text-sm leading-relaxed">
@@ -1183,70 +1239,107 @@ export const AnalysisPage = () => {
         </div>
       </div>
 
-      {/* Popup для создания аннотации */}
-      {showAnnotationPopup && selectedText && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-dark-base-800 rounded-2xl p-6 max-w-md w-full shadow-2xl">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Создать аннотацию</h3>
-            
-            <div className="mb-4 p-3 bg-gray-50 dark:bg-dark-base-700 rounded-lg">
-              <p className="text-sm text-gray-700 dark:text-gray-300 italic">
-                "{selectedText.text}"
-              </p>
-            </div>
+      {/* Попап «Создать аннотацию» — стеклянная карточка над выделением */}
+      {showAnnotationPopup && selectedText && popupPosition && (
+        <>
+          {/* Прозрачный backdrop для закрытия по клику вне */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => {
+              setShowAnnotationPopup(false);
+              setSelectedText(null);
+              setSelectedColor('yellow');
+              setAnnotationNote('');
+              setPopupPosition(null);
+              setPopupAbove(true);
+              window.getSelection()?.removeAllRanges();
+            }}
+          />
+          {/* Стеклянная карточка */}
+          <div
+            className="fixed z-50 popup-enter"
+            style={{
+              left: popupPosition.x,
+              top: popupPosition.y,
+              width: 380,
+            }}
+          >
+            {/* Стрелка-треугольник (смотрит вниз, если попап сверху; вверх — если снизу) */}
+            <div
+              className={`absolute left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-white dark:bg-[#0e1622] border-l border-t border-gray-200 dark:border-white/10`}
+              style={
+                popupAbove
+                  ? { bottom: -6 }
+                  : { bottom: 'auto', top: -6, transform: 'translateX(-50%) rotate(225deg)' }
+              }
+            />
 
-            <div className="mb-4">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Выберите цвет:</p>
+            <div className="bg-white dark:bg-[#0e1622] rounded-2xl p-5 shadow-lg shadow-gray-200/50 dark:shadow-2xl dark:shadow-black/40 border border-gray-200 dark:border-white/10">
+              <h3 className="text-base font-bold text-gray-900 dark:text-white mb-3">Создать аннотацию</h3>
+
+              {/* Выделенный текст */}
+              <div className="mb-3 p-3 bg-gray-50 dark:bg-white/[0.04] rounded-xl border border-gray-200 dark:border-white/10">
+                <p className="text-sm text-gray-700 dark:text-gray-300 italic leading-relaxed line-clamp-3">
+                  "{selectedText.text}"
+                </p>
+              </div>
+
+              {/* Цвета */}
+              <div className="mb-3">
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Цвет подсветки:</p>
+                <div className="flex gap-2">
+                  {ANNOTATION_COLORS.map((color) => (
+                    <button
+                      key={color.name}
+                      onClick={() => setSelectedColor(color.name)}
+                      className={`w-7 h-7 rounded-full ${color.bg} border-2 transition-all duration-150 ${
+                        selectedColor === color.name
+                          ? 'border-gray-900 dark:border-white scale-110 shadow-md'
+                          : 'border-transparent hover:scale-105'
+                      }`}
+                      title={color.label}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Комментарий */}
+              <div className="mb-4">
+                <textarea
+                  value={annotationNote}
+                  onChange={(e) => setAnnotationNote(e.target.value)}
+                  placeholder="Заметка (необязательно)..."
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-white/10 rounded-xl bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 focus:outline-none resize-none text-sm transition-all"
+                />
+              </div>
+
+              {/* Кнопки */}
               <div className="flex gap-2">
-                {ANNOTATION_COLORS.map((color) => (
-                  <button
-                    key={color.name}
-                    onClick={() => setSelectedColor(color.name)}
-                    className={`w-8 h-8 rounded-full ${color.bg} border-2 transition-all ${
-                      selectedColor === color.name ? 'border-gray-900 dark:border-white scale-110' : 'border-transparent'
-                    }`}
-                    title={color.label}
-                  />
-                ))}
+                <button
+                  onClick={handleCreateAnnotation}
+                  className="flex-1 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white text-sm font-medium shadow-lg shadow-indigo-500/25 hover:shadow-indigo-600/30 transition-all duration-150 active:scale-[0.97]"
+                >
+                  ✓ Подчеркнуть
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAnnotationPopup(false);
+                    setSelectedText(null);
+                    setSelectedColor('yellow');
+                    setAnnotationNote('');
+                    setPopupPosition(null);
+                    setPopupAbove(true);
+                    window.getSelection()?.removeAllRanges();
+                  }}
+                  className="px-4 py-2 rounded-xl bg-gray-50 dark:bg-white/[0.04] hover:bg-gray-100 dark:hover:bg-white/[0.08] text-gray-600 dark:text-gray-300 text-sm font-medium border border-gray-200 dark:border-white/10 transition-all duration-150"
+                >
+                  Отмена
+                </button>
               </div>
             </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Комментарий (необязательно):
-              </label>
-              <textarea
-                value={annotationNote}
-                onChange={(e) => setAnnotationNote(e.target.value)}
-                placeholder="Напишите заметку к аннотации..."
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-dark-base-600 rounded-lg bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none text-sm"
-              />
-            </div>
-
-            <div className="flex gap-2">
-              <Button
-                variant="primary"
-                onClick={handleCreateAnnotation}
-                className="flex-1"
-              >
-                ✓ Подчеркнуть
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setShowAnnotationPopup(false);
-                  setSelectedText(null);
-                  setSelectedColor('yellow');
-                  setAnnotationNote('');
-                  window.getSelection()?.removeAllRanges();
-                }}
-              >
-                Отмена
-              </Button>
-            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Toast уведомления */}
