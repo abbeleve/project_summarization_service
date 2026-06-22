@@ -103,9 +103,9 @@ export const crmApi = {
     return response.data.board_columns;
   },
 
-  /** Получить список участников проекта из Weeek. */
-  getProjectMembers: async (projectId: number): Promise<WeeekMember[]> => {
-    const response = await apiClient.get<{ members: WeeekMember[] }>(`/crm/projects/${projectId}/members`);
+  /** Получить список участников workspace из Weeek. */
+  getWorkspaceMembers: async (): Promise<WeeekMember[]> => {
+    const response = await apiClient.get<{ members: WeeekMember[] }>('/crm/workspace/members');
     return response.data.members;
   },
 

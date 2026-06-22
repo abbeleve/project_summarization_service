@@ -90,12 +90,11 @@ export const useCRMProjectBoardColumns = (boardId: number | null) => {
   });
 };
 
-/** Хук для списка участников проекта Weeek (назначаемых на задачи). */
-export const useCRMProjectMembers = (projectId: number | null) => {
+/** Хук для списка участников workspace Weeek (назначаемых на задачи). */
+export const useCRMWorskpaceMembers = () => {
   return useQuery({
-    queryKey: ['crm-members', projectId],
-    queryFn: () => crmApi.getProjectMembers(projectId!),
-    enabled: projectId != null,
+    queryKey: ['crm-workspace-members'],
+    queryFn: () => crmApi.getWorkspaceMembers(),
     staleTime: 120_000,
   });
 };

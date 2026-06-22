@@ -3,7 +3,6 @@
 Управление API токенами, проектами Weeek и отправка задач.
 """
 import logging
-import asyncio
 from uuid import UUID
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Request
@@ -303,50 +302,42 @@ async def list_weeek_projects(request: Request):
     return ProjectsListResponse(projects=projects)
 
 
-# ===== Эндпоинты для участников проекта =====
+# ===== Эндпоинты для участников workspace =====
 
-@router.get("/projects/{project_id}/members", response_model=MembersListResponse)
-async def list_project_members(project_id: int, request: Request):
+@router.get("/workspace/members", response_model=MembersListResponse)
+async def list_workspace_members(request: Request):
     """
-    Получение списка участников проекта из Weeek.
-    Берёт team (массив user_id) из проекта, затем загружает профили параллельно.
+    Получение списка участников workspace из Weeek.
+    Вызывает GET /public/v1/ws/members.
     """
     user_id = _get_current_user_id(request)
     db = _get_db()
     token = _get_weeek_token(db, user_id)
 
-    # Получаем проект (содержит team)
-    project_data = await _weeek_get(f"/tm/projects/{project_id}", token)
-    project = project_data.get("project", {})
-    team_ids: list = project.get("team", [])
+    data = await _weeek_get("/ws/members", token)
 
-    if not team_ids:
-        return MembersListResponse(members=[])
+    # /ws/members может вернуть как массив напрямую, так и {members: [...]}
+    members_raw: list = []
+    if isinstance(data, list):
+        members_raw = data
+    elif isinstance(data, dict):
+        members_raw = data.get("members") or data.get("data") or []
 
-    # Параллельно загружаем профиль каждого участника
-    async with httpx.AsyncClient(timeout=30) as client:
-        headers = {"Authorization": f"Bearer {token}"}
-        tasks = [client.get(f"{WEEEK_API_BASE}/user/{uid}", headers=headers) for uid in team_ids]
-        responses = await asyncio.gather(*tasks, return_exceptions=True)
+    if not isinstance(members_raw, list):
+        members_raw = []
 
     members = []
-    for uid, resp in zip(team_ids, responses):
-        if isinstance(resp, Exception):
-            logger.warning(f"Failed to fetch user {uid}: {resp}")
-            members.append(WeeekMemberOut(id=str(uid), name=f"User #{uid}"))
+    for m in members_raw:
+        mid = m.get("id") or m.get("userId")
+        if not mid:
             continue
-        if resp.status_code >= 400:
-            logger.warning(f"Failed to fetch user {uid}: HTTP {resp.status_code}")
-            members.append(WeeekMemberOut(id=str(uid), name=f"User #{uid}"))
-            continue
-        user_data = resp.json().get("user", {})
-        first = user_data.get("firstName", "")
-        last = user_data.get("lastName", "")
-        full_name = f"{first} {last}".strip() or f"User #{uid}"
+        first = m.get("firstName", "") or ""
+        last = m.get("lastName", "") or ""
+        full_name = f"{first} {last}".strip() or m.get("name", "") or f"User #{mid}"
         members.append(WeeekMemberOut(
-            id=str(uid),
+            id=str(mid),
             name=full_name,
-            email=user_data.get("email"),
+            email=m.get("email"),
         ))
 
     return MembersListResponse(members=members)

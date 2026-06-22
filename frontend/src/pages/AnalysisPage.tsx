@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useTranscripts } from '@/hooks/useTranscripts';
 import { useAnnotations } from '@/hooks/useAnnotations';
-import { useCRMTasks, useCRMProjects, useCRMProjectBoards, useCRMProjectBoardColumns, useCRMProjectMembers } from '@/hooks/useCRM';
+import { useCRMTasks, useCRMProjects, useCRMProjectBoards, useCRMProjectBoardColumns, useCRMWorskpaceMembers } from '@/hooks/useCRM';
 import { transcriptsApi } from '@/api/transcripts';
 import type { MeetingTask } from '@/types/transcript';
 import type { WeeekProject, WeeekBoard, WeeekBoardColumn, SendTaskBody } from '@/api/crm';
@@ -19,6 +19,9 @@ import { Button } from '@/components/ui/Button';
 import { type TranscriptSegment as TranscriptSegmentType } from '@/types/transcript';
 import { type Annotation } from '@/api/transcripts';
 import { getSpeakerColor } from '@/utils/speakerColors';
+import { TaskCard } from '@/components/crm/TaskCard';
+import { StepDot, StepSeparator } from '@/components/crm/StepDot';
+import { CrmDropdown } from '@/components/crm/CrmDropdown';
 
 export const AnalysisPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -46,6 +49,7 @@ export const AnalysisPage = () => {
   const [keyPointsExpanded, setKeyPointsExpanded] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [audioError, setAudioError] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -64,8 +68,8 @@ export const AnalysisPage = () => {
   const { data: boards = [], isLoading: boardsLoading } = useCRMProjectBoards(selectedProjectId);
   const { data: columns = [], isLoading: columnsLoading } = useCRMProjectBoardColumns(selectedBoardId);
 
-  // Участники выбранного проекта из Weeek для назначения задач
-  const { data: memberList = [] } = useCRMProjectMembers(selectedProjectId);
+  // Участники workspace из Weeek для назначения задач
+  const { data: memberList = [] } = useCRMWorskpaceMembers();
 
   // ===== CRM (MeetingTasks) =====
   const {
@@ -80,12 +84,6 @@ export const AnalysisPage = () => {
     isDeleting,
   } = useCRMTasks(transcript?.summary_id ?? null);
 
-  const [openAssigneeFor, setOpenAssigneeFor] = useState<string | null>(null);
-  const [openDeadlineFor, setOpenDeadlineFor] = useState<string | null>(null);
-  const [draftDeadline, setDraftDeadline] = useState('');
-  const [editingDescriptionId, setEditingDescriptionId] = useState<string | null>(null);
-  const [editingDescriptionText, setEditingDescriptionText] = useState('');
-
   // Локальный выбор assignee и deadline — НЕ сохраняется в БД, сбрасывается при смене транскрипции
   const [localAssignees, setLocalAssignees] = useState<Record<string, string>>({});
   const [localDeadlines, setLocalDeadlines] = useState<Record<string, string>>({});
@@ -94,8 +92,6 @@ export const AnalysisPage = () => {
     setLocalAssignees({});
     setLocalDeadlines({});
     setTaskWeeekUserIds({});
-    setOpenAssigneeFor(null);
-    setOpenDeadlineFor(null);
   }, [id]);
 
   /** Сбросить выбор board/column при смене проекта. */
@@ -149,9 +145,20 @@ export const AnalysisPage = () => {
       showToast('Сначала выберите проект в Weeek', 'error');
       return;
     }
+    if (!window.confirm(`Отправить все ${unsentTasks.length} неотправленных задач в Weeek?\n\nЭто действие нельзя отменить.`)) {
+      return;
+    }
     sendAllToCRM(getSendBody(), {
       onSuccess: (res) => {
         if (res.status === 'ok' || res.status === 'partial') {
+          // Сохраняем assignee и deadline для всех отправленных задач
+          unsentTasks.forEach((t) => {
+            const assignee = localAssignees[t.id];
+            const deadline = localDeadlines[t.id];
+            if (assignee !== undefined || deadline) {
+              updateTask({ taskId: t.id, assignee: assignee !== undefined ? assignee : undefined, deadline: deadline || undefined });
+            }
+          });
           showToast(`Отправлено ${res.sent} из ${res.total} задач в CRM`, 'success');
         } else {
           showToast(res.status === 'error' ? 'Ошибка отправки' : JSON.stringify(res), 'error');
@@ -172,6 +179,16 @@ export const AnalysisPage = () => {
     sendOneToCRM({ taskId, body: getSendBody(taskId) }, {
       onSuccess: (res) => {
         if (res.status === 'ok') {
+          // Сохраняем локальный assignee и deadline в БД
+          const localAssignee = localAssignees[taskId];
+          const localDeadline = localDeadlines[taskId];
+          if (localAssignee !== undefined || localDeadline) {
+            updateTask({
+              taskId,
+              assignee: localAssignee !== undefined ? localAssignee : undefined,
+              deadline: localDeadline || undefined,
+            });
+          }
           showToast('Задача отправлена в CRM', 'success');
         } else if (res.status === 'already_sent') {
           showToast('Задача уже была отправлена', 'error');
@@ -450,6 +467,14 @@ export const AnalysisPage = () => {
     };
   });
 
+  // Фильтрация по поисковому запросу
+  const filteredSegments = searchQuery.trim()
+    ? segments.filter(seg =>
+        seg.Text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        seg.Speaker.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : segments;
+
   // Скачать JSON
   const handleDownloadJson = () => {
     const jsonStr = JSON.stringify(transcript, null, 2);
@@ -674,8 +699,41 @@ export const AnalysisPage = () => {
             <div className="flex items-center justify-between mb-3 flex-shrink-0">
               <h3 className="text-2xl font-bold text-blue-600 dark:text-blue-400">Детальная транскрипция</h3>
             </div>
+            {/* Поле поиска */}
+            <div className="relative mb-3 flex-shrink-0">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Поиск по транскрипции..."
+                className="w-full px-3 py-2 pl-9 rounded-lg border border-gray-200/40 dark:border-dark-base-700/40 bg-white/60 dark:bg-dark-base-900/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-colors"
+              />
+              <svg
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                >
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
             <div className="space-y-0 overflow-y-auto pr-2 flex-1 min-h-0">
-              {segments.map((seg, idx) => (
+              {filteredSegments.length === 0 ? (
+                <div className="text-center text-gray-400 dark:text-gray-500 py-8 text-sm">
+                  {searchQuery ? 'Ничего не найдено' : 'Нет данных транскрипции'}
+                </div>
+              ) : (
+                filteredSegments.map((seg, idx) => (
                 <div key={idx} data-start-time={seg.start}>
                   <TranscriptSegment
                     speaker={seg.Speaker}
@@ -691,7 +749,8 @@ export const AnalysisPage = () => {
                     onCreateFullAnnotation={handleCreateFullAnnotation}
                   />
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -844,137 +903,88 @@ export const AnalysisPage = () => {
 
                           {/* Каскадный выбор: проект → доска → колонка */}
                           {unsentTasks.length > 0 && (
-                            <div className="flex flex-wrap items-center gap-2 px-1">
-                              {/* Проект */}
-                              <div className="relative">
-                                <button
+                            <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-gray-50/80 dark:bg-white/[0.02] ring-1 ring-gray-200 dark:ring-white/[0.06]">
+
+                              {/* Шаги каскада */}
+                              <div className="flex items-center gap-1.5">
+
+                                {/* Шаг 1: Проект */}
+                                <StepDot
+                                  active={!!selectedProject}
+                                  done={!!selectedProject && !selectedBoard}
+                                  open={showProjectPicker}
                                   onClick={() => { setShowProjectPicker(!showProjectPicker); setShowBoardPicker(false); setShowColumnPicker(false); }}
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                                    selectedProject
-                                      ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                                      : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600'
-                                  }`}
-                                >
-                                  📁 {selectedProject ? selectedProject.name : 'Проект'}
-                                  <span className="text-[10px] opacity-60">{projectsLoading ? '…' : '▼'}</span>
-                                </button>
-                                {showProjectPicker && (
-                                  <div className="absolute z-30 mt-1 left-0 w-64 rounded-lg bg-white dark:bg-dark-base-800 shadow-xl border border-gray-200 dark:border-dark-base-700 py-1 max-h-48 overflow-y-auto">
-                                    <button
-                                      onClick={() => handleProjectSelect(null)}
-                                      className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-dark-base-700"
-                                    >
-                                      — Не выбрано —
-                                    </button>
-                                    {projects.map((p) => (
-                                      <button
-                                        key={p.id}
-                                        onClick={() => handleProjectSelect(p)}
-                                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-dark-base-700 ${
-                                          selectedProjectId === p.id
-                                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
-                                            : ''
-                                        }`}
-                                      >
-                                        {p.name}
-                                      </button>
-                                    ))}
-                                    {projects.length === 0 && !projectsLoading && (
-                                      <p className="px-3 py-2 text-xs text-gray-400">Нет проектов</p>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
+                                  icon="📁"
+                                  label={selectedProject?.name || 'Проект'}
+                                  loading={projectsLoading}
+                                  dropdown={
+                                    <CrmDropdown
+                                      empty="Нет проектов"
+                                      items={projects.map((p) => ({
+                                        key: String(p.id),
+                                        label: p.name,
+                                        selected: selectedProjectId === p.id,
+                                        onSelect: () => handleProjectSelect(p),
+                                      }))}
+                                      onClear={() => handleProjectSelect(null)}
+                                    />
+                                  }
+                                />
 
-                              {/* Доска */}
-                              <div className="relative">
-                                <button
-                                  onClick={() => { if (selectedProjectId) { setShowBoardPicker(!showBoardPicker); setShowProjectPicker(false); setShowColumnPicker(false); } }}
+                                <StepSeparator active={!!selectedProject} />
+
+                                {/* Шаг 2: Доска */}
+                                <StepDot
+                                  active={!!selectedBoard}
+                                  done={!!selectedBoard && !selectedColumn}
                                   disabled={!selectedProjectId}
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                                    !selectedProjectId
-                                      ? 'bg-gray-50 dark:bg-gray-800/20 text-gray-300 dark:text-gray-600 cursor-not-allowed'
-                                      : selectedBoard
-                                        ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                                        : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600'
-                                  }`}
-                                >
-                                  📋 {selectedBoard ? selectedBoard.name : 'Доска'}
-                                  {selectedProjectId && <span className="text-[10px] opacity-60">{boardsLoading ? '…' : '▼'}</span>}
-                                </button>
-                                {showBoardPicker && (
-                                  <div className="absolute z-30 mt-1 left-0 w-64 rounded-lg bg-white dark:bg-dark-base-800 shadow-xl border border-gray-200 dark:border-dark-base-700 py-1 max-h-48 overflow-y-auto">
-                                    <button
-                                      onClick={() => handleBoardSelect(null)}
-                                      className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-dark-base-700"
-                                    >
-                                      — Не выбрано —
-                                    </button>
-                                    {boards.map((b) => (
-                                      <button
-                                        key={b.id}
-                                        onClick={() => handleBoardSelect(b)}
-                                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-dark-base-700 ${
-                                          selectedBoardId === b.id
-                                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
-                                            : ''
-                                        }`}
-                                      >
-                                        {b.name}
-                                      </button>
-                                    ))}
-                                    {boards.length === 0 && !boardsLoading && (
-                                      <p className="px-3 py-2 text-xs text-gray-400">Нет досок</p>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
+                                  open={showBoardPicker}
+                                  onClick={() => { if (selectedProjectId) { setShowBoardPicker(!showBoardPicker); setShowProjectPicker(false); setShowColumnPicker(false); } }}
+                                  icon="📋"
+                                  label={selectedBoard?.name || 'Доска'}
+                                  loading={boardsLoading}
+                                  dropdown={
+                                    <CrmDropdown
+                                      empty="Нет досок"
+                                      items={boards.map((b) => ({
+                                        key: String(b.id),
+                                        label: b.name,
+                                        selected: selectedBoardId === b.id,
+                                        onSelect: () => handleBoardSelect(b),
+                                      }))}
+                                      onClear={() => handleBoardSelect(null)}
+                                    />
+                                  }
+                                />
 
-                              {/* Колонка */}
-                              <div className="relative">
-                                <button
-                                  onClick={() => { if (selectedBoardId) { setShowColumnPicker(!showColumnPicker); setShowProjectPicker(false); setShowBoardPicker(false); } }}
+                                <StepSeparator active={!!selectedBoard} />
+
+                                {/* Шаг 3: Колонка */}
+                                <StepDot
+                                  active={!!selectedColumn}
+                                  done={false}
                                   disabled={!selectedBoardId}
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                                    !selectedBoardId
-                                      ? 'bg-gray-50 dark:bg-gray-800/20 text-gray-300 dark:text-gray-600 cursor-not-allowed'
-                                      : selectedColumn
-                                        ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                                        : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600'
-                                  }`}
-                                >
-                                  📌 {selectedColumn ? selectedColumn.name : 'Колонка'}
-                                  {selectedBoardId && <span className="text-[10px] opacity-60">{columnsLoading ? '…' : '▼'}</span>}
-                                </button>
-                                {showColumnPicker && (
-                                  <div className="absolute z-30 mt-1 left-0 w-64 rounded-lg bg-white dark:bg-dark-base-800 shadow-xl border border-gray-200 dark:border-dark-base-700 py-1 max-h-48 overflow-y-auto">
-                                    <button
-                                      onClick={() => handleColumnSelect(null)}
-                                      className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-dark-base-700"
-                                    >
-                                      — Не выбрано —
-                                    </button>
-                                    {columns.map((c) => (
-                                      <button
-                                        key={c.id}
-                                        onClick={() => handleColumnSelect(c)}
-                                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-dark-base-700 ${
-                                          selectedColumnId === c.id
-                                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
-                                            : ''
-                                        }`}
-                                      >
-                                        {c.name}
-                                      </button>
-                                    ))}
-                                    {columns.length === 0 && !columnsLoading && (
-                                      <p className="px-3 py-2 text-xs text-gray-400">Нет колонок</p>
-                                    )}
-                                  </div>
-                                )}
+                                  open={showColumnPicker}
+                                  onClick={() => { if (selectedBoardId) { setShowColumnPicker(!showColumnPicker); setShowProjectPicker(false); setShowBoardPicker(false); } }}
+                                  icon="📌"
+                                  label={selectedColumn?.name || 'Колонка'}
+                                  loading={columnsLoading}
+                                  dropdown={
+                                    <CrmDropdown
+                                      empty="Нет колонок"
+                                      items={columns.map((c) => ({
+                                        key: String(c.id),
+                                        label: c.name,
+                                        selected: selectedColumnId === c.id,
+                                        onSelect: () => handleColumnSelect(c),
+                                      }))}
+                                      onClear={() => handleColumnSelect(null)}
+                                    />
+                                  }
+                                />
                               </div>
 
-                              <span className="text-[10px] text-gray-400 ml-auto">
+                              <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-auto">
                                 {selectedProject
                                   ? selectedColumn
                                     ? `→ ${selectedProject.name} / ${selectedBoard?.name} / ${selectedColumn.name}`
@@ -991,7 +1001,9 @@ export const AnalysisPage = () => {
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleSendAllToCRM(); }}
                                 disabled={isSendAllPending || !selectedProjectId}
-                                className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-wait transition-colors shadow-sm cursor-pointer"
+                                className={`px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm cursor-pointer ${
+                                  isSendAllPending ? 'cursor-wait' : 'disabled:cursor-not-allowed'
+                                }`}
                               >
                                 {isSendAllPending
                                   ? 'Отправка…'
@@ -1000,305 +1012,36 @@ export const AnalysisPage = () => {
                             </div>
                           )}
 
-                          {meetingTasks.map((task: MeetingTask) => {
-                            const isSent = task.sent_to_crm;
-                            const containerClass = isSent
-                              ? 'border-l-4 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/20 rounded-lg p-4 shadow-sm opacity-60'
-                              : 'border-l-4 border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 shadow-md';
-
-                            return (
-                              <div key={task.id} className={containerClass}>
-                                <div className="flex items-start gap-3">
-                                  <span
-                                    className={`flex-shrink-0 w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center mt-0.5 ${
-                                      isSent
-                                        ? 'bg-gray-400'
-                                        : 'bg-emerald-500'
-                                    }`}
-                                  >
-                                    {meetingTasks.indexOf(task) + 1}
-                                  </span>
-                                  <div className="flex-1 min-w-0">
-                                    {isSent ? (
-                                      <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400 line-through">
-                                        {task.description}
-                                      </p>
-                                    ) : editingDescriptionId === task.id ? (
-                                      <div className="space-y-1">
-                                        <textarea
-                                          autoFocus
-                                          value={editingDescriptionText}
-                                          onChange={(e) => setEditingDescriptionText(e.target.value)}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Escape') {
-                                              setEditingDescriptionId(null);
-                                              setEditingDescriptionText('');
-                                            }
-                                            if (e.key === 'Enter' && !e.shiftKey) {
-                                              e.preventDefault();
-                                              if (editingDescriptionText.trim()) {
-                                                updateTask({
-                                                  taskId: task.id,
-                                                  description: editingDescriptionText.trim(),
-                                                });
-                                              }
-                                              setEditingDescriptionId(null);
-                                              setEditingDescriptionText('');
-                                            }
-                                          }}
-                                          onBlur={() => {
-                                            if (editingDescriptionText.trim() && editingDescriptionText.trim() !== task.description) {
-                                              updateTask({
-                                                taskId: task.id,
-                                                description: editingDescriptionText.trim(),
-                                              });
-                                            }
-                                            setEditingDescriptionId(null);
-                                            setEditingDescriptionText('');
-                                          }}
-                                          className="w-full border border-emerald-300 dark:border-emerald-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-dark-base-800 text-emerald-900 dark:text-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
-                                          rows={3}
-                                        />
-                                        <p className="text-[10px] text-gray-400">
-                                          ↵ Enter — сохранить · Esc — отмена · Shift+↵ — новая строка
-                                        </p>
-                                      </div>
-                                    ) : (
-                                      <p
-                                        className="text-sm leading-relaxed text-emerald-900 dark:text-emerald-100 cursor-pointer hover:bg-emerald-100/50 dark:hover:bg-emerald-800/30 rounded px-1 -mx-1 transition-colors"
-                                        onClick={() => {
-                                          setEditingDescriptionId(task.id);
-                                          setEditingDescriptionText(task.description);
-                                        }}
-                                        title="Редактировать задачу"
-                                      >
-                                        {task.description}
-                                      </p>
-                                    )}
-
-                                    {isSent ? (
-                                      /* Отправленная — только информация */
-                                      <div className="flex flex-wrap items-center gap-2 mt-2">
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-green-100 dark:bg-green-800/30 text-green-700 dark:text-green-300 text-[10px] font-medium">
-                                          ✅ Отправлено в Weeek
-                                        </span>
-                                        {task.sent_at && (
-                                          <span className="text-[10px] text-gray-400">
-                                            {new Date(task.sent_at).toLocaleDateString(
-                                              'ru-RU',
-                                              { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }
-                                            )}
-                                          </span>
-                                        )}
-                                        {task.assignee && (
-                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800/40 text-gray-600 dark:text-gray-400 text-[10px]">
-                                            👤 {task.assignee}
-                                          </span>
-                                        )}
-                                        {task.deadline && (
-                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800/40 text-gray-600 dark:text-gray-400 text-[10px]">
-                                            ⏰ {new Date(task.deadline).toLocaleDateString(
-                                                'ru-RU',
-                                                { day: '2-digit', month: '2-digit', year: 'numeric' }
-                                              )}
-                                          </span>
-                                        )}
-                                        <button
-                                          onClick={() => {
-                                            if (window.confirm('Удалить задачу?')) {
-                                              deleteTask(task.id);
-                                            }
-                                          }}
-                                          disabled={isDeleting}
-                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer disabled:opacity-50"
-                                          title="Удалить задачу"
-                                        >
-                                          🗑️
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      /* Неотправленная — редактирование */
-                                      <div
-                                        className="flex flex-wrap items-start gap-2 mt-2"
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        {/* Assignee — выбор из участников Weeek (локально, не сохраняется в БД) */}
-                                        <div className="relative">
-                                          <button
-                                            onClick={() =>
-                                              setOpenAssigneeFor(
-                                                openAssigneeFor === task.id ? null : task.id
-                                              )
-                                            }
-                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${
-                                              (localAssignees[task.id] ?? task.assignee)
-                                                ? 'bg-emerald-100 dark:bg-emerald-800/40 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-200 dark:hover:bg-emerald-700/50'
-                                                : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700/50'
-                                            }`}
-                                            title="Назначить ответственного"
-                                          >
-                                            👤 {(localAssignees[task.id] ?? task.assignee) || 'Назначить'}
-                                          </button>
-                                          {openAssigneeFor === task.id && (
-                                            <div className="absolute z-20 mt-1 left-0 w-56 max-h-60 overflow-y-auto rounded-lg bg-white dark:bg-dark-base-800 shadow-xl border border-gray-200 dark:border-dark-base-700 py-1">
-                                              {[
-                                                { id: '', name: '— Не назначать —' },
-                                                ...memberList,
-                                              ].map((user) => (
-                                                <button
-                                                  key={user.id || 'none'}
-                                                  onClick={() => {
-                                                    const newAssignee = user.id ? user.name : '';
-                                                    setLocalAssignees((prev) => ({ ...prev, [task.id]: newAssignee }));
-                                                    if (user.id) {
-                                                      setTaskWeeekUserIds((prev) => ({ ...prev, [task.id]: user.id }));
-                                                    } else {
-                                                      setTaskWeeekUserIds((prev) => {
-                                                        const copy = { ...prev };
-                                                        delete copy[task.id];
-                                                        return copy;
-                                                      });
-                                                    }
-                                                    setOpenAssigneeFor(null);
-                                                  }}
-                                                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-dark-base-700 ${
-                                                    (localAssignees[task.id] ?? task.assignee) ===
-                                                      (user.id ? user.name : '') &&
-                                                    'bg-emerald-50 dark:bg-emerald-900/30'
-                                                  }`}
-                                                >
-                                                  {user.name}
-                                                </button>
-                                              ))}
-                                            </div>
-                                          )}
-                                        </div>
-
-                                        {/* Deadline — пресеты + свой date (локально, не сохраняется в БД) */}
-                                        <div className="flex flex-wrap items-center gap-1">
-                                          <button
-                                            onClick={() => {
-                                              const current = localDeadlines[task.id] ?? task.deadline;
-                                              if (current) {
-                                                setLocalDeadlines((prev) => {
-                                                  const copy = { ...prev };
-                                                  delete copy[task.id];
-                                                  return copy;
-                                                });
-                                              } else {
-                                                const today = new Date().toISOString().slice(0, 10);
-                                                setLocalDeadlines((prev) => ({ ...prev, [task.id]: today }));
-                                              }
-                                              setOpenDeadlineFor(null);
-                                            }}
-                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs cursor-pointer transition-colors ${
-                                              (localDeadlines[task.id] ?? task.deadline)
-                                                ? 'bg-amber-100 dark:bg-amber-800/40 text-amber-800 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-700/50'
-                                                : 'bg-gray-100 dark:bg-gray-800/40 text-gray-500 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700/50'
-                                            }`}
-                                            title={(localDeadlines[task.id] ?? task.deadline) ? 'Убрать срок' : 'Установить срок'}
-                                          >
-                                            ⏰{' '}
-                                            {(localDeadlines[task.id] ?? task.deadline)
-                                              ? new Date(localDeadlines[task.id] ?? task.deadline).toLocaleDateString('ru-RU', {
-                                                  day: '2-digit',
-                                                  month: '2-digit',
-                                                  year: 'numeric',
-                                                })
-                                              : 'Срок'}
-                                          </button>
-
-                                          {[
-                                            { label: 'Сегодня', days: 0 },
-                                            { label: 'Завтра', days: 1 },
-                                            { label: 'Неделя', days: 7 },
-                                            { label: 'Месяц', days: 30 },
-                                          ].map((p) => {
-                                            const d = new Date();
-                                            d.setDate(d.getDate() + p.days);
-                                            const iso = d.toISOString().slice(0, 10);
-                                            const effectiveDeadline = localDeadlines[task.id] ?? task.deadline;
-                                            const active = effectiveDeadline === iso;
-                                            return (
-                                              <button
-                                                key={p.label}
-                                                onClick={() => {
-                                                  setLocalDeadlines((prev) => ({ ...prev, [task.id]: iso }));
-                                                  setOpenDeadlineFor(null);
-                                                }}
-                                                className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
-                                                  active
-                                                    ? 'bg-amber-500 text-white'
-                                                    : 'bg-amber-50/60 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/40 border border-amber-200 dark:border-amber-700/30'
-                                                }`}
-                                              >
-                                                {p.label}
-                                              </button>
-                                            );
-                                          })}
-
-                                          {openDeadlineFor === task.id ? (
-                                            <input
-                                              type="date"
-                                              autoFocus
-                                              value={draftDeadline}
-                                              onChange={(e) => setDraftDeadline(e.target.value)}
-                                              onBlur={() => {
-                                                if (draftDeadline) {
-                                                  setLocalDeadlines((prev) => ({ ...prev, [task.id]: draftDeadline }));
-                                                }
-                                                setOpenDeadlineFor(null);
-                                              }}
-                                              className="px-2 py-0.5 rounded-md text-xs border border-amber-300 dark:border-amber-700 bg-white dark:bg-dark-base-800 text-amber-900 dark:text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 [color-scheme] dark:opacity-100"
-                                            />
-                                          ) : (
-                                            <button
-                                              onClick={() => {
-                                                const effectiveDeadline = localDeadlines[task.id] ?? task.deadline;
-                                                const current =
-                                                  effectiveDeadline?.match(/^\d{4}-\d{2}-\d{2}/)
-                                                    ? effectiveDeadline.slice(0, 10)
-                                                    : new Date().toISOString().slice(0, 10);
-                                                setDraftDeadline(current);
-                                                setOpenDeadlineFor(task.id);
-                                              }}
-                                              className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-50/60 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/40 border border-amber-200 dark:border-amber-700/30 transition-colors"
-                                              title="Выбрать произвольную дату"
-                                            >
-                                              📅 Своя
-                                            </button>
-                                          )}
-                                        </div>
-
-                                        {/* Кнопка отправить одну задачу */}
-                                        <button
-                                          onClick={() => handleSendOne(task.id)}
-                                          disabled={isSendingOne}
-                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-emerald-500/80 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-wait transition-colors cursor-pointer"
-                                          title="Отправить эту задачу"
-                                        >
-                                          {isSendingOne ? '…' : '📤 Отправить'}
-                                        </button>
-                                        {/* Кнопка удалить задачу */}
-                                        <button
-                                          onClick={() => {
-                                            if (window.confirm('Удалить задачу?')) {
-                                              deleteTask(task.id);
-                                            }
-                                          }}
-                                          disabled={isDeleting}
-                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer disabled:opacity-50"
-                                          title="Удалить задачу"
-                                        >
-                                          🗑️
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
+                          {meetingTasks.map((task: MeetingTask, idx: number) => (
+                            <TaskCard
+                              key={task.id}
+                              task={task}
+                              index={idx}
+                              members={memberList}
+                              cb={{
+                                localAssignees,
+                                setLocalAssignees,
+                                taskWeeekUserIds,
+                                setTaskWeeekUserIds,
+                                localDeadlines,
+                                setLocalDeadlines,
+                                isSendingOne,
+                                isDeleting,
+                                onSend: handleSendOne,
+                                onDelete: (taskId) => {
+                                  if (window.confirm('Удалить задачу?')) {
+                                    deleteTask(taskId);
+                                  }
+                                },
+                                onSaveDescription: (taskId, text) => {
+                                  updateTask({
+                                    taskId,
+                                    description: text,
+                                  });
+                                },
+                              }}
+                            />
+                          ))}
                         </div>
                       </div>
                     </div>
