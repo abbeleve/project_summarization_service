@@ -227,7 +227,7 @@ export const TaskCard = ({ task, index, members, cb, showNumber = true }: TaskCa
           {!isSent && aiSuggestion && (
             <div className="overflow-hidden group-hover:overflow-visible transition-all duration-200 max-h-0 group-hover:max-h-12">
               <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] bg-amber-50/70 text-amber-700 ring-1 ring-amber-200/50 dark:bg-amber-400/8 dark:text-amber-300 dark:ring-amber-400/20">
-                ✨ {aiSuggestion}
+                ✨ Нейросеть предлагает: <strong>{aiSuggestion}</strong>
               </div>
             </div>
           )}

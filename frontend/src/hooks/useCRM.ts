@@ -67,7 +67,7 @@ export const useCRMStatus = () => {
     queryKey: ['crm-status'],
     queryFn: crmApi.getStatus,
     staleTime: 30_000,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
 };
 

@@ -955,6 +955,24 @@ export const AnalysisPage = () => {
                       >
                         <div className="space-y-2 pt-2">
 
+                          {/* Баннер: Weeek не подключён — блокируем отправку */}
+                          {!crmConnected && (
+                            <div className="flex flex-wrap items-center gap-3 px-3 py-2.5 rounded-xl bg-amber-50 ring-1 ring-amber-200 text-amber-900 dark:bg-amber-500/10 dark:ring-amber-500/30 dark:text-amber-200">
+                              <span className="text-base leading-none">🔑</span>
+                              <p className="text-xs leading-relaxed flex-1 min-w-0">
+                                Weeek не подключён. Чтобы отправлять задачи, добавьте API-токен
+                                в <span className="font-semibold">Настройках системы</span>.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => navigate('/settings')}
+                                className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 transition-colors shadow-sm cursor-pointer dark:bg-amber-500 dark:text-amber-950 dark:hover:bg-amber-400"
+                              >
+                                ⚙ Открыть настройки
+                              </button>
+                            </div>
+                          )}
+
                           {/* Каскадный выбор: проект → доска → колонка */}
                           {unsentTasks.length > 0 && (
                             <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-gray-50/80 dark:bg-white/[0.02] ring-1 ring-gray-200 dark:ring-white/[0.06]">
@@ -966,6 +984,7 @@ export const AnalysisPage = () => {
                                 <StepDot
                                   active={!!selectedProject}
                                   done={!!selectedProject && !selectedBoard}
+                                  locked={!crmConnected}
                                   open={showProjectPicker}
                                   onClick={() => { setShowProjectPicker(!showProjectPicker); setShowBoardPicker(false); setShowColumnPicker(false); }}
                                   icon="📁"
@@ -992,6 +1011,7 @@ export const AnalysisPage = () => {
                                   active={!!selectedBoard}
                                   done={!!selectedBoard && !selectedColumn}
                                   disabled={!selectedProjectId}
+                                  locked={!crmConnected}
                                   open={showBoardPicker}
                                   onClick={() => { if (selectedProjectId) { setShowBoardPicker(!showBoardPicker); setShowProjectPicker(false); setShowColumnPicker(false); } }}
                                   icon="📋"
@@ -1018,6 +1038,7 @@ export const AnalysisPage = () => {
                                   active={!!selectedColumn}
                                   done={false}
                                   disabled={!selectedBoardId}
+                                  locked={!crmConnected}
                                   open={showColumnPicker}
                                   onClick={() => { if (selectedBoardId) { setShowColumnPicker(!showColumnPicker); setShowProjectPicker(false); setShowBoardPicker(false); } }}
                                   icon="📌"
@@ -1054,9 +1075,14 @@ export const AnalysisPage = () => {
                             <div className="flex justify-end">
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleSendAllToCRM(); }}
-                                disabled={isSendAllPending || !selectedProjectId}
-                                className={`px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm cursor-pointer ${
-                                  isSendAllPending ? 'cursor-wait' : 'disabled:cursor-not-allowed'
+                                disabled={isSendAllPending || !selectedProjectId || !crmConnected}
+                                title={!crmConnected ? 'Сначала подключите Weeek API в Настройках' : undefined}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shadow-sm cursor-pointer ${
+                                  !crmConnected
+                                    ? 'bg-gray-200 text-gray-400 ring-1 ring-gray-300 dark:bg-white/[0.04] dark:text-gray-500 dark:ring-white/10 cursor-not-allowed'
+                                    : `bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 ${
+                                        isSendAllPending ? 'cursor-wait' : 'disabled:cursor-not-allowed'
+                                      }`
                                 }`}
                               >
                                 {isSendAllPending
@@ -1083,6 +1109,7 @@ export const AnalysisPage = () => {
                                 setLocalDeadlines,
                                 isSendingOne,
                                 isDeleting,
+                                crmDisabled: !crmConnected,
                                 onSend: handleSendOne,
                                 onDelete: (taskId) => {
                                   if (window.confirm('Удалить задачу?')) {
