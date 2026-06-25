@@ -51,7 +51,7 @@ def _extract_audio_with_ffmpeg(input_path: Path, output_path: Path, sample_rate:
     return str(output_path)
 
 
-# @router.post("/")  # DEPRECATED — use /transcribe_v2 instead (WhisperX pipeline)
+@router.post("/")
 async def transcribe(
     file: Optional[UploadFile] = File(None, description="Аудиофайл для транскрибации"),
     file_url: Optional[str] = Form(None, description="URL аудиофайла в MinIO (альтернатива file)"),
@@ -185,7 +185,8 @@ async def transcribe(
         return {
             "transcript": segments_dicts,
             "duration": duration,
-            "speakers_count": len(speakers)
+            "speakers_count": len(speakers),
+            "pipeline": "diarization_segments_transcription",
         }
         
     except FileNotFoundError as e:

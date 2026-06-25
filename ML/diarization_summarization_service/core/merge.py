@@ -106,7 +106,7 @@ def _assign_speakers_two_pointer(
 
     for word in words:
         word_duration = word.end - word.start
-        if word_duration <= 0:
+        if word_duration < 0:
             word.speaker = "UNKNOWN"
             continue
 
@@ -145,6 +145,23 @@ def _assign_speakers_two_pointer(
                 if dist < best_boundary_dist:
                     best_boundary_dist = dist
                     best_speaker = dseg.speaker if dist <= _MAX_NEAREST_DISTANCE else "UNKNOWN"
+
+        # Если у слова нулевая длительность — проверим, внутри ли какого сегмента
+        # находится эта точка. Boundary-distance может ошибочно присвоить соседнему
+        # спикеру, хотя слово внутри сегмента другого.
+        if word_duration == 0 and best_speaker != "UNKNOWN":
+            containing_speaker = None
+            for i in range(scan_start, scan_end):
+                dseg = segments[i]
+                if dseg.start <= word.start <= dseg.stop:
+                    containing_speaker = dseg.speaker
+                    break
+            if containing_speaker is not None and containing_speaker != best_speaker:
+                logger.debug(
+                    f"Word '{word.text}' at {word.start:.2f}s: boundary-distance gave "
+                    f"{best_speaker}, but word is INSIDE {containing_speaker} — correcting"
+                )
+                best_speaker = containing_speaker
 
         if best_overlap <= threshold and best_speaker == "UNKNOWN":
             logger.debug(

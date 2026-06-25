@@ -221,6 +221,7 @@ def process_recording_callback(
             "transcribe_lib": meeting.get("transcribe_lib") or "gigaam",
             "llm_model": meeting.get("llm_model") or "deepseek/deepseek-v4-flash",
             "noise_sup_bool": str(meeting.get("noise_suppression") or False).lower(),
+            "pipeline": meeting.get("pipeline") or "whisperx",
             "user_id": user_id,
             "meeting_id": meeting_id,  # Передаём meeting_id для обновления статуса после завершения
             "recording_url": recording_url,  # Передаём URL аудио для сохранения в транскрипции

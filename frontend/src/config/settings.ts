@@ -83,6 +83,12 @@ export const LLM_MODELS = [
   'deepseek/deepseek-v4-flash',
 ];
 
+/** Пайплайны обработки аудио */
+export const PIPELINE_CONFIG: Record<string, string> = {
+  whisperx: 'WhisperX (диаризация + forced alignment)',
+  standard: 'Standard (диаризация + посегментная транскрибация)'
+};
+
 export const MEETING_TYPES = [
   'Оперативное совещание',
   'Стратегическое совещание',
@@ -100,7 +106,8 @@ export const DEFAULT_SETTINGS: ProcessingSettings = {
   diarizeLib: 'pyannote',
   transcribeLib: 'gigaam',
   llmModel: 'deepseek/deepseek-v4-flash',
-  noiseSuppression: false
+  noiseSuppression: false,
+  pipeline: 'whisperx'
 };
 
 // export const API_TIMEOUTS = {

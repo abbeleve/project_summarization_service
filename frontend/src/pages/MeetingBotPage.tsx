@@ -26,6 +26,7 @@ const loadMeetingSettings = (): import("@/api/meetingBot").MeetingBotSettings =>
         transcribe_lib: s.transcribeLib,
         llm_model: s.llmModel,
         noise_suppression: s.noiseSuppression,
+        pipeline: s.pipeline || 'whisperx',
       };
     }
   } catch {}
@@ -36,6 +37,7 @@ const loadMeetingSettings = (): import("@/api/meetingBot").MeetingBotSettings =>
     transcribe_lib: DEFAULT_SETTINGS.transcribeLib,
     llm_model: DEFAULT_SETTINGS.llmModel,
     noise_suppression: DEFAULT_SETTINGS.noiseSuppression,
+    pipeline: DEFAULT_SETTINGS.pipeline || 'whisperx',
   };
 };
 

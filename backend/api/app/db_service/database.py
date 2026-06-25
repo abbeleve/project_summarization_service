@@ -507,6 +507,11 @@ class ScheduledMeeting(Base):
         nullable=True,
         default=False
     )
+    pipeline: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        default="whisperx"
+    )
     error: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True
@@ -547,6 +552,7 @@ class ScheduledMeeting(Base):
             'transcribe_lib': self.transcribe_lib,
             'llm_model': self.llm_model,
             'noise_suppression': self.noise_suppression,
+            'pipeline': self.pipeline,
             'error': self.error,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat()
@@ -1628,7 +1634,8 @@ class DataBaseManager:
         diarize_lib: Optional[str] = "pyannote",
         transcribe_lib: Optional[str] = "gigaam",
         llm_model: Optional[str] = "deepseek/deepseek-v4-flash",
-        noise_suppression: Optional[bool] = False
+        noise_suppression: Optional[bool] = False,
+        pipeline: Optional[str] = "whisperx"
     ) -> Optional[UUID]:
         """
         Создаёт новую запись запланированного совещания.
@@ -1646,6 +1653,7 @@ class DataBaseManager:
             transcribe_lib: Библиотека транскрибации
             llm_model: Модель LLM для суммаризации
             noise_suppression: Использовать шумоподавление
+            pipeline: Пайплайн обработки (whisperx/standard)
 
         Returns:
             ID созданной записи или None
@@ -1665,7 +1673,8 @@ class DataBaseManager:
                     diarize_lib=diarize_lib,
                     transcribe_lib=transcribe_lib,
                     llm_model=llm_model,
-                    noise_suppression=noise_suppression
+                    noise_suppression=noise_suppression,
+                    pipeline=pipeline
                 )
                 session.add(scheduled)
                 session.flush()

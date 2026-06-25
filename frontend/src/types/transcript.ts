@@ -65,6 +65,8 @@ export interface TranscriptWithTasks extends Transcript {
   tasks?: TaskItem[] | null;
 }
 
+export type PipelineType = 'whisperx' | 'standard';
+
 export interface ProcessingSettings {
   transcribeModel: string;
   diarizationModel: string;
@@ -73,6 +75,7 @@ export interface ProcessingSettings {
   llmModel: string;
   noiseSuppression: boolean;
   meetingTitle?: string;
+  pipeline?: PipelineType;
 }
 
 export interface ProcessAudioResponse {

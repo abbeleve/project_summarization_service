@@ -82,11 +82,19 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
             "noise_sup_bool": options.get("noise_sup_bool", "false")
         }
 
-        # Вызов audio-ml сервиса (WhisperX pipeline)
+        # Вызов audio-ml сервиса (выбор пайплайна)
+        pipeline = options.get("pipeline", "whisperx")
+        if pipeline == "standard":
+            ml_url = "http://audio-ml:8053/transcribe/"
+            logger.info(f"[{task_id}] Используется Standard pipeline: {ml_url}")
+        else:
+            ml_url = "http://audio-ml:8053/transcribe_v2/"
+            logger.info(f"[{task_id}] Используется WhisperX pipeline: {ml_url}")
+
         response = requests.post(
-            "http://audio-ml:8053/transcribe_v2/",
+            ml_url,
             data=data,
-            timeout=1200  # 20 минут на транскрибацию
+            timeout=int(os.getenv("AUDIO_ML_TIMEOUT", "1200"))  # секунд на транскрибацию
         )
         
         if response.status_code != 200:
@@ -215,12 +223,19 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
             text = segment.get("Text", "")
             start = segment.get("start", segment.get("start_time", 0))
             end = segment.get("stop", segment.get("end_time", 0))
-            
+
+            start_ms = int(start * 1000)
+            end_ms = int(end * 1000)
+            if start_ms >= end_ms:
+                logger.debug(f"Пропуск сегмента с нулевой длительностью: "
+                             f"{speaker}: {text} ({start_ms}ms)")
+                continue
+
             db.insert_parts_transcription(
                 transcript_id=transcript_id,
                 text=f"{speaker}: {text}",
-                start_time=int(start * 1000),
-                end_time=int(end * 1000)
+                start_time=start_ms,
+                end_time=end_ms
             )
         
         # Вставляем суммаризацию

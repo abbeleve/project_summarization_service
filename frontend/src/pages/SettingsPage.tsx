@@ -4,6 +4,7 @@ import {
   TRANSCRIBE_CONFIG,
   DIARIZATION_CONFIG,
   LLM_MODELS,
+  PIPELINE_CONFIG,
   DEFAULT_SETTINGS,
   getTranscribeModelsByLib,
   getDiarizationModelsByLib,
@@ -231,6 +232,22 @@ export const SettingsPage = () => {
               >
                 {LLM_MODELS.map(model => (
                   <option key={model} value={model}>{model}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Пайплайн обработки */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1.5">
+                Пайплайн обработки аудио
+              </label>
+              <select
+                value={settings.pipeline || 'whisperx'}
+                onChange={(e) => setSettings(s => ({ ...s, pipeline: e.target.value as 'whisperx' | 'standard' }))}
+                className="w-full border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-base font-medium text-gray-900 dark:text-white bg-white dark:bg-dark-base-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {Object.entries(PIPELINE_CONFIG).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
                 ))}
               </select>
             </div>

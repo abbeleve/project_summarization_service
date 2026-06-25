@@ -509,6 +509,7 @@ async def process_audio(
     transcribe_lib: Optional[str] = Form(None),
     llm_model: Optional[str] = Form(None),
     noise_sup_bool: str = Form("false"),
+    pipeline: str = Form("whisperx"),
     meeting_title: Optional[str] = Form(None),
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db),
@@ -571,6 +572,7 @@ async def process_audio(
             "transcribe_lib": transcribe_lib or "gigaam",
             "llm_model": llm_model or "deepseek/deepseek-v4-flash",
             "noise_sup_bool": noise_sup_bool,
+            "pipeline": pipeline,
             "meeting_title": meeting_title,
             "user_id": current_user["user_id"],
             "recording_url": recording_url,  # MP3 URL для плеера
@@ -1667,7 +1669,8 @@ async def join_meeting_now(
         diarize_lib=request.diarize_lib,
         transcribe_lib=request.transcribe_lib,
         llm_model=request.llm_model,
-        noise_suppression=request.noise_suppression
+        noise_suppression=request.noise_suppression,
+        pipeline=request.pipeline
     )
 
     if not scheduled_id:
@@ -1742,7 +1745,8 @@ async def schedule_meeting(
         diarize_lib=request.diarize_lib,
         transcribe_lib=request.transcribe_lib,
         llm_model=request.llm_model,
-        noise_suppression=request.noise_suppression
+        noise_suppression=request.noise_suppression,
+        pipeline=request.pipeline
     )
 
     if not scheduled_id:

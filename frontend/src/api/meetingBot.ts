@@ -7,6 +7,7 @@ export interface MeetingBotSettings {
   transcribe_lib?: string;
   llm_model?: string;
   noise_suppression?: boolean;
+  pipeline?: string;
 }
 
 export interface JoinMeetingPayload extends MeetingBotSettings {

@@ -36,6 +36,7 @@ export const transcriptsApi = {
     formData.append('transcribe_lib', settings.transcribeLib);
     formData.append('llm_model', settings.llmModel);
     formData.append('noise_sup_bool', settings.noiseSuppression.toString());
+    formData.append('pipeline', settings.pipeline || 'whisperx');
 
     if (settings.meetingTitle) {
       formData.append('meeting_title', settings.meetingTitle);
