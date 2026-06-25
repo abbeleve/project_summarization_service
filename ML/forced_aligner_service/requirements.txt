@@ -6,3 +6,6 @@ torchaudio
 librosa
 soundfile
 python-multipart
+silero-vad>=6.2
+onnxruntime
+torchcodec

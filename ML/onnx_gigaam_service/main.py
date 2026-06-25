@@ -15,7 +15,10 @@ import tempfile
 from typing import List, Dict, Any
 
 import numpy as np
+import torch
 import librosa
+import soundfile as sf
+import gigaam
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -35,6 +38,7 @@ RNNT_OVERLAP = 16_000
 _model_cfg = None
 _sessions = None
 _model_version = None
+_gigaam_model = None  # for word-level alignment
 
 app = FastAPI(title="GigaAM ONNX Transcription Service", version="1.0")
 
@@ -56,6 +60,19 @@ async def startup_event():
     )
 
     logger.info(f"ONNX модель {model_version} загружена успешно")
+
+    logger.info(f"Загрузка GigaAM Python API для word alignment...")
+    try:
+        global _gigaam_model
+        # load_model скачает .ckpt в ~/.cache/gigaam/ при первом запуске
+        _gigaam_model = gigaam.load_model(
+            model_version,
+            device="cuda",
+        )
+        logger.info("GigaAM Python API загружена успешно")
+    except Exception as e:
+        logger.warning(f"GigaAM Python API не загружена: {e} — /align_words недоступен")
+        _gigaam_model = None
 
 
 @app.get("/health")
@@ -251,6 +268,7 @@ async def transcribe_full_endpoint(
             sf.write(chunk_path, chunk_wave, SAMPLE_RATE)
             try:
                 result = infer_onnx([chunk_path], _model_cfg, _sessions, progress=False)
+                print(result)
                 chunk_texts.append(result[0])
             finally:
                 if os.path.exists(chunk_path):
@@ -275,6 +293,243 @@ async def transcribe_full_endpoint(
 
     except Exception as e:
         logger.error(f"Full transcription error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if os.path.exists(audio_path):
+            os.unlink(audio_path)
+
+
+# ---------------------------------------------------------------------------
+# Word-level alignment helpers
+# ---------------------------------------------------------------------------
+
+
+@torch.inference_mode()
+def _decode_rnnt(head, encoded_seq, seq_len, blank_id, max_symbols=3):
+    """RNNT decoder loop with frame tracking."""
+    token_ids, token_frames = [], []
+    dec_state, last_label = None, None
+
+    for t in range(seq_len):
+        encoder_step = encoded_seq[t, :, :].unsqueeze(1)
+        not_blank = True
+        emitted = 0
+
+        while not_blank and emitted < max_symbols:
+            decoder_step, hidden = head.decoder.predict(last_label, dec_state)
+            joint = head.joint.joint(encoder_step, decoder_step)[0, 0, 0, :]
+            k = int(torch.argmax(joint).item())
+
+            if k == blank_id:
+                not_blank = False
+                continue
+
+            token_ids.append(k)
+            token_frames.append(t)
+            last_label = torch.tensor([[k]], dtype=torch.long, device=encoded_seq.device)
+            dec_state = hidden
+            emitted += 1
+
+    return token_ids, token_frames
+
+
+@torch.inference_mode()
+def _decode_ctc(head, encoded, seq_len, blank_id):
+    """CTC argmax decoding with frame tracking."""
+    log_probs = head(encoder_output=encoded)
+    frame_labels = log_probs.argmax(dim=-1)[0, :seq_len].cpu().tolist()
+
+    token_ids, token_frames = [], []
+    prev = blank_id
+
+    for t, lbl in enumerate(frame_labels):
+        if lbl != blank_id and (lbl != prev or prev == blank_id):
+            token_ids.append(lbl)
+            token_frames.append(t)
+        prev = lbl
+
+    return token_ids, token_frames
+
+
+def _get_token_str(tokenizer, token_id: int) -> str:
+    """Decode a single token ID to its string representation."""
+    if hasattr(tokenizer, "charwise") and tokenizer.charwise:
+        return tokenizer.vocab[token_id]
+    return tokenizer.model.IdToPiece(token_id)
+
+
+def _chars_to_words(chars, frames, frame_shift):
+    """Group character-level tokens into words with start/end times."""
+    words, cur_chars, cur_frames = [], [], []
+
+    def flush():
+        if not cur_chars:
+            return
+        text = "".join(cur_chars).strip()
+        if text:
+            words.append({
+                "word": text,
+                "start": round(cur_frames[0] * frame_shift, 3),
+                "end": round((cur_frames[-1] + 1) * frame_shift, 3),
+            })
+        cur_chars.clear()
+        cur_frames.clear()
+
+    for c, f in zip(chars, frames):
+        if c == " " or c.startswith("▁"):
+            flush()
+            c = c.lstrip("▁")
+            if c:
+                cur_chars.append(c)
+                cur_frames.append(f)
+            continue
+        cur_chars.append(c)
+        cur_frames.append(f)
+
+    flush()
+    return words
+
+
+@torch.inference_mode()
+def _extract_word_timestamps(model, audio_path: str):
+    """
+    Extract word-level timestamps from GigaAM model.
+
+    Uses model.prepare_wav() + model.forward() to get frame-level
+    encoder outputs, then decodes with frame tracking.
+    """
+    wav, length = model.prepare_wav(audio_path)
+    encoded, encoded_len = model.forward(wav, length)
+
+    seq_len = int(encoded_len[0].item())
+    frame_shift = float(length[0].item()) / SAMPLE_RATE / seq_len
+
+    blank_id = model.decoding.blank_id
+    tokenizer = model.decoding.tokenizer
+    head = model.head
+
+    is_rnnt = hasattr(head, "decoder") and hasattr(head, "joint")
+
+    if is_rnnt:
+        encoded_seq = encoded.transpose(1, 2)[0, :, :].unsqueeze(1)
+        token_ids, token_frames = _decode_rnnt(head, encoded_seq, seq_len, blank_id)
+    else:
+        token_ids, token_frames = _decode_ctc(head, encoded, seq_len, blank_id)
+
+    chars = [_get_token_str(tokenizer, i) for i in token_ids]
+    words = _chars_to_words(chars, token_frames, frame_shift)
+
+    return {
+        "transcript": tokenizer.decode(token_ids).strip(),
+        "words": words,
+        "frame_shift": frame_shift,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Word-level alignment endpoint
+# ---------------------------------------------------------------------------
+
+# GigaAM positional embedding limit → макс фреймов до 5000 на чанк.
+# С hop_length=200, subsampling=4: 5000 * 200 * 4 / 16000 = 250 секунд.
+# Берём 140s для запаса.
+_GIGAAM_CHUNK_SEC = 140.0
+
+
+def _align_chunked(model, audio_path: str):
+    """
+    Align long audio by splitting into chunks.
+    Each chunk is aligned independently, then words are merged with offset.
+    """
+    duration = librosa.get_duration(path=audio_path)
+
+    if duration <= _GIGAAM_CHUNK_SEC:
+        return _extract_word_timestamps(model, audio_path)
+
+    logger.info(f"Long audio ({duration:.1f}s) — chunking at {_GIGAAM_CHUNK_SEC}s")
+
+    all_words = []
+    chunk_texts = []
+    offset = 0.0
+    chunk_idx = 0
+
+    while offset < duration:
+        seg_duration = min(_GIGAAM_CHUNK_SEC, duration - offset)
+
+        # load only this chunk
+        chunk_wave, _ = librosa.load(
+            audio_path, sr=SAMPLE_RATE, mono=True,
+            offset=offset, duration=seg_duration,
+        )
+        if len(chunk_wave) == 0:
+            break
+
+        # save to temp wav
+        chunk_path = os.path.join(tempfile.gettempdir(), f"gigaam_word_align_{chunk_idx:04d}.wav")
+        sf.write(chunk_path, chunk_wave, SAMPLE_RATE)
+
+        try:
+            result = _extract_word_timestamps(model, chunk_path)
+            chunk_texts.append(result["transcript"])
+
+            for w in result["words"]:
+                all_words.append({
+                    "word": w["word"],
+                    "start": round(w["start"] + offset, 3),
+                    "end": round(w["end"] + offset, 3),
+                })
+        finally:
+            if os.path.exists(chunk_path):
+                os.unlink(chunk_path)
+
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        offset += seg_duration
+        chunk_idx += 1
+
+    return {
+        "transcript": " ".join(chunk_texts).strip(),
+        "words": all_words,
+    }
+
+
+@app.post("/align_words")
+async def align_words_endpoint(
+    audio: UploadFile = File(...),
+):
+    """
+    Transcribe audio and return word-level timestamps.
+    Uses GigaAM's internal frame-level alignment.
+    Long audio is automatically chunked.
+
+    Returns:
+        transcript: full transcription text
+        words: list of {"word", "start", "end"}
+    """
+    global _gigaam_model
+
+    if _gigaam_model is None:
+        raise HTTPException(status_code=503, detail="GigaAM model not loaded")
+
+    # Stream to temp file
+    CHUNK_SIZE = 8_388_608
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        audio_path = tmp.name
+        while chunk := await audio.read(CHUNK_SIZE):
+            tmp.write(chunk)
+
+    try:
+        result = _align_chunked(_gigaam_model, audio_path)
+        logger.info(
+            f"Word alignment: {len(result['words'])} words, "
+            f"{len(result['transcript'])} chars"
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Word alignment failed: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

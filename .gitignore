@@ -16,7 +16,7 @@ milvus_data/
 volumes/
 backend/api/app/models/speaker_embedding/
 ML/onnx_gigaam_service/models/
-ML/forced_aligner_service/models/qwen3-0.6b
+ML/forced_aligner_service/models/
 
 .qwen
 clean.wav

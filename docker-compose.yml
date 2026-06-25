@@ -522,9 +522,11 @@ services:
     volumes:
       - ./ML/forced_aligner_service:/app
       - ./ML/forced_aligner_service/models/qwen3-0.6b:/app/models/qwen3-0.6b:ro
+      - ./ML/forced_aligner_service/models/silero-vad:/app/models/silero-vad:ro
     environment:
       - PYTHONUNBUFFERED=1
       - FORCED_ALIGNER_MODEL_PATH=${FORCED_ALIGNER_MODEL_PATH:-/app/models/qwen3-0.6b}
+      - SILERO_VAD_MODEL_PATH=${SILERO_VAD_MODEL_PATH:-/app/models/silero-vad/model.onnx}
     runtime: nvidia
     restart: unless-stopped
     networks:

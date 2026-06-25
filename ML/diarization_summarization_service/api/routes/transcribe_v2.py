@@ -5,7 +5,7 @@ Flow:
   1. Download audio (file or file_url) + convert to WAV
   2. DIARIZATION — pyannote identifies speaker segments
   3. FULL TRANSCRIBE — entire audio in one pass → full text
-  4. FORCED ALIGN — align full text to audio → word-level timestamps
+  4. GIGAAM ALIGN — word-level timestamps from GigaAM
   5. MERGE — assign each word to a speaker via timestamp overlap
 """
 import logging
@@ -23,7 +23,7 @@ from core.audio_converter import AudioConverter
 from core.diarization.pyannote import PyannoteDiarization
 from core.diarization.base import DiarizationSegment
 from core.transcription.full_transcriber import FullTranscriber
-from core.merge import merge, AlignedWord, FinalSegment
+from core.merge import merge, AlignedWord, FinalSegment, restore_punctuation
 from dependencies import (
     get_audio_converter_singleton,
     get_diarization_singleton,
@@ -132,34 +132,37 @@ async def transcribe_v2(
                 audio_path = str(wav_path)
 
         # === 2. Diarization ===
-        logger.info("=== Step 1/4: Diarization ===")
+        logger.info("=== Step 1/3: Diarization ===")
         diarization_segments = diarizer.diarize(audio_path)
         logger.info(f"Diarization: {len(diarization_segments)} segments, "
                      f"{len(set(s.speaker for s in diarization_segments))} speakers")
         print(diarization_segments)
-        # === 3. Full-audio transcription ===
-        logger.info("=== Step 2/4: Full transcription ===")
-        transcriber = FullTranscriber()
-        full_text = transcriber.transcribe_full(
-            audio_path=audio_path,
-            transcribe_lib=transcribe_lib,
-        )
-        logger.info(f"Full transcription: {len(full_text)} chars")
-        print(full_text)
-        if not full_text.strip():
-            raise RuntimeError("Full transcription returned empty text")
 
-        # === 4. Forced alignment ===
-        logger.info("=== Step 3/4: Forced alignment ===")
-        aligned_words = await _align_text(
-            audio_path=audio_path,
-            text=full_text,
-        )
+        # === 3. Transcription + word-level alignment ===
+        logger.info("=== Step 2/3: Transcription + alignment ===")
+        if transcribe_lib == "whisper":
+            # Whisper: полная транскрибация, таймстемпы от GigaAM
+            logger.info("Using Whisper for text + GigaAM for timestamps")
+            transcriber = FullTranscriber()
+            full_text = transcriber.transcribe_full(
+                audio_path=audio_path,
+                transcribe_lib=transcribe_lib,
+            )
+            if not full_text.strip():
+                raise RuntimeError("Whisper returned empty text")
+            aligned_words = await _align_words_gigaam(audio_path=audio_path)
+            aligned_words = restore_punctuation(aligned_words, full_text)
+        else:
+            # GigaAM: один запрос даёт и текст и таймстемпы
+            aligned_words = await _align_words_gigaam(audio_path=audio_path)
+
         print(aligned_words)
-        logger.info(f"Forced alignment: {len(aligned_words)} words")
+        logger.info(f"Alignment: {len(aligned_words)} words")
+        if not aligned_words:
+            raise RuntimeError("Alignment returned empty result")
 
-        # === 5. Merge ===
-        logger.info("=== Step 4/4: Merge ===")
+        # === 4. Merge ===
+        logger.info("=== Step 3/3: Merge ===")
         final_segments = merge(diarization_segments, aligned_words)
         logger.info(f"Merge complete: {len(final_segments)} final segments")
         print(final_segments)
@@ -201,33 +204,32 @@ async def transcribe_v2(
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-async def _align_text(audio_path: str, text: str) -> list[AlignedWord]:
+async def _align_words_gigaam(audio_path: str) -> list[AlignedWord]:
     """
-    Send audio + full text to the forced-aligner microservice via httpx (async).
-    Returns the list of word-level aligned timestamps.
+    Get word-level timestamps from GigaAM /align_words endpoint.
+    Returns AlignedWord list ready for merge.
     """
-    url = settings.forced_aligner_url
-    timeout = settings.forced_aligner_timeout_sec
+    url = settings.gigaam_align_url
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=600) as client:
         with open(audio_path, "rb") as f:
             files = {"audio": (audio_path, f, "audio/wav")}
-            resp = await client.post(url, files=files, data={"text": text})
+            resp = await client.post(url, files=files)
 
     if resp.status_code != 200:
         raise RuntimeError(
-            f"Forced aligner error {resp.status_code}: {resp.text}"
+            f"GigaAM align error {resp.status_code}: {resp.text}"
         )
 
     result = resp.json()
-    raw_segments = result.get("segments", [])
+    raw_words = result.get("words", [])
 
     return [
         AlignedWord(
-            text=seg["text"],
-            start=seg["start_time"],
-            end=seg["end_time"],
+            text=w["word"],
+            start=w["start"],
+            end=w["end"],
         )
-        for seg in raw_segments
-        if seg.get("text", "").strip()
+        for w in raw_words
+        if w.get("word", "").strip()
     ]

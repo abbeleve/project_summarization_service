@@ -127,6 +127,10 @@ class Settings(BaseSettings):
         default=1800,
         description="Таймаут запроса к forced-aligner (сек)"
     )
+    gigaam_align_url: str = Field(
+        default="http://onnx-gigaam:8056/align_words",
+        description="URL word-level alignment от GigaAM"
+    )
     
     class Config:
         env_file = ".env"
