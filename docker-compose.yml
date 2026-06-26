@@ -513,38 +513,38 @@ services:
   # ========================================================================
   # FORCED-ALIGNER - Qwen3-ForcedAligner-0.6B word-level timestamp alignment
   # ========================================================================
-  forced-aligner:
-    build:
-      context: ./ML/forced_aligner_service
-    mem_limit: 8g
-    ports:
-      - "8057:8057"
-    volumes:
-      - ./ML/forced_aligner_service:/app
-      - ./ML/forced_aligner_service/models/qwen3-0.6b:/app/models/qwen3-0.6b:ro
-      - ./ML/forced_aligner_service/models/silero-vad:/app/models/silero-vad:ro
-    environment:
-      - PYTHONUNBUFFERED=1
-      - FORCED_ALIGNER_MODEL_PATH=${FORCED_ALIGNER_MODEL_PATH:-/app/models/qwen3-0.6b}
-      - SILERO_VAD_MODEL_PATH=${SILERO_VAD_MODEL_PATH:-/app/models/silero-vad/model.onnx}
-    runtime: nvidia
-    restart: unless-stopped
-    networks:
-      - meeting-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8057/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
-    command: uvicorn main:app --host 0.0.0.0 --port 8057 --reload
+  # forced-aligner:
+  #   build:
+  #     context: ./ML/forced_aligner_service
+  #   mem_limit: 8g
+  #   ports:
+  #     - "8057:8057"
+  #   volumes:
+  #     - ./ML/forced_aligner_service:/app
+  #     - ./ML/forced_aligner_service/models/qwen3-0.6b:/app/models/qwen3-0.6b:ro
+  #     - ./ML/forced_aligner_service/models/silero-vad:/app/models/silero-vad:ro
+  #   environment:
+  #     - PYTHONUNBUFFERED=1
+  #     - FORCED_ALIGNER_MODEL_PATH=${FORCED_ALIGNER_MODEL_PATH:-/app/models/qwen3-0.6b}
+  #     - SILERO_VAD_MODEL_PATH=${SILERO_VAD_MODEL_PATH:-/app/models/silero-vad/model.onnx}
+  #   runtime: nvidia
+  #   restart: unless-stopped
+  #   networks:
+  #     - meeting-network
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8057/health"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 60s
+  #   command: uvicorn main:app --host 0.0.0.0 --port 8057 --reload
 
 networks:
   meeting-network:

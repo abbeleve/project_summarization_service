@@ -421,6 +421,12 @@ def _extract_word_timestamps(model, audio_path: str):
     chars = [_get_token_str(tokenizer, i) for i in token_ids]
     words = _chars_to_words(chars, token_frames, frame_shift)
 
+    logger.debug(
+        f"_extract_word_timestamps: seq_len={seq_len}, "
+        f"token_ids={len(token_ids)}, words={len(words)}, "
+        f"transcript='{tokenizer.decode(token_ids).strip()[:80]}'"
+    )
+
     return {
         "transcript": tokenizer.decode(token_ids).strip(),
         "words": words,
@@ -472,7 +478,13 @@ def _align_chunked(model, audio_path: str):
 
         try:
             result = _extract_word_timestamps(model, chunk_path)
+            n_words = len(result["words"])
             chunk_texts.append(result["transcript"])
+
+            logger.info(
+                f"  Chunk {chunk_idx}: [{offset:.0f}-{offset+seg_duration:.0f}]s "
+                f"({seg_duration:.0f}s) → {n_words} words"
+            )
 
             for w in result["words"]:
                 all_words.append({
