@@ -16,9 +16,11 @@ from typing import List, Dict, Any
 
 import numpy as np
 import torch
+import torchaudio
 import librosa
 import soundfile as sf
 import gigaam
+import hydra
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -38,7 +40,8 @@ RNNT_OVERLAP = 16_000
 _model_cfg = None
 _sessions = None
 _model_version = None
-_gigaam_model = None  # for word-level alignment
+_preprocessor = None  # FeatureExtractor for ONNX alignment
+_tokenizer = None     # tokenizer for word alignment
 
 app = FastAPI(title="GigaAM ONNX Transcription Service", version="1.0")
 
@@ -61,18 +64,11 @@ async def startup_event():
 
     logger.info(f"ONNX модель {model_version} загружена успешно")
 
-    logger.info(f"Загрузка GigaAM Python API для word alignment...")
-    try:
-        global _gigaam_model
-        # load_model скачает .ckpt в ~/.cache/gigaam/ при первом запуске
-        _gigaam_model = gigaam.load_model(
-            model_version,
-            device="cuda",
-        )
-        logger.info("GigaAM Python API загружена успешно")
-    except Exception as e:
-        logger.warning(f"GigaAM Python API не загружена: {e} — /align_words недоступен")
-        _gigaam_model = None
+    # Prepare feature extractor and tokenizer for word alignment
+    global _preprocessor, _tokenizer
+    _preprocessor = hydra.utils.instantiate(_model_cfg.preprocessor)
+    _tokenizer = hydra.utils.instantiate(_model_cfg.decoding).tokenizer
+    logger.info("FeatureExtractor + tokenizer готовы для word alignment")
 
 
 @app.get("/health")
@@ -302,62 +298,100 @@ async def transcribe_full_endpoint(
 
 
 # ---------------------------------------------------------------------------
-# Word-level alignment helpers
+# Word-level alignment helpers (ONNX Runtime)
 # ---------------------------------------------------------------------------
 
 
-@torch.inference_mode()
-def _decode_rnnt(head, encoded_seq, seq_len, blank_id, max_symbols=3):
-    """RNNT decoder loop with frame tracking."""
-    token_ids, token_frames = [], []
-    dec_state, last_label = None, None
+def _onnx_session_dtype(session):
+    """Infer numpy float dtype from the first float input of an ONNX session."""
+    type_map = {
+        "tensor(float16)": np.dtype(np.float16),
+        "tensor(float)": np.dtype(np.float32),
+        "tensor(double)": np.dtype(np.float64),
+    }
+    for inp in session.get_inputs():
+        if inp.type in type_map:
+            return type_map[inp.type]
+    return np.dtype(np.float32)
 
-    for t in range(seq_len):
-        encoder_step = encoded_seq[t, :, :].unsqueeze(1)
-        not_blank = True
-        emitted = 0
 
-        while not_blank and emitted < max_symbols:
-            decoder_step, hidden = head.decoder.predict(last_label, dec_state)
-            joint = head.joint.joint(encoder_step, decoder_step)[0, 0, 0, :]
-            k = int(torch.argmax(joint).item())
+def _onnx_build_inputs(session, values):
+    return {node.name: data for node, data in zip(session.get_inputs(), values)}
 
-            if k == blank_id:
-                not_blank = False
-                continue
 
-            token_ids.append(k)
-            token_frames.append(t)
-            last_label = torch.tensor([[k]], dtype=torch.long, device=encoded_seq.device)
-            dec_state = hidden
-            emitted += 1
+def _decode_rnnt_onnx(encoded, encoded_len, pred_sess, joint_sess, blank_id):
+    """
+    RNNT greedy decode with frame tracking via ONNX Runtime.
+
+    Returns (token_ids, token_frames) for a single sample (B=1).
+    Adapted from gigaam.onnx_utils._decode_rnnt_batch.
+    """
+    dtype = _onnx_session_dtype(pred_sess)
+    pred_rnn_layers = _model_cfg.head.decoder.pred_rnn_layers
+    pred_hidden = _model_cfg.head.decoder.pred_hidden
+    max_symbols = _model_cfg.decoding.get("max_symbols_per_step", 10)
+
+    enc_features = np.asarray(encoded, dtype=dtype, order="C")  # [1, D, T]
+    B, _, T = enc_features.shape
+    assert B == 1, "Single-sample only"
+
+    token_ids: List[int] = []
+    token_frames: List[int] = []
+    last_label = None
+    dec_state = None
+
+    def emit_at(t: int, fresh: bool):
+        nonlocal last_label, dec_state
+
+        f = enc_features[:, :, t : t + 1]  # [1, D, 1]
+
+        if fresh:
+            labels = np.full((1, 1), blank_id, dtype=np.int64)
+            h = np.zeros((pred_rnn_layers, 1, pred_hidden), dtype=dtype)
+            c = np.zeros((pred_rnn_layers, 1, pred_hidden), dtype=dtype)
+        else:
+            labels = last_label  # [1, 1]
+            h, c = dec_state
+
+        pred_outputs = pred_sess.run(
+            [node.name for node in pred_sess.get_outputs()],
+            _onnx_build_inputs(pred_sess, [labels, h, c]),
+        )
+        # pred_outputs[0] = dec [1, 1, H]
+        # pred_outputs[1] = ho [L, 1, H]
+        # pred_outputs[2] = co [L, 1, H]
+
+        joint_outputs = joint_sess.run(
+            [node.name for node in joint_sess.get_outputs()],
+            _onnx_build_inputs(
+                joint_sess, [f, pred_outputs[0].swapaxes(1, 2)],
+            ),
+        )
+        # joint_outputs[0] = [1, num_classes, 1, 1]
+        k = int(joint_outputs[0][0, 0, 0, :].argmax())
+
+        if k == blank_id:
+            return None
+
+        token_ids.append(k)
+        token_frames.append(t)
+        last_label = np.array([[k]], dtype=np.int64)
+        dec_state = (pred_outputs[1], pred_outputs[2])
+        return k
+
+    enc_len = int(encoded_len[0])
+
+    for t in range(T):
+        if t >= enc_len:
+            break
+
+        for _ in range(max_symbols):
+            fresh = dec_state is None
+            emitted = emit_at(t, fresh)
+            if emitted is None:
+                break
 
     return token_ids, token_frames
-
-
-@torch.inference_mode()
-def _decode_ctc(head, encoded, seq_len, blank_id):
-    """CTC argmax decoding with frame tracking."""
-    log_probs = head(encoder_output=encoded)
-    frame_labels = log_probs.argmax(dim=-1)[0, :seq_len].cpu().tolist()
-
-    token_ids, token_frames = [], []
-    prev = blank_id
-
-    for t, lbl in enumerate(frame_labels):
-        if lbl != blank_id and (lbl != prev or prev == blank_id):
-            token_ids.append(lbl)
-            token_frames.append(t)
-        prev = lbl
-
-    return token_ids, token_frames
-
-
-def _get_token_str(tokenizer, token_id: int) -> str:
-    """Decode a single token ID to its string representation."""
-    if hasattr(tokenizer, "charwise") and tokenizer.charwise:
-        return tokenizer.vocab[token_id]
-    return tokenizer.model.IdToPiece(token_id)
 
 
 def _chars_to_words(chars, frames, frame_shift):
@@ -392,43 +426,70 @@ def _chars_to_words(chars, frames, frame_shift):
     return words
 
 
-@torch.inference_mode()
-def _extract_word_timestamps(model, audio_path: str):
+def _extract_word_timestamps_onnx(audio_path: str):
     """
-    Extract word-level timestamps from GigaAM model.
+    Extract word-level timestamps via ONNX Runtime.
 
-    Uses model.prepare_wav() + model.forward() to get frame-level
-    encoder outputs, then decodes with frame tracking.
+    Loads audio with torchaudio (consistent with infer_onnx), extracts
+    features via the shared FeatureExtractor, runs ONNX encoder, then
+    decodes with frame tracking using ONNX decoder+joint sessions.
     """
-    wav, length = model.prepare_wav(audio_path)
-    encoded, encoded_len = model.forward(wav, length)
+    global _preprocessor, _tokenizer, _sessions
 
-    seq_len = int(encoded_len[0].item())
-    frame_shift = float(length[0].item()) / SAMPLE_RATE / seq_len
+    # 1. Load audio (torchaudio — same as infer_onnx / AudioDataset)
+    wav, sr = torchaudio.load(audio_path)
+    if wav.shape[0] > 1:
+        wav = wav.mean(dim=0, keepdim=True)
+    wav = wav.squeeze(0)
+    if sr != SAMPLE_RATE:
+        wav = torchaudio.functional.resample(wav, sr, SAMPLE_RATE)
 
-    blank_id = model.decoding.blank_id
-    tokenizer = model.decoding.tokenizer
-    head = model.head
+    audio_length_samples = wav.shape[-1]
 
-    is_rnnt = hasattr(head, "decoder") and hasattr(head, "joint")
+    # 2. Feature extraction
+    wav_batch = wav.unsqueeze(0).float()
+    wav_len = torch.tensor([audio_length_samples], dtype=torch.long)
+    features, feature_lengths = _preprocessor(wav_batch, wav_len)
 
-    if is_rnnt:
-        encoded_seq = encoded.transpose(1, 2)[0, :, :].unsqueeze(1)
-        token_ids, token_frames = _decode_rnnt(head, encoded_seq, seq_len, blank_id)
-    else:
-        token_ids, token_frames = _decode_ctc(head, encoded, seq_len, blank_id)
+    # 3. ONNX encoder
+    enc_sess = _sessions[0]
+    dtype = _onnx_session_dtype(enc_sess)
+    enc_outputs = enc_sess.run(
+        [node.name for node in enc_sess.get_outputs()],
+        _onnx_build_inputs(
+            enc_sess,
+            [
+                features.contiguous().numpy().astype(dtype),
+                feature_lengths.numpy().astype(np.int64),
+            ],
+        ),
+    )
+    encoded = enc_outputs[0]   # [1, D, T_enc]
+    encoded_len = enc_outputs[1]  # [1]
 
-    chars = [_get_token_str(tokenizer, i) for i in token_ids]
+    seq_len = int(encoded_len[0])
+    frame_shift = audio_length_samples / SAMPLE_RATE / seq_len
+
+    # 4. RNNT decode with frame tracking
+    pred_sess, joint_sess = _sessions[1], _sessions[2]
+    blank_id = len(_tokenizer)
+
+    token_ids, token_frames = _decode_rnnt_onnx(
+        encoded, encoded_len, pred_sess, joint_sess, blank_id,
+    )
+
+    # 5. Convert to words
+    chars = [_tokenizer.id_to_str(i) for i in token_ids]
     words = _chars_to_words(chars, token_frames, frame_shift)
 
-    logger.debug(
-        f"_extract_word_timestamps: seq_len={seq_len}, "
+    logger.info(
+        f"_extract_word_timestamps_onnx: seq_len={seq_len}, "
         f"token_ids={len(token_ids)}, words={len(words)}, "
-        f"transcript='{tokenizer.decode(token_ids).strip()[:80]}'"
+        f"transcript='{_tokenizer.decode(token_ids).strip()[:80]}'"
     )
 
     return {
-        "transcript": tokenizer.decode(token_ids).strip(),
+        "transcript": _tokenizer.decode(token_ids).strip(),
         "words": words,
         "frame_shift": frame_shift,
     }
@@ -439,20 +500,22 @@ def _extract_word_timestamps(model, audio_path: str):
 # ---------------------------------------------------------------------------
 
 # GigaAM positional embedding limit → макс фреймов до 5000 на чанк.
-# С hop_length=200, subsampling=4: 5000 * 200 * 4 / 16000 = 250 секунд.
-# Берём 140s для запаса.
-_GIGAAM_CHUNK_SEC = 140.0
+# С hop_length=160, subsampling=4: 5000 * 160 * 4 / 16000 = 200 секунд.
+# Но RNNT декодер через ONNX выдаёт blank на чанках >~100s (баг декодера).
+# Используем 75s — проверено на transcribe_full, работает стабильно.
+_GIGAAM_CHUNK_SEC = 75.0
 
 
-def _align_chunked(model, audio_path: str):
+def _align_chunked(audio_path: str):
     """
     Align long audio by splitting into chunks.
-    Each chunk is aligned independently, then words are merged with offset.
+    Each chunk is aligned independently via ONNX, then words are merged
+    with time offset.
     """
     duration = librosa.get_duration(path=audio_path)
 
     if duration <= _GIGAAM_CHUNK_SEC:
-        return _extract_word_timestamps(model, audio_path)
+        return _extract_word_timestamps_onnx(audio_path)
 
     logger.info(f"Long audio ({duration:.1f}s) — chunking at {_GIGAAM_CHUNK_SEC}s")
 
@@ -473,11 +536,13 @@ def _align_chunked(model, audio_path: str):
             break
 
         # save to temp wav
-        chunk_path = os.path.join(tempfile.gettempdir(), f"gigaam_word_align_{chunk_idx:04d}.wav")
+        chunk_path = os.path.join(
+            tempfile.gettempdir(), f"gigaam_word_align_{chunk_idx:04d}.wav"
+        )
         sf.write(chunk_path, chunk_wave, SAMPLE_RATE)
 
         try:
-            result = _extract_word_timestamps(model, chunk_path)
+            result = _extract_word_timestamps_onnx(chunk_path)
             n_words = len(result["words"])
             chunk_texts.append(result["transcript"])
 
@@ -514,17 +579,17 @@ async def align_words_endpoint(
 ):
     """
     Transcribe audio and return word-level timestamps.
-    Uses GigaAM's internal frame-level alignment.
+    Uses GigaAM ONNX Runtime (encoder + decoder + joint).
     Long audio is automatically chunked.
 
     Returns:
         transcript: full transcription text
         words: list of {"word", "start", "end"}
     """
-    global _gigaam_model
+    global _preprocessor, _tokenizer, _sessions
 
-    if _gigaam_model is None:
-        raise HTTPException(status_code=503, detail="GigaAM model not loaded")
+    if _preprocessor is None or _tokenizer is None:
+        raise HTTPException(status_code=503, detail="ONNX model not loaded yet")
 
     # Stream to temp file
     CHUNK_SIZE = 8_388_608
@@ -534,7 +599,7 @@ async def align_words_endpoint(
             tmp.write(chunk)
 
     try:
-        result = _align_chunked(_gigaam_model, audio_path)
+        result = _align_chunked(audio_path)
         logger.info(
             f"Word alignment: {len(result['words'])} words, "
             f"{len(result['transcript'])} chars"
