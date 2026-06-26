@@ -503,7 +503,7 @@ def _extract_word_timestamps_onnx(audio_path: str):
 # С hop_length=160, subsampling=4: 5000 * 160 * 4 / 16000 = 200 секунд.
 # Но RNNT декодер через ONNX выдаёт blank на чанках >~100s (баг декодера).
 # Используем 75s — проверено на transcribe_full, работает стабильно.
-_GIGAAM_CHUNK_SEC = 75.0
+_GIGAAM_CHUNK_SEC = 25.0
 
 
 def _align_chunked(audio_path: str):
