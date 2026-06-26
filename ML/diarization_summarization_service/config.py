@@ -55,6 +55,55 @@ class Settings(BaseSettings):
         default=0.5,
         description="Минимальная длительность сегмента для диаризации (сек)"
     )
+
+    # ===== Параметры диаризации Pyannote =====
+    # Порог VAD/сегментации: ниже 0.5 = больше речи, выше = строже.
+    # Для шумных записей повышать до 0.6–0.7, для чистых можно 0.4–0.5.
+    pyannote_segmentation_threshold: float = Field(
+        default=0.5,
+        description="Порог VAD/сегментации Pyannote (0-1)"
+    )
+    # Минимальная длительность речевого сегмента внутри VAD (отсекает короткие всплески)
+    pyannote_min_duration_on: float = Field(
+        default=0.1,
+        description="Минимальная длительность speech-сегмента VAD (сек)"
+    )
+    # Минимальная пауза — если тишина короче, соседние speech-отрезки сливаются
+    pyannote_min_duration_off: float = Field(
+        default=0.1,
+        description="Минимальная длительность паузы для разрыва сегментов VAD (сек)"
+    )
+    # Порог кластеризации: ниже → меньше спикеров (склеивает),
+    # выше → больше спикеров (дробит). Для встреч 2–5 чел: пробовать 0.5–0.7.
+    pyannote_clustering_threshold: float = Field(
+        default=0.5,
+        description="Порог кластеризации спикеров Pyannote (0-1)"
+    )
+    # Явное ограничение количества спикеров (None = автоопределение)
+    pyannote_min_speakers: int | None = Field(
+        default=None,
+        description="Минимальное число спикеров (None = авто)"
+    )
+    pyannote_max_speakers: int | None = Field(
+        default=None,
+        description="Максимальное число спикеров (None = авто)"
+    )
+    # Overlap-aware диаризация (pyannote 3.1+)
+    pyannote_overlap: bool = Field(
+        default=False,
+        description="Использовать overlap-aware сегментацию"
+    )
+    # RMS-нормализация перед диаризацией — стабилизирует VAD
+    pyannote_normalize_audio: bool = Field(
+        default=False,
+        description="Нормализация громкости перед диаризацией"
+    )
+    # Размер окна медианного фильтра для сглаживания переключений спикеров
+    # 0 = отключено, 3–5 обычно достаточно
+    pyannote_median_filter_window: int = Field(
+        default=0,
+        description="Размер окна медианного фильтра спикеров (0 = откл)"
+    )
     
     # ===== Шумоподавление =====
     noise_suppression_url: str = Field(
