@@ -1,12 +1,15 @@
 """
 Реализация транскрибации с помощью GigaAM.
+
+Все модели обрабатываются через отдельный микросервис onnx-gigaam,
+чтобы изолировать CUDA-контекст ONNX Runtime от PyTorch (pyannote).
 """
+import json
 import logging
-import torch
-import torchaudio
-from tqdm import tqdm
-from pathlib import Path
-from typing import Dict, Optional
+from typing import List
+
+import requests
+
 from config import settings
 from core.transcription.base import TranscriptionBase
 from core.diarization.base import DiarizationSegment
@@ -14,81 +17,140 @@ from core.diarization.base import DiarizationSegment
 logger = logging.getLogger(__name__)
 
 
+class GigaamOnnxHttpClient:
+    """
+    HTTP-клиент для GigaAM ONNX микросервиса.
+    """
+
+    def __init__(self, service_url: str = None, timeout: int = None):
+        self.service_url = service_url or settings.gigaam_onnx_service_url
+        self.timeout = timeout or settings.gigaam_onnx_timeout_sec
+
+    def transcribe(
+        self,
+        segments: List[DiarizationSegment],
+        audio_path: str,
+    ) -> List[DiarizationSegment]:
+        try:
+            logger.info(
+                f"Отправка {len(segments)} сегментов в GigaAM ONNX сервис: "
+                f"{self.service_url}"
+            )
+
+            with open(audio_path, "rb") as f:
+                files = {"audio": (audio_path, f, "audio/wav")}
+                data = {
+                    "request": json.dumps(
+                        {"diarization_results": [seg.to_dict() for seg in segments]}
+                    )
+                }
+
+                response = requests.post(
+                    self.service_url,
+                    files=files,
+                    data=data,
+                    timeout=self.timeout,
+                )
+
+            if response.status_code != 200:
+                logger.error(
+                    f"GigaAM ONNX service error: "
+                    f"{response.status_code} - {response.text}"
+                )
+                raise RuntimeError(
+                    f"GigaAM ONNX service error: "
+                    f"{response.status_code} - {response.text}"
+                )
+
+            transcribed_segments = response.json()
+            logger.info(
+                f"Получено сегментов от GigaAM ONNX сервиса: "
+                f"{len(transcribed_segments)}"
+            )
+
+            for i, segment in enumerate(segments):
+                if i < len(transcribed_segments):
+                    segment.text = transcribed_segments[i].get("Text", "")
+
+            logger.info(
+                f"Транскрибация через GigaAM ONNX сервис завершена: "
+                f"{len(segments)} сегментов"
+            )
+            return segments
+
+        except requests.Timeout:
+            logger.error(
+                f"Таймаут запроса к GigaAM ONNX сервису ({self.timeout} сек)"
+            )
+            raise RuntimeError(
+                f"GigaAM ONNX service timeout after {self.timeout} seconds"
+            )
+        except requests.ConnectionError as e:
+            logger.error(
+                f"Ошибка подключения к GigaAM ONNX сервису "
+                f"({self.service_url}): {e}"
+            )
+            raise RuntimeError(
+                f"Failed to connect to GigaAM ONNX service "
+                f"at {self.service_url}: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка транскрибации GigaAM ONNX: {e}")
+            import traceback
+
+            traceback.print_exc()
+            raise RuntimeError(f"GigaAM ONNX transcription failed: {str(e)}") from e
+
+
 class GigaamTranscription(TranscriptionBase):
     """
-    Транскрибация с использованием GigaAM.
-
-    Поддерживает различные модели GigaAM для преобразования речи в текст.
-    Модели кэшируются для переиспользования между запросами.
+    Транскрибация с использованием GigaAM через микросервис onnx-gigaam.
     """
 
-    def __init__(
-        self,
-        sample_rate: int = None,
-        chunk_duration: int = None
-    ):
-        """
-        Инициализация транскрибации.
+    _ALLOWED_MODELS = ("v3_e2e_rnnt", "v3_e2e_ctc")
 
-        Args:
-            sample_rate: Частота дискретизации
-            chunk_duration: Длительность чанка для транскрибации (сек)
-        """
+    def __init__(self, sample_rate: int = None, chunk_duration: int = None):
         self.sample_rate = sample_rate or settings.sample_rate
         self.chunk_duration = chunk_duration or settings.chunk_duration_sec
-        self._models_cache: Dict[str, any] = {}
-    
-    def _get_model(self, model_name: str) -> any:
-        """Получение модели из кэша или загрузка новой."""
-        if model_name not in self._models_cache:
-            logger.info(f"Загрузка модели GigaAM: {model_name}")
-            import gigaam
-            self._models_cache[model_name] = gigaam.load_model(model_name, device='cuda')
-            logger.info(f"Модель GigaAM {model_name} загружена в память")
-        else:
-            logger.debug(f"Модель GigaAM {model_name} уже в памяти (переиспользование)")
-        return self._models_cache[model_name]
+        self._client: GigaamOnnxHttpClient = None
+
+    def _get_client(self) -> GigaamOnnxHttpClient:
+        if self._client is None:
+            self._client = GigaamOnnxHttpClient()
+        return self._client
 
     def transcribe(
         self,
         segments: list[DiarizationSegment],
         audio_path: str,
-        model_name: str = "v3_ctc"
+        model_name: str = "v3_e2e_rnnt",
     ) -> list[DiarizationSegment]:
         """
-        Выполняет транскрибацию сегментов аудио.
+        Транскрибация сегментов через GigaAM ONNX микросервис.
 
         Args:
-            segments: Список сегментов диаризации
-            audio_path: Путь к аудиофайлу
-            model_name: Название модели GigaAM
-
-        Returns:
-            Список сегментов с заполненным текстом
+            segments: список сегментов диаризации
+            audio_path: путь к аудиофайлу
+            model_name: название модели (v3_e2e_rnnt, v3_e2e_ctc)
 
         Raises:
-            FileNotFoundError: Если файл не найден
-            RuntimeError: Если транскрибация не удалась
+            ValueError: если model_name не из списка разрешённых
         """
+        if model_name not in self._ALLOWED_MODELS:
+            raise ValueError(
+                f"Неподдерживаемая модель GigaAM: '{model_name}'. "
+                f"Допустимые: {self._ALLOWED_MODELS}"
+            )
+
         try:
             self.validate_audio_path(audio_path)
+            logger.info(
+                f"Транскрибация GigaAM ({model_name}) "
+                f"через {settings.gigaam_onnx_service_url}"
+            )
 
-            logger.info(f"Начало транскрибации с помощью GigaAM ({model_name})")
-
-            # Загрузка аудио
-            waveform, _ = torchaudio.load(audio_path)
-
-            # Получение модели из кэша
-            model = self._get_model(model_name)
-
-            # Транскрибация каждого сегмента
-            for index, segment in enumerate(tqdm(segments, desc="Транскрибация")):
-                text = self._transcribe_segment(
-                    model=model,
-                    waveform=waveform,
-                    segment=segment
-                )
-                segment.text = text
+            client = self._get_client()
+            client.transcribe(segments, audio_path)
 
             logger.info(f"Транскрибация завершена: {len(segments)} сегментов")
             return segments
@@ -99,53 +161,6 @@ class GigaamTranscription(TranscriptionBase):
         except Exception as e:
             logger.error(f"Ошибка транскрибации: {e}")
             import traceback
+
             traceback.print_exc()
             raise RuntimeError(f"Transcription failed: {str(e)}") from e
-    
-    def _transcribe_segment(
-        self, 
-        model, 
-        waveform: torch.Tensor, 
-        segment: DiarizationSegment
-    ) -> str:
-        """
-        Транскрибация одного сегмента.
-        
-        Args:
-            model: Модель GigaAM
-            waveform: Аудиоволна
-            segment: Сегмент для транскрибации
-            
-        Returns:
-            Распознанный текст
-        """
-        # Извлечение чанка из волны
-        start_sample = int(segment.start * self.sample_rate)
-        end_sample = int(segment.stop * self.sample_rate)
-        audio_chunk = waveform[:, start_sample:end_sample]
-        
-        if audio_chunk.shape[1] == 0:
-            return ""
-        
-        resulted_transcription = ""
-        
-        # Транскрибация чанками по chunk_duration секунд
-        chunk_samples = self.chunk_duration * self.sample_rate
-        for chunk_start in range(0, audio_chunk.shape[1], chunk_samples):
-            chunk = audio_chunk[:, chunk_start:chunk_start + chunk_samples]
-            
-            if chunk.shape[1] == 0:
-                continue
-            
-            # Сохранение чанка во временный файл
-            temp_chunk = Path("chunk.wav")
-            torchaudio.save(uri=str(temp_chunk), src=chunk, sample_rate=self.sample_rate)
-            
-            # Транскрибация
-            transcription = model.transcribe(str(temp_chunk))
-            resulted_transcription += transcription
-            
-            # Очистка
-            temp_chunk.unlink(missing_ok=True)
-        
-        return resulted_transcription

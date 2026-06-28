@@ -274,6 +274,30 @@ export const TranscriptionHistoryPanel = () => {
             >
               <span>Meeting Bot</span>
             </NavLink>
+            <NavLink
+              to="/all-meetings"
+              className={({ isActive }) =>
+                `flex items-center gap-2 px-3 py-2.5 rounded-lg text-base font-medium transition-all ${
+                  isActive
+                    ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-md'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-base-800 hover:text-gray-900 dark:hover:text-white'
+                }`
+              }
+            >
+              <span>Ваши совещания</span>
+            </NavLink>
+            <NavLink
+              to="/search"
+              className={({ isActive }) =>
+                `flex items-center gap-2 px-3 py-2.5 rounded-lg text-base font-medium transition-all ${
+                  isActive
+                    ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-md'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-base-800 hover:text-gray-900 dark:hover:text-white'
+                }`
+              }
+            >
+              <span>Поиск</span>
+            </NavLink>
           </nav>
         </div>
 
@@ -608,6 +632,16 @@ export const TranscriptionHistoryPanel = () => {
                 <span className="text-lg">⚙️</span>
                 <span>Настройки</span>
               </NavLink>
+              {user?.role === 'admin' && (
+                <NavLink
+                  to="/admin"
+                  onClick={() => setProfileOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                >
+                  <span className="text-lg">🛡️</span>
+                  <span>Админ панель</span>
+                </NavLink>
+              )}
               <div className="border-t border-gray-100 dark:border-dark-base-700 my-1" />
               <button
                 onClick={() => { setProfileOpen(false); handleLogout(); }}

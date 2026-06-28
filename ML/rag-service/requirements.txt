@@ -5,3 +5,6 @@ sentence-transformers
 python-multipart
 torch
 pymilvus
+
+# Testing
+pytest

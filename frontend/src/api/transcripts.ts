@@ -36,6 +36,11 @@ export const transcriptsApi = {
     formData.append('transcribe_lib', settings.transcribeLib);
     formData.append('llm_model', settings.llmModel);
     formData.append('noise_sup_bool', settings.noiseSuppression.toString());
+    formData.append('pipeline', settings.pipeline || 'whisperx');
+
+    if (settings.meetingTitle) {
+      formData.append('meeting_title', settings.meetingTitle);
+    }
 
     const response = await apiClient.post<ProcessAudioResponse | TaskQueuedResponse>('/process', formData, {
       timeout: 1_800_000  // 30 минут на загрузку больших файлов

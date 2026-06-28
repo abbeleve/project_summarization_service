@@ -2,7 +2,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useTranscripts } from '@/hooks/useTranscripts';
 import { useAnnotations } from '@/hooks/useAnnotations';
+import { useCRMTasks, useCRMProjects, useCRMProjectBoards, useCRMProjectBoardColumns, useCRMWorskpaceMembers, useCRMStatus } from '@/hooks/useCRM';
 import { transcriptsApi } from '@/api/transcripts';
+import type { MeetingTask } from '@/types/transcript';
+import type { WeeekProject, WeeekBoard, WeeekBoardColumn, SendTaskBody } from '@/api/crm';
 import { voiceApi, usersApi } from '@/api/voice';
 import { getDominantColorsMap } from '@/utils/dominantColor';
 import { SpeakerDistributionChart } from '@/components/analysis/SpeakerDistributionChart';
@@ -16,6 +19,9 @@ import { Button } from '@/components/ui/Button';
 import { type TranscriptSegment as TranscriptSegmentType } from '@/types/transcript';
 import { type Annotation } from '@/api/transcripts';
 import { getSpeakerColor } from '@/utils/speakerColors';
+import { TaskCard } from '@/components/crm/TaskCard';
+import { StepDot, StepSeparator } from '@/components/crm/StepDot';
+import { CrmDropdown } from '@/components/crm/CrmDropdown';
 
 export const AnalysisPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -35,15 +41,174 @@ export const AnalysisPage = () => {
     endChar: number;
   } | null>(null);
   const [showAnnotationPopup, setShowAnnotationPopup] = useState(false);
+  const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
+  const [popupAbove, setPopupAbove] = useState(true);
   const [selectedColor, setSelectedColor] = useState('yellow');
   const [annotationNote, setAnnotationNote] = useState('');
   const [rightTab, setRightTab] = useState<'summary' | 'charts' | 'chat' | 'annotations'>('summary');
   const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [tasksExpanded, setTasksExpanded] = useState(true);
+  const [keyPointsExpanded, setKeyPointsExpanded] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [audioError, setAudioError] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  // ===== Выбор project → board → column для отправки =====
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [selectedBoardId, setSelectedBoardId] = useState<number | null>(null);
+  const [selectedColumnId, setSelectedColumnId] = useState<number | null>(null);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const [showBoardPicker, setShowBoardPicker] = useState(false);
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+
+  // Статус подключения Weeek. `crmConnected === null` пока запрос в полёте.
+  const { data: crmStatus } = useCRMStatus();
+  const crmConnected = crmStatus?.connected === true;
+
+  // Запросы к Weeek уходят только когда ключ подключён — иначе бэкенд отдаёт 400
+  // и UX становится непонятным ("пусто, не работает, почему?").
+  const { data: projects = [], isLoading: projectsLoading } = useCRMProjects(crmConnected);
+  const { data: boards = [], isLoading: boardsLoading } = useCRMProjectBoards(selectedProjectId);
+  const { data: columns = [], isLoading: columnsLoading } = useCRMProjectBoardColumns(selectedBoardId);
+
+  // Участники workspace из Weeek для назначения задач
+  const { data: memberList = [] } = useCRMWorskpaceMembers(crmConnected);
+
+  // ===== CRM (MeetingTasks) =====
+  const {
+    tasks: meetingTasks,
+    isLoading: crmTasksLoading,
+    isSendAllPending,
+    sendAllToCRM,
+    sendOneToCRM,
+    isSendingOne,
+    updateTask,
+    deleteTask,
+    isDeleting,
+  } = useCRMTasks(transcript?.summary_id ?? null);
+
+  // Локальный выбор assignee и deadline — НЕ сохраняется в БД, сбрасывается при смене транскрипции
+  const [localAssignees, setLocalAssignees] = useState<Record<string, string>>({});
+  const [localDeadlines, setLocalDeadlines] = useState<Record<string, string>>({});
+  // Сброс локального выбора при переходе на другой `/analysis/:id`
+  useEffect(() => {
+    setLocalAssignees({});
+    setLocalDeadlines({});
+    setTaskWeeekUserIds({});
+  }, [id]);
+
+  /** Сбросить выбор board/column при смене проекта. */
+  const handleProjectSelect = (project: WeeekProject | null) => {
+    setSelectedProjectId(project?.id ?? null);
+    setSelectedBoardId(null);
+    setSelectedColumnId(null);
+    setShowProjectPicker(false);
+  };
+  const handleBoardSelect = (board: WeeekBoard | null) => {
+    setSelectedBoardId(board?.id ?? null);
+    setSelectedColumnId(null);
+    setShowBoardPicker(false);
+  };
+  const handleColumnSelect = (col: WeeekBoardColumn | null) => {
+    setSelectedColumnId(col?.id ?? null);
+    setShowColumnPicker(false);
+  };
+
+  const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
+  const selectedBoard = boards.find((b) => b.id === selectedBoardId) ?? null;
+  const selectedColumn = columns.find((c) => c.id === selectedColumnId) ?? null;
+
+  /** Собрать SendTaskBody из текущего выбора. */
+  const getSendBody = (taskId?: string): SendTaskBody | undefined => {
+    if (!selectedProjectId) return undefined;
+    const body: SendTaskBody = { project_id: selectedProjectId, board_column_id: selectedColumnId };
+    if (taskId && taskWeeekUserIds[taskId]) {
+      body.user_id = taskWeeekUserIds[taskId];
+    }
+    if (taskId && localDeadlines[taskId]) {
+      body.deadline = localDeadlines[taskId];
+    }
+    return body;
+  };
+
+  // Отслеживаем Weeek user_id для каждого task (заполняется при выборе assignee)
+  const [taskWeeekUserIds, setTaskWeeekUserIds] = useState<Record<string, string>>({});
+
+  const unsentTasks = meetingTasks.filter((t) => !t.sent_to_crm);
+  const sentTasks = meetingTasks.filter((t) => t.sent_to_crm);
+  const hasTasks = meetingTasks.length > 0;
+
+  const handleSendAllToCRM = async () => {
+    if (!transcript?.summary_id) return;
+    if (unsentTasks.length === 0) {
+      showToast('Все задачи уже отправлены', 'error');
+      return;
+    }
+    if (!selectedProjectId) {
+      showToast('Сначала выберите проект в Weeek', 'error');
+      return;
+    }
+    if (!window.confirm(`Отправить все ${unsentTasks.length} неотправленных задач в Weeek?\n\nЭто действие нельзя отменить.`)) {
+      return;
+    }
+    sendAllToCRM(getSendBody(), {
+      onSuccess: (res) => {
+        if (res.status === 'ok' || res.status === 'partial') {
+          // Сохраняем assignee и deadline для всех отправленных задач
+          unsentTasks.forEach((t) => {
+            const assignee = localAssignees[t.id];
+            const deadline = localDeadlines[t.id];
+            if (assignee !== undefined || deadline) {
+              updateTask({ taskId: t.id, assignee: assignee !== undefined ? assignee : undefined, deadline: deadline || undefined });
+            }
+          });
+          showToast(`Отправлено ${res.sent} из ${res.total} задач в CRM`, 'success');
+        } else {
+          showToast(res.status === 'error' ? 'Ошибка отправки' : JSON.stringify(res), 'error');
+        }
+      },
+      onError: (err) => {
+        const msg = err instanceof Error ? err.message : 'Ошибка отправки в CRM';
+        showToast(msg, 'error');
+      },
+    });
+  };
+
+  const handleSendOne = (taskId: string) => {
+    if (!selectedProjectId) {
+      showToast('Сначала выберите проект в Weeek', 'error');
+      return;
+    }
+    sendOneToCRM({ taskId, body: getSendBody(taskId) }, {
+      onSuccess: (res) => {
+        if (res.status === 'ok') {
+          // Сохраняем локальный assignee и deadline в БД
+          const localAssignee = localAssignees[taskId];
+          const localDeadline = localDeadlines[taskId];
+          if (localAssignee !== undefined || localDeadline) {
+            updateTask({
+              taskId,
+              assignee: localAssignee !== undefined ? localAssignee : undefined,
+              deadline: localDeadline || undefined,
+            });
+          }
+          showToast('Задача отправлена в CRM', 'success');
+        } else if (res.status === 'already_sent') {
+          showToast('Задача уже была отправлена', 'error');
+        } else {
+          showToast(res.message || 'Ошибка отправки', 'error');
+        }
+      },
+      onError: (err) => {
+        const msg = err instanceof Error ? err.message : 'Ошибка отправки';
+        showToast(msg, 'error');
+      },
+    });
   };
 
   const ANNOTATION_COLORS = [
@@ -136,19 +301,19 @@ export const AnalysisPage = () => {
 
     const range = selection.getRangeAt(0);
     const container = range.commonAncestorContainer.parentElement?.closest('[data-part-id]');
-    
+
     if (!container) return;
 
     const partId = container.getAttribute('data-part-id')!;
-    
+
     // Находим элемент с текстом (p тег внутри TranscriptSegment)
     const textElement = container.querySelector('p');
     if (!textElement) return;
-    
+
     // Получаем полный текст из элемента
     const fullText = textElement.textContent || '';
     const selectedText = selection.toString();
-    
+
     // Находим позицию выделенного текста в полном тексте
     const startChar = fullText.indexOf(selectedText);
     if (startChar === -1) {
@@ -157,6 +322,32 @@ export const AnalysisPage = () => {
     }
     const endChar = startChar + selectedText.length;
 
+    // Получаем координаты выделения для позиционирования попапа
+    const rect = range.getBoundingClientRect();
+    const popupWidth = 380;
+    const popupHeight = 340;
+    const gap = 12;
+
+    // По умолчанию — над выделением
+    let x = rect.left + rect.width / 2 - popupWidth / 2;
+    let y = rect.top - popupHeight - gap;
+    let above = true;
+
+    // Коррекция по X: не выезжаем за левый край
+    if (x < 16) x = 16;
+    // Коррекция по X: не выезжаем за правый край
+    if (x + popupWidth > window.innerWidth - 16) {
+      x = window.innerWidth - popupWidth - 16;
+    }
+
+    // Если над выделением не помещается — показываем снизу
+    if (y < 8) {
+      y = rect.bottom + gap;
+      above = false;
+    }
+
+    setPopupPosition({ x, y });
+    setPopupAbove(above);
     setSelectedText({
       text: selectedText,
       partId,
@@ -182,6 +373,8 @@ export const AnalysisPage = () => {
       setSelectedText(null);
       setSelectedColor('yellow');
       setAnnotationNote('');
+      setPopupPosition(null);
+      setPopupAbove(true);
       window.getSelection()?.removeAllRanges();
       showToast('✅ Аннотация создана', 'success');
     } catch (err: any) {
@@ -248,6 +441,34 @@ export const AnalysisPage = () => {
     setShowAnnotationPopup(true);
   };
 
+  // Закрытие попапа по Escape
+  useEffect(() => {
+    if (!showAnnotationPopup) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowAnnotationPopup(false);
+        setSelectedText(null);
+        setSelectedColor('yellow');
+        setAnnotationNote('');
+        setPopupPosition(null);
+        setPopupAbove(true);
+        window.getSelection()?.removeAllRanges();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showAnnotationPopup]);
+
+  // Конвертация Blob в URL для аудио (если есть)
+  const audioUrl = transcript?.audio_url || (transcript?.audio_blob
+    ? URL.createObjectURL(transcript.audio_blob)
+    : '');
+
+  // Сбрасываем audioError при смене транскрипции
+  useEffect(() => {
+    setAudioError(false);
+  }, [audioUrl]);
+
   if (!id) {
     return (
       <ErrorMessage 
@@ -300,6 +521,14 @@ export const AnalysisPage = () => {
     };
   });
 
+  // Фильтрация по поисковому запросу
+  const filteredSegments = searchQuery.trim()
+    ? segments.filter(seg =>
+        seg.Text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        seg.Speaker.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : segments;
+
   // Скачать JSON
   const handleDownloadJson = () => {
     const jsonStr = JSON.stringify(transcript, null, 2);
@@ -315,27 +544,115 @@ export const AnalysisPage = () => {
     showToast('✅ JSON скачан', 'success');
   };
 
-  // Скачать отчёт (текстовый файл с кратким содержанием и ключевыми моментами)
+  // Скачать отчёт (текстовый файл со всей информацией)
   const handleDownloadReport = () => {
     const lines: string[] = [];
-    lines.push(`Отчёт: ${transcript.title}`);
-    lines.push('='.repeat(50));
+
+    const separator = '='.repeat(60);
+    const subSep = '-'.repeat(40);
+
+    // --- Шапка ---
+    lines.push(separator);
+    lines.push(`  ОТЧЁТ: ${transcript.title}`);
+    lines.push(separator);
     lines.push('');
+    lines.push(`  Дата создания:    ${new Date(transcript.created_at).toLocaleString('ru-RU')}`);
+    lines.push(`  Тип совещания:    ${transcript.meeting_type}`);
+    lines.push(`  Длительность:     ${(() => {
+      const secs = transcript.duration ? transcript.duration * 60 : (segments[segments.length - 1]?.stop || 0);
+      const m = Math.floor(secs / 60);
+      const s = Math.floor(secs % 60);
+      return `${m} мин ${s} сек`;
+    })()}`);
+    lines.push(`  Кол-во спикеров:  ${new Set(segments.map(s => s.Speaker)).size}`);
+    lines.push('');
+
+    // --- Статистика спикеров ---
+    const speakerTimes: Record<string, number> = {};
+    segments.forEach(seg => {
+      const speaker = seg.Speaker || 'UNKNOWN';
+      speakerTimes[speaker] = (speakerTimes[speaker] || 0) + (seg.stop - seg.start);
+    });
+    const totalTime = Object.values(speakerTimes).reduce((a, b) => a + b, 0);
+    const sortedSpeakers = Object.entries(speakerTimes).sort((a, b) => b[1] - a[1]);
+
+    lines.push('--- Спикеры ---');
+    lines.push(subSep);
+    sortedSpeakers.forEach(([speaker, time]) => {
+      const pct = totalTime > 0 ? ((time / totalTime) * 100).toFixed(1) : '0.0';
+      const m = Math.floor(time / 60);
+      const s = Math.floor(time % 60);
+      lines.push(`  ${speaker.padEnd(20)} ${m} мин ${s.toString().padStart(2, '0')} сек  (${pct}%)`);
+    });
+    lines.push('');
+
+    // --- Краткое содержание ---
     if (transcript.summary) {
-      lines.push('Краткое содержание:');
-      lines.push('-'.repeat(30));
-      lines.push(transcript.summary);
+      lines.push('--- Краткое содержание ---');
+      lines.push(subSep);
+      // Разбиваем summary на строки по 100 символов для читаемости
+      const words = transcript.summary.split(' ');
+      let line = '';
+      words.forEach(word => {
+        if ((line + ' ' + word).length > 100) {
+          lines.push(`  ${line.trim()}`);
+          line = word;
+        } else {
+          line += (line ? ' ' : '') + word;
+        }
+      });
+      if (line) lines.push(`  ${line.trim()}`);
       lines.push('');
     }
+
+    // --- Ключевые моменты ---
     if (transcript.key_points && transcript.key_points.length > 0) {
-      lines.push('Ключевые моменты:');
-      lines.push('-'.repeat(30));
+      lines.push('--- Ключевые моменты ---');
+      lines.push(subSep);
       transcript.key_points.forEach((point, i) => {
-        lines.push(`${i + 1}. ${point}`);
+        lines.push(`  ${i + 1}. ${point}`);
       });
       lines.push('');
     }
-    lines.push('Дата создания: ' + new Date().toLocaleString('ru-RU'));
+
+    // --- Аннотации ---
+    if (annotations.length > 0) {
+      lines.push('--- Аннотации ---');
+      lines.push(subSep);
+      annotations.forEach((ann, i) => {
+        const part = transcript.parts?.find(p => p.id === ann.part_id);
+        const speaker = part ? part.text.split(':')[0] || '' : '';
+        const fullText = part?.text || '';
+        const textWithoutSpeaker = fullText.includes(':')
+          ? fullText.split(':').slice(1).join(':').trim()
+          : fullText;
+        const highlighted = textWithoutSpeaker.slice(ann.start_char, ann.end_char) || '';
+        lines.push(`  [${i + 1}] ${speaker}: "${highlighted}"`);
+        const colorNames: Record<string, string> = {
+          yellow: 'Жёлтый', green: 'Зелёный', blue: 'Синий', pink: 'Розовый', purple: 'Фиолетовый',
+        };
+        lines.push(`       Цвет: ${colorNames[ann.color || 'yellow'] || ann.color}`);
+        if (ann.note) lines.push(`       Заметка: ${ann.note}`);
+        lines.push('');
+      });
+    }
+
+    // --- Полная транскрипция ---
+    lines.push('--- Полная транскрипция ---');
+    lines.push(subSep);
+    lines.push('');
+    segments.forEach(seg => {
+      const startM = Math.floor(seg.start / 60);
+      const startS = Math.floor(seg.start % 60);
+      const timestamp = `${startM.toString().padStart(2, '0')}:${startS.toString().padStart(2, '0')}`;
+      lines.push(`  [${timestamp}] ${seg.Speaker}: ${seg.Text}`);
+    });
+    lines.push('');
+
+    // --- Футер ---
+    lines.push(separator);
+    lines.push(`  Отчёт сгенерирован ${new Date().toLocaleString('ru-RU')}`);
+    lines.push(separator);
 
     const text = lines.join('\n');
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
@@ -349,11 +666,6 @@ export const AnalysisPage = () => {
     URL.revokeObjectURL(url);
     showToast('✅ Отчёт скачан', 'success');
   };
-
-  // Конвертация Blob в URL для аудио (если есть)
-  const audioUrl = transcript.audio_url || (transcript.audio_blob
-    ? URL.createObjectURL(transcript.audio_blob)
-    : '');
 
   return (
     <div className="-mx-6 px-6 space-y-6">
@@ -416,12 +728,13 @@ export const AnalysisPage = () => {
       </div>
 
       {/* Аудиоплеер над транскрипцией и графиками */}
-      {audioUrl && (
+      {audioUrl && !audioError && (
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
           <AudioPlayer
             ref={audioPlayerRef}
             src={audioUrl}
             segments={segments}
+            onError={() => setAudioError(true)}
           />
         </div>
       )}
@@ -440,8 +753,41 @@ export const AnalysisPage = () => {
             <div className="flex items-center justify-between mb-3 flex-shrink-0">
               <h3 className="text-2xl font-bold text-blue-600 dark:text-blue-400">Детальная транскрипция</h3>
             </div>
+            {/* Поле поиска */}
+            <div className="relative mb-3 flex-shrink-0">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Поиск по транскрипции..."
+                className="w-full px-3 py-2 pl-9 rounded-lg border border-gray-200/40 dark:border-dark-base-700/40 bg-white/60 dark:bg-dark-base-900/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-colors"
+              />
+              <svg
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                >
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
             <div className="space-y-0 overflow-y-auto pr-2 flex-1 min-h-0">
-              {segments.map((seg, idx) => (
+              {filteredSegments.length === 0 ? (
+                <div className="text-center text-gray-400 dark:text-gray-500 py-8 text-sm">
+                  {searchQuery ? 'Ничего не найдено' : 'Нет данных транскрипции'}
+                </div>
+              ) : (
+                filteredSegments.map((seg, idx) => (
                 <div key={idx} data-start-time={seg.start}>
                   <TranscriptSegment
                     speaker={seg.Speaker}
@@ -457,7 +803,8 @@ export const AnalysisPage = () => {
                     onCreateFullAnnotation={handleCreateFullAnnotation}
                   />
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -521,7 +868,7 @@ export const AnalysisPage = () => {
             {/* Контент вкладок — заполняет оставшееся место */}
             <div className="flex-1 overflow-hidden min-h-0">
               {rightTab === 'summary' && (
-                <div className="h-full overflow-y-auto space-y-6 pr-2">
+                <div className="h-full overflow-y-auto space-y-3 pr-2">
                   {/* Суммаризация — сворачиваемая */}
                   <button
                     onClick={() => setSummaryExpanded(!summaryExpanded)}
@@ -572,30 +919,261 @@ export const AnalysisPage = () => {
                     </div>
                   )}
 
+                  {/* Задачи (action items) — MeetingTask */}
+                  {hasTasks && (
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => setTasksExpanded(!tasksExpanded)}
+                        className="w-full flex items-center gap-2 text-left"
+                      >
+                        <span className="text-lg">✅</span>
+                        <h4 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300 flex-1">
+                          Задачи
+                        </h4>
+                        {crmTasksLoading ? (
+                          <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800/40 text-gray-400 text-xs">
+                            загрузка…
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-medium">
+                            {sentTasks.length > 0
+                              ? `${unsentTasks.length} / ${meetingTasks.length}`
+                              : meetingTasks.length}
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-400 px-1 select-none">
+                          {tasksExpanded ? '▲' : '▼'}
+                        </span>
+                      </button>
+                      <div
+                        className={`transition-all ease-out ${tasksExpanded ? 'overflow-visible' : 'overflow-hidden'}`}
+                        style={{
+                          maxHeight: tasksExpanded ? '5000px' : '0px',
+                          opacity: tasksExpanded ? 1 : 0,
+                          transitionDuration: tasksExpanded ? '400ms' : '200ms',
+                        }}
+                      >
+                        <div className="space-y-2 pt-2">
+
+                          {/* Баннер: Weeek не подключён — блокируем отправку */}
+                          {!crmConnected && (
+                            <div className="flex flex-wrap items-center gap-3 px-3 py-2.5 rounded-xl bg-amber-50 ring-1 ring-amber-200 text-amber-900 dark:bg-amber-500/10 dark:ring-amber-500/30 dark:text-amber-200">
+                              <span className="text-base leading-none">🔑</span>
+                              <p className="text-xs leading-relaxed flex-1 min-w-0">
+                                Weeek не подключён. Чтобы отправлять задачи, добавьте API-токен
+                                в <span className="font-semibold">Настройках системы</span>.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => navigate('/settings')}
+                                className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 transition-colors shadow-sm cursor-pointer dark:bg-amber-500 dark:text-amber-950 dark:hover:bg-amber-400"
+                              >
+                                ⚙ Открыть настройки
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Каскадный выбор: проект → доска → колонка */}
+                          {unsentTasks.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-gray-50/80 dark:bg-white/[0.02] ring-1 ring-gray-200 dark:ring-white/[0.06]">
+
+                              {/* Шаги каскада */}
+                              <div className="flex items-center gap-1.5">
+
+                                {/* Шаг 1: Проект */}
+                                <StepDot
+                                  active={!!selectedProject}
+                                  done={!!selectedProject && !selectedBoard}
+                                  locked={!crmConnected}
+                                  open={showProjectPicker}
+                                  onClick={() => { setShowProjectPicker(!showProjectPicker); setShowBoardPicker(false); setShowColumnPicker(false); }}
+                                  icon="📁"
+                                  label={selectedProject?.name || 'Проект'}
+                                  loading={projectsLoading}
+                                  dropdown={
+                                    <CrmDropdown
+                                      empty="Нет проектов"
+                                      items={projects.map((p) => ({
+                                        key: String(p.id),
+                                        label: p.name,
+                                        selected: selectedProjectId === p.id,
+                                        onSelect: () => handleProjectSelect(p),
+                                      }))}
+                                      onClear={() => handleProjectSelect(null)}
+                                    />
+                                  }
+                                />
+
+                                <StepSeparator active={!!selectedProject} />
+
+                                {/* Шаг 2: Доска */}
+                                <StepDot
+                                  active={!!selectedBoard}
+                                  done={!!selectedBoard && !selectedColumn}
+                                  disabled={!selectedProjectId}
+                                  locked={!crmConnected}
+                                  open={showBoardPicker}
+                                  onClick={() => { if (selectedProjectId) { setShowBoardPicker(!showBoardPicker); setShowProjectPicker(false); setShowColumnPicker(false); } }}
+                                  icon="📋"
+                                  label={selectedBoard?.name || 'Доска'}
+                                  loading={boardsLoading}
+                                  dropdown={
+                                    <CrmDropdown
+                                      empty="Нет досок"
+                                      items={boards.map((b) => ({
+                                        key: String(b.id),
+                                        label: b.name,
+                                        selected: selectedBoardId === b.id,
+                                        onSelect: () => handleBoardSelect(b),
+                                      }))}
+                                      onClear={() => handleBoardSelect(null)}
+                                    />
+                                  }
+                                />
+
+                                <StepSeparator active={!!selectedBoard} />
+
+                                {/* Шаг 3: Колонка */}
+                                <StepDot
+                                  active={!!selectedColumn}
+                                  done={false}
+                                  disabled={!selectedBoardId}
+                                  locked={!crmConnected}
+                                  open={showColumnPicker}
+                                  onClick={() => { if (selectedBoardId) { setShowColumnPicker(!showColumnPicker); setShowProjectPicker(false); setShowBoardPicker(false); } }}
+                                  icon="📌"
+                                  label={selectedColumn?.name || 'Колонка'}
+                                  loading={columnsLoading}
+                                  dropdown={
+                                    <CrmDropdown
+                                      empty="Нет колонок"
+                                      items={columns.map((c) => ({
+                                        key: String(c.id),
+                                        label: c.name,
+                                        selected: selectedColumnId === c.id,
+                                        onSelect: () => handleColumnSelect(c),
+                                      }))}
+                                      onClear={() => handleColumnSelect(null)}
+                                    />
+                                  }
+                                />
+                              </div>
+
+                              <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-auto">
+                                {selectedProject
+                                  ? selectedColumn
+                                    ? `→ ${selectedProject.name} / ${selectedBoard?.name} / ${selectedColumn.name}`
+                                    : selectedBoard
+                                      ? `→ ${selectedProject.name} / ${selectedBoard.name} / …`
+                                      : `→ ${selectedProject.name} / …`
+                                  : 'Выберите проект'}
+                              </span>
+                            </div>
+                          )}
+
+                          {unsentTasks.length > 0 && (
+                            <div className="flex justify-end">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleSendAllToCRM(); }}
+                                disabled={isSendAllPending || !selectedProjectId || !crmConnected}
+                                title={!crmConnected ? 'Сначала подключите Weeek API в Настройках' : undefined}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shadow-sm cursor-pointer ${
+                                  !crmConnected
+                                    ? 'bg-gray-200 text-gray-400 ring-1 ring-gray-300 dark:bg-white/[0.04] dark:text-gray-500 dark:ring-white/10 cursor-not-allowed'
+                                    : `bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 ${
+                                        isSendAllPending ? 'cursor-wait' : 'disabled:cursor-not-allowed'
+                                      }`
+                                }`}
+                              >
+                                {isSendAllPending
+                                  ? 'Отправка…'
+                                  : `📤 Отправить всё (${unsentTasks.length})`}
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Сначала неотправленные (с номерами), потом выполненные (только ✓) */}
+                          {[...unsentTasks, ...sentTasks].map((task: MeetingTask, idx: number) => (
+                            <TaskCard
+                              key={task.id}
+                              task={task}
+                              index={idx}
+                              showNumber={!task.sent_to_crm}
+                              members={memberList}
+                              cb={{
+                                localAssignees,
+                                setLocalAssignees,
+                                taskWeeekUserIds,
+                                setTaskWeeekUserIds,
+                                localDeadlines,
+                                setLocalDeadlines,
+                                isSendingOne,
+                                isDeleting,
+                                crmDisabled: !crmConnected,
+                                onSend: handleSendOne,
+                                onDelete: (taskId) => {
+                                  if (window.confirm('Удалить задачу?')) {
+                                    deleteTask(taskId);
+                                  }
+                                },
+                                onSaveDescription: (taskId, text) => {
+                                  updateTask({
+                                    taskId,
+                                    description: text,
+                                  });
+                                },
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Ключевые моменты — каждый в отдельном блоке */}
                   {(transcript.key_points || []).length > 0 && (
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2">
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => setKeyPointsExpanded(!keyPointsExpanded)}
+                        className="w-full flex items-center gap-2 text-left"
+                      >
                         <span className="text-lg">🔑</span>
-                        <h4 className="text-2xl font-bold text-amber-900 dark:text-amber-300">
+                        <h4 className="text-2xl font-bold text-amber-900 dark:text-amber-300 flex-1">
                           Ключевые моменты
                         </h4>
-                      </div>
-                      {(transcript.key_points || []).map((point, idx) => (
-                        <div
-                          key={idx}
-                          className="border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 shadow-md"
-                        >
-                          <div className="flex items-start gap-3">
-                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center mt-0.5">
-                              {idx + 1}
-                            </span>
-                            <p className="text-amber-900 dark:text-amber-100 text-sm leading-relaxed">
-                              {point}
-                            </p>
-                          </div>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-medium">
+                          {(transcript.key_points || []).length}
+                        </span>
+                        <span className="text-xs text-gray-400 px-1 select-none">
+                          {keyPointsExpanded ? '▲' : '▼'}
+                        </span>
+                      </button>
+                      <div
+                        className="overflow-hidden transition-all ease-out"
+                        style={{
+                          maxHeight: keyPointsExpanded ? '5000px' : '0px',
+                          opacity: keyPointsExpanded ? 1 : 0,
+                          transitionDuration: keyPointsExpanded ? '400ms' : '200ms',
+                        }}
+                      >
+                        <div className="space-y-2 pt-2">
+                          {(transcript.key_points || []).map((point, idx) => (
+                            <div
+                              key={idx}
+                              className="group/kp border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 shadow-md transition-all duration-200 ease-out hover:bg-amber-100 hover:shadow-lg hover:border-amber-600 dark:hover:bg-amber-900/30 dark:hover:border-amber-400 dark:hover:shadow-[0_6px_24px_-6px_rgba(245,158,11,0.25)] cursor-default"
+                            >
+                              <div className="flex items-start gap-3">
+                                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold flex items-center justify-center mt-0.5 transition-transform duration-200 group-hover/kp:scale-110">
+                                  {idx + 1}
+                                </span>
+                                <p className="text-amber-900 dark:text-amber-100 text-sm leading-relaxed">
+                                  {point}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      </div>
                     </div>
                   )}
                   </div>
@@ -688,70 +1266,107 @@ export const AnalysisPage = () => {
         </div>
       </div>
 
-      {/* Popup для создания аннотации */}
-      {showAnnotationPopup && selectedText && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-dark-base-800 rounded-2xl p-6 max-w-md w-full shadow-2xl">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Создать аннотацию</h3>
-            
-            <div className="mb-4 p-3 bg-gray-50 dark:bg-dark-base-700 rounded-lg">
-              <p className="text-sm text-gray-700 dark:text-gray-300 italic">
-                "{selectedText.text}"
-              </p>
-            </div>
+      {/* Попап «Создать аннотацию» — стеклянная карточка над выделением */}
+      {showAnnotationPopup && selectedText && popupPosition && (
+        <>
+          {/* Прозрачный backdrop для закрытия по клику вне */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => {
+              setShowAnnotationPopup(false);
+              setSelectedText(null);
+              setSelectedColor('yellow');
+              setAnnotationNote('');
+              setPopupPosition(null);
+              setPopupAbove(true);
+              window.getSelection()?.removeAllRanges();
+            }}
+          />
+          {/* Стеклянная карточка */}
+          <div
+            className="fixed z-50 popup-enter"
+            style={{
+              left: popupPosition.x,
+              top: popupPosition.y,
+              width: 380,
+            }}
+          >
+            {/* Стрелка-треугольник (смотрит вниз, если попап сверху; вверх — если снизу) */}
+            <div
+              className={`absolute left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-white dark:bg-[#0e1622] border-l border-t border-gray-200 dark:border-white/10`}
+              style={
+                popupAbove
+                  ? { bottom: -6 }
+                  : { bottom: 'auto', top: -6, transform: 'translateX(-50%) rotate(225deg)' }
+              }
+            />
 
-            <div className="mb-4">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Выберите цвет:</p>
+            <div className="bg-white dark:bg-[#0e1622] rounded-2xl p-5 shadow-lg shadow-gray-200/50 dark:shadow-2xl dark:shadow-black/40 border border-gray-200 dark:border-white/10">
+              <h3 className="text-base font-bold text-gray-900 dark:text-white mb-3">Создать аннотацию</h3>
+
+              {/* Выделенный текст */}
+              <div className="mb-3 p-3 bg-gray-50 dark:bg-white/[0.04] rounded-xl border border-gray-200 dark:border-white/10">
+                <p className="text-sm text-gray-700 dark:text-gray-300 italic leading-relaxed line-clamp-3">
+                  "{selectedText.text}"
+                </p>
+              </div>
+
+              {/* Цвета */}
+              <div className="mb-3">
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Цвет подсветки:</p>
+                <div className="flex gap-2">
+                  {ANNOTATION_COLORS.map((color) => (
+                    <button
+                      key={color.name}
+                      onClick={() => setSelectedColor(color.name)}
+                      className={`w-7 h-7 rounded-full ${color.bg} border-2 transition-all duration-150 ${
+                        selectedColor === color.name
+                          ? 'border-gray-900 dark:border-white scale-110 shadow-md'
+                          : 'border-transparent hover:scale-105'
+                      }`}
+                      title={color.label}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Комментарий */}
+              <div className="mb-4">
+                <textarea
+                  value={annotationNote}
+                  onChange={(e) => setAnnotationNote(e.target.value)}
+                  placeholder="Заметка (необязательно)..."
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-white/10 rounded-xl bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 focus:outline-none resize-none text-sm transition-all"
+                />
+              </div>
+
+              {/* Кнопки */}
               <div className="flex gap-2">
-                {ANNOTATION_COLORS.map((color) => (
-                  <button
-                    key={color.name}
-                    onClick={() => setSelectedColor(color.name)}
-                    className={`w-8 h-8 rounded-full ${color.bg} border-2 transition-all ${
-                      selectedColor === color.name ? 'border-gray-900 dark:border-white scale-110' : 'border-transparent'
-                    }`}
-                    title={color.label}
-                  />
-                ))}
+                <button
+                  onClick={handleCreateAnnotation}
+                  className="flex-1 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white text-sm font-medium shadow-lg shadow-indigo-500/25 hover:shadow-indigo-600/30 transition-all duration-150 active:scale-[0.97]"
+                >
+                  ✓ Подчеркнуть
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAnnotationPopup(false);
+                    setSelectedText(null);
+                    setSelectedColor('yellow');
+                    setAnnotationNote('');
+                    setPopupPosition(null);
+                    setPopupAbove(true);
+                    window.getSelection()?.removeAllRanges();
+                  }}
+                  className="px-4 py-2 rounded-xl bg-gray-50 dark:bg-white/[0.04] hover:bg-gray-100 dark:hover:bg-white/[0.08] text-gray-600 dark:text-gray-300 text-sm font-medium border border-gray-200 dark:border-white/10 transition-all duration-150"
+                >
+                  Отмена
+                </button>
               </div>
             </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Комментарий (необязательно):
-              </label>
-              <textarea
-                value={annotationNote}
-                onChange={(e) => setAnnotationNote(e.target.value)}
-                placeholder="Напишите заметку к аннотации..."
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-dark-base-600 rounded-lg bg-white dark:bg-dark-base-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-500 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none text-sm"
-              />
-            </div>
-
-            <div className="flex gap-2">
-              <Button
-                variant="primary"
-                onClick={handleCreateAnnotation}
-                className="flex-1"
-              >
-                ✓ Подчеркнуть
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setShowAnnotationPopup(false);
-                  setSelectedText(null);
-                  setSelectedColor('yellow');
-                  setAnnotationNote('');
-                  window.getSelection()?.removeAllRanges();
-                }}
-              >
-                Отмена
-              </Button>
-            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Toast уведомления */}

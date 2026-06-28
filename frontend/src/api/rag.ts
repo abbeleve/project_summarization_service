@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { ChatMessage, RAGResult } from '../types/transcript';
+import type { ChatMessage, RAGResult, RAGSearchFilters } from '../types/transcript';
 
 export const ragApi = {
   getChatHistory: async (transcriptId: string): Promise<ChatMessage[]> => {
@@ -27,13 +27,29 @@ export const ragApi = {
   searchContext: async (
     query: string,
     excludeTranscriptId?: string,
-    limit: number = 5
+    limit: number = 5,
+    filters?: RAGSearchFilters
   ): Promise<RAGResult[]> => {
-    const response = await apiClient.post<{ results: RAGResult[] }>('/rag/search', {
+    const body: Record<string, unknown> = {
       query,
-      exclude_transcript_id: excludeTranscriptId,
-      limit
-    });
+      limit,
+    };
+    if (excludeTranscriptId) {
+      body.exclude_transcript_id = excludeTranscriptId;
+    }
+    if (filters) {
+      const cleanFilters: Record<string, string> = {};
+      for (const [k, v] of Object.entries(filters)) {
+        if (v !== undefined && v !== null && v !== '') {
+          cleanFilters[k] = v;
+        }
+      }
+      if (Object.keys(cleanFilters).length > 0) {
+        body.filters = cleanFilters;
+      }
+    }
+
+    const response = await apiClient.post<{ results: RAGResult[] }>('/rag/search', body);
     return response.data.results;
   }
 };

@@ -3,7 +3,7 @@ version: '3.8'
 services:
   redis:
     image: redis:7-alpine
-    mem_limit: 256m
+    mem_limit: 512m
     ports:
       - "6379:6379"
     networks:
@@ -17,7 +17,7 @@ services:
 
   redis-commander:
     image: rediscommander/redis-commander:latest
-    mem_limit: 128m
+    mem_limit: 256m
     environment:
       - REDIS_HOSTS=local:redis:6379
     ports:
@@ -51,7 +51,7 @@ services:
 
   api:
     build: ./backend/api
-    mem_limit: 512m
+    mem_limit: 4g
     ports:
       - "8000:8000"
     environment:
@@ -81,7 +81,7 @@ services:
     networks:
       - meeting-network
     restart: on-failure
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     volumes:
       - ./backend/api:/app
   celery-worker-default:
@@ -107,6 +107,7 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL}
       MINIO_ENDPOINT: minio:9000
       AUDIO_BUCKET_NAME: ${AUDIO_BUCKET_NAME:-meeting-recordings}
+      AUDIO_ML_TIMEOUT: ${AUDIO_ML_TIMEOUT:-1200}
       PYTHONUNBUFFERED: "1"
     depends_on:
       postgres:
@@ -117,6 +118,8 @@ services:
         condition: service_started
       audio-ml-whisper:
         condition: service_started
+      onnx-gigaam:
+        condition: service_started
       denoiser:
         condition: service_started
     networks:
@@ -124,18 +127,11 @@ services:
     restart: on-failure
     volumes:
       - ./backend/api:/app
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
   celery-worker-meetings:
     build: ./backend/api
     container_name: celery_worker_meetings
-    mem_limit: 1g
+    mem_limit: 2g
     command: >
       celery -A app.celery_app worker
       --loglevel=info
@@ -219,13 +215,26 @@ services:
     networks:
       - meeting-network
 
+  # pgadmin:
+  #   image: dpage/pgadmin4
+  #   restart: always
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@admin.com}
+  #     PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+  #   depends_on:
+  #     - postgres
+  #   networks:
+  #     - meeting-network
+
   # ========================================================================
   # MINIO - S3-compatible storage for meeting recordings
   # ========================================================================
   minio:
     image: minio/minio:latest
     container_name: minio
-    mem_limit: 1g
+    mem_limit: 2g
     command: server /data --console-address ":9001"
     ports:
       - "9000:9000"   # S3 API
@@ -328,7 +337,7 @@ services:
   audio-ml:
     build:
       context: ./ML/diarization_summarization_service
-    mem_limit: 6g
+    mem_limit: 16g
     ports:
       - "8053:8053"
     volumes:
@@ -348,6 +357,7 @@ services:
       - PYANNOTE_MODEL_PATH=${PYANNOTE_MODEL_PATH}
     depends_on:
       - audio-ml-whisper
+      - onnx-gigaam
     runtime: nvidia
     restart: unless-stopped
     networks:
@@ -418,10 +428,11 @@ services:
     volumes:
       - ./ML/whisper_transcription_service:/app
       - ./ML/whisper_transcription_service/models/faster-whisper-large-v3:/app/models/faster-whisper-large-v3:ro
+      - ./ML/whisper_transcription_service/models/faster-distil-whisper-large-v3-ru:/app/models/faster-distil-whisper-large-v3-ru:ro
     environment:
       - PYTHONUNBUFFERED=1
       - HF_API_KEY=${HF_API_KEY}
-      - WHISPER_MODEL_PATH=/app/models/faster-whisper-large-v3
+      - WHISPER_MODEL_PATH=${WHISPER_MODEL_PATH}
     runtime: nvidia
     restart: unless-stopped
     networks:
@@ -440,6 +451,39 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
+
+  onnx-gigaam:
+    build:
+      context: ./ML/onnx_gigaam_service
+    mem_limit: 8g
+    ports:
+      - "8056:8056"
+    volumes:
+      - ./ML/onnx_gigaam_service/main.py:/app/main.py
+      - ./ML/onnx_gigaam_service/models/gigaam_v3_e2e_rnnt:/app/models/gigaam_v3_e2e_rnnt:ro
+      - ./ML/onnx_gigaam_service/models/gigaam_v3_e2e_ctc:/app/models/gigaam_v3_e2e_ctc:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - GIGAAM_MODEL_PATH=${GIGAAM_MODEL_PATH}
+      - GIGAAM_MODEL_VERSION=v3_e2e_rnnt
+    runtime: nvidia
+    restart: unless-stopped
+    networks:
+      - meeting-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8056/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: uvicorn main:app --host 0.0.0.0 --port 8056
 
   denoiser:
     build:
@@ -465,6 +509,42 @@ services:
               count: 1
               capabilities: [gpu]
     command: uvicorn main:app --host 0.0.0.0 --port 8052
+
+  # ========================================================================
+  # FORCED-ALIGNER - Qwen3-ForcedAligner-0.6B word-level timestamp alignment
+  # ========================================================================
+  # forced-aligner:
+  #   build:
+  #     context: ./ML/forced_aligner_service
+  #   mem_limit: 8g
+  #   ports:
+  #     - "8057:8057"
+  #   volumes:
+  #     - ./ML/forced_aligner_service:/app
+  #     - ./ML/forced_aligner_service/models/qwen3-0.6b:/app/models/qwen3-0.6b:ro
+  #     - ./ML/forced_aligner_service/models/silero-vad:/app/models/silero-vad:ro
+  #   environment:
+  #     - PYTHONUNBUFFERED=1
+  #     - FORCED_ALIGNER_MODEL_PATH=${FORCED_ALIGNER_MODEL_PATH:-/app/models/qwen3-0.6b}
+  #     - SILERO_VAD_MODEL_PATH=${SILERO_VAD_MODEL_PATH:-/app/models/silero-vad/model.onnx}
+  #   runtime: nvidia
+  #   restart: unless-stopped
+  #   networks:
+  #     - meeting-network
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8057/health"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 60s
+  #   command: uvicorn main:app --host 0.0.0.0 --port 8057 --reload
 
 networks:
   meeting-network:

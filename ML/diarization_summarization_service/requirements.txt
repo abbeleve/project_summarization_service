@@ -8,7 +8,6 @@ python-dotenv>=1.0.0
 
 # ===== ML модели =====
 pyannote-audio>=4.0.0
-gigaam @ git+https://github.com/salute-developers/GigaAM.git
 
 # ===== LLM клиенты =====
 openai>=1.0.0
@@ -22,3 +21,4 @@ soundfile>=0.13.1
 tqdm>=4.65.0
 PyYAML>=6.0
 numpy>=1.24.0
+librosa>=0.10.0

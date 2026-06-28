@@ -4,6 +4,8 @@ Celery задачи для обработки аудио.
 import json
 import logging
 import os
+import time
+from datetime import datetime, timezone
 import requests
 from uuid import UUID
 from typing import Dict, Any, Optional, List
@@ -51,6 +53,7 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
     """
     task_id = self.request.id
     logger.info(f"Начало обработки задачи {task_id}")
+    _task_start_time = time.perf_counter()
 
     try:
         # === 1. Транскрибация (вызов audio-ml сервиса) ===
@@ -73,18 +76,26 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
         # Передаём URL в audio-ml — он сам скачает файл из MinIO
         data = {
             "file_url": file_url,
-            "transcribe_model": options.get("transcribe_model", "v3_ctc"),
+            "transcribe_model": options.get("transcribe_model", "v3_e2e_rnnt"),
             "diarization_model": options.get("diarization_model", "pyannote/speaker-diarization-community-1"),
             "diarize_lib": options.get("diarize_lib", "pyannote"),
             "transcribe_lib": options.get("transcribe_lib", "gigaam"),
             "noise_sup_bool": options.get("noise_sup_bool", "false")
         }
 
-        # Вызов audio-ml сервиса
+        # Вызов audio-ml сервиса (выбор пайплайна)
+        pipeline = options.get("pipeline", "whisperx")
+        if pipeline == "standard":
+            ml_url = "http://audio-ml:8053/transcribe/"
+            logger.info(f"[{task_id}] Используется Standard pipeline: {ml_url}")
+        else:
+            ml_url = "http://audio-ml:8053/transcribe_v2/"
+            logger.info(f"[{task_id}] Используется WhisperX pipeline: {ml_url}")
+
         response = requests.post(
-            "http://audio-ml:8053/transcribe/",
+            ml_url,
             data=data,
-            timeout=1200  # 20 минут на транскрибацию
+            timeout=int(os.getenv("AUDIO_ML_TIMEOUT", "1200"))  # секунд на транскрибацию
         )
         
         if response.status_code != 200:
@@ -107,19 +118,30 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
             if enrolled:
                 logger.info(f"[{task_id}] Найдено {len(enrolled)} зарегистрированных голосовых профилей")
 
-                # Скачиваем аудио из MinIO для speaker identification
-                resp = requests.get(file_url, timeout=300)
+                # Скачиваем аудио во временный файл (не в RAM) для speaker identification
+                import tempfile
+                resp = requests.get(file_url, stream=True, timeout=300)
                 resp.raise_for_status()
-                audio_bytes = resp.content
+                tmp_audio = tempfile.NamedTemporaryFile(suffix=".audio", delete=False)
+                tmp_audio_path = tmp_audio.name
+                try:
+                    for chunk in resp.iter_content(chunk_size=8_388_608):
+                        if chunk:
+                            tmp_audio.write(chunk)
+                finally:
+                    tmp_audio.close()
 
-                speaker_label_map = _identify_speakers_by_embedding(
-                    None,  # db не нужен в dry_run
-                    None,  # transcript_id ещё не существует
-                    audio_bytes,
-                    transcript_segments,
-                    enrolled,
-                    dry_run=True,  # только возвращает маппинг, не трогает БД
-                )
+                try:
+                    speaker_label_map = _identify_speakers_by_embedding(
+                        None,  # db не нужен в dry_run
+                        None,  # transcript_id ещё не существует
+                        tmp_audio_path,
+                        transcript_segments,
+                        enrolled,
+                        dry_run=True,  # только возвращает маппинг, не трогает БД
+                    )
+                finally:
+                    os.unlink(tmp_audio_path)
         except Exception as e:
             logger.warning(f"[{task_id}] Speaker identification не удалась (продолжаем): {e}")
 
@@ -173,10 +195,19 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
         # Извлекаем summary данные
         summary_json = summary_result.get("summary", {}) if isinstance(summary_result, dict) else {}
         title = summary_json.get("title", f"Запись от {task_id[:8]}")
+
+        # Если пользователь указал название заранее — используем его, не переопределяем LLM
+        user_title = options.get("meeting_title")
+        logger.info(f"[{task_id}] meeting_title from options: {user_title!r}")
+        if user_title and user_title.strip():
+            title = user_title.strip()
+            logger.info(f"[{task_id}] Title overridden by user: {title}")
+
         summary_text = summary_json.get("summary", "")
         key_points = summary_json.get("key_points", [])
         meeting_type = summary_json.get("meeting_type", "Не определено")
-        
+        tasks = summary_json.get("tasks", [])
+
         # Вставляем транскрипцию
         transcript_id = db.insert_transcripts(
             text=original_text,
@@ -193,22 +224,38 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
             text = segment.get("Text", "")
             start = segment.get("start", segment.get("start_time", 0))
             end = segment.get("stop", segment.get("end_time", 0))
-            
+
+            start_ms = int(start * 1000)
+            end_ms = int(end * 1000)
+            if start_ms >= end_ms:
+                logger.debug(f"Пропуск сегмента с нулевой длительностью: "
+                             f"{speaker}: {text} ({start_ms}ms)")
+                continue
+
             db.insert_parts_transcription(
                 transcript_id=transcript_id,
                 text=f"{speaker}: {text}",
-                start_time=int(start * 1000),
-                end_time=int(end * 1000)
+                start_time=start_ms,
+                end_time=end_ms
             )
         
         # Вставляем суммаризацию
+        summary_id = None
         if summary_text:
-            db.insert_summaries(
+            summary_id = db.insert_summaries(
                 transcript_id=transcript_id,
                 text=summary_text,
                 key_points=key_points,
-                meeting_type=meeting_type
+                meeting_type=meeting_type,
             )
+
+        # Вставляем отдельные записи в MeetingTasks (по одной на задачу)
+        if summary_id and tasks:
+            inserted = db.bulk_insert_meeting_tasks(
+                summary_id=summary_id,
+                tasks_data=tasks,
+            )
+            logger.info(f"[{task_id}] Вставлено {inserted} задач в MeetingTasks")
         
         # Сохраняем recording_url если передан (для плеера на фронтенде)
         recording_url = options.get("recording_url")
@@ -231,7 +278,8 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
                 "id": transcript_id,
                 "title": title,
                 "meeting_type": meeting_type,
-                "employee_id": user_id  # Добавляем employee_id для RAG фильтрации
+                "employee_id": user_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
             
             # Функция split_into_chunks (нужно импортировать или скопировать)
@@ -241,7 +289,7 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
                 requests.post(
                     "http://rag-service:8055/index",
                     json={"chunks": chunks},
-                    timeout=30
+                    timeout=120  # sentence-aware chunking + embedding может быть долгим
                 )
                 logger.info(f"[{task_id}] RAG индексирование завершено")
         except Exception as e:
@@ -267,6 +315,34 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
                 logger.warning(f"[{task_id}] Не удалось удалить scheduled_meeting: {e}")
 
         # === 8. Завершение ===
+        # Удаляем WAV из MinIO — фронтенду он не нужен, только MP3
+        wav_key = options.get("audio_key")
+        if wav_key:
+            try:
+                from app.db_service.minio_client import MinioClient
+                minio_cli = MinioClient()
+                minio_cli.delete_audio(wav_key)
+                logger.info(f"[{task_id}] WAV удалён из MinIO: {wav_key}")
+            except Exception as e:
+                logger.warning(f"[{task_id}] Не удалось удалить WAV из MinIO: {e}")
+
+        # === 9. Сохраняем метрики обработки для аналитики ===
+        _total_duration_ms = int((time.perf_counter() - _task_start_time) * 1000)
+        try:
+            db.insert_processing_metrics(
+                transcript_id=transcript_id,
+                user_id=user_id,
+                audio_duration_sec=float(ml_result.get("duration", 0.0)),
+                transcribe_lib=options.get("transcribe_lib", "gigaam"),
+                transcribe_model=options.get("transcribe_model"),
+                processing_duration_ms=_total_duration_ms,
+                diarize_lib=options.get("diarize_lib"),
+                noise_suppression=options.get("noise_sup_bool") == "true",
+            )
+            logger.info(f"[{task_id}] Метрики обработки сохранены")
+        except Exception as e:
+            logger.warning(f"[{task_id}] Не удалось сохранить метрики: {e}")
+
         logger.info(f"[{task_id}] Задача завершена успешно")
         update_task_status(task_id, "completed", {
             "step": "completed",
@@ -284,6 +360,17 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
     except Exception as exc:
         # === Обработка ошибок ===
         logger.error(f"[{task_id}] Ошибка обработки: {exc}")
+
+        # Удаляем WAV из MinIO при ошибке (чтобы не засорять)
+        wav_key = options.get("audio_key")
+        if wav_key:
+            try:
+                from app.db_service.minio_client import MinioClient
+                minio_cli = MinioClient()
+                minio_cli.delete_audio(wav_key)
+                logger.info(f"[{task_id}] WAV удалён из MinIO (ошибка): {wav_key}")
+            except Exception:
+                pass
 
         # Удаляем запись из scheduled_meetings при ошибке
         meeting_id = options.get("meeting_id")
@@ -303,69 +390,37 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
         raise self.retry(exc=exc, countdown=60 * (2 ** (self.request.retries or 0)))
 
 
-def split_into_chunks(parts: list, transcript_meta: dict, max_length: int = 500) -> list:
+def split_into_chunks(parts: list, transcript_meta: dict) -> list:
     """
     Разбивает транскрипцию на чанки для RAG индексирования.
+    Каждый PartTranscription — 1 чанк. Sentence-aware чанкинг делает RAG-сервис.
 
     Args:
         parts: Список частей транскрипции из БД
-        transcript_meta: Метаданные транскрипции (включая employee_id)
-        max_length: Максимальная длина чанка
+        transcript_meta: Метаданные транскрипции (включая employee_id, created_at)
 
     Returns:
         Список чанков
     """
     chunks = []
+    created_at = transcript_meta.get("created_at", "")
 
     for part in parts:
         text = part.get("text", "")
+        if not text or not text.strip():
+            continue
 
-        # Разбиваем текст на чанки если он слишком длинный
-        if len(text) > max_length:
-            words = text.split()
-            current_chunk = []
-            current_length = 0
-
-            for word in words:
-                current_chunk.append(word)
-                current_length += len(word) + 1
-
-                if current_length >= max_length:
-                    chunks.append({
-                        "text": " ".join(current_chunk),
-                        "transcript_id": str(transcript_meta["id"]),
-                        "employee_id": str(transcript_meta["employee_id"]),
-                        "speaker": part.get("speaker", "UNKNOWN"),
-                        "start_time": part.get("start_time", 0) / 1000.0,
-                        "end_time": part.get("end_time", 0) / 1000.0,
-                        "meeting_type": transcript_meta.get("meeting_type"),
-                        "title": transcript_meta.get("title")
-                    })
-                    current_chunk = []
-                    current_length = 0
-
-            if current_chunk:
-                chunks.append({
-                    "text": " ".join(current_chunk),
-                    "transcript_id": str(transcript_meta["id"]),
-                    "employee_id": str(transcript_meta["employee_id"]),
-                    "speaker": part.get("speaker", "UNKNOWN"),
-                    "start_time": part.get("start_time", 0) / 1000.0,
-                    "end_time": part.get("end_time", 0) / 1000.0,
-                    "meeting_type": transcript_meta.get("meeting_type"),
-                    "title": transcript_meta.get("title")
-                })
-        else:
-            chunks.append({
-                "text": text,
-                "transcript_id": str(transcript_meta["id"]),
-                "employee_id": str(transcript_meta["employee_id"]),
-                "speaker": part.get("speaker", "UNKNOWN"),
-                "start_time": part.get("start_time", 0) / 1000.0,
-                "end_time": part.get("end_time", 0) / 1000.0,
-                "meeting_type": transcript_meta.get("meeting_type"),
-                "title": transcript_meta.get("title")
-            })
+        chunks.append({
+            "text": text.strip(),
+            "transcript_id": str(transcript_meta["id"]),
+            "employee_id": str(transcript_meta["employee_id"]),
+            "speaker": part.get("speaker", "UNKNOWN"),
+            "start_time": part.get("start_time", 0) / 1000.0,
+            "end_time": part.get("end_time", 0) / 1000.0,
+            "meeting_type": transcript_meta.get("meeting_type", ""),
+            "title": transcript_meta.get("title", ""),
+            "created_at": created_at,
+        })
 
     return chunks
 
@@ -424,7 +479,7 @@ def _apply_speaker_labels_to_parts(
 def _identify_speakers_by_embedding(
     db: DataBaseManager,
     transcript_id: UUID,
-    file_bytes: bytes,
+    audio_path: str,
     transcript_segments: List[Dict[str, Any]],
     enrolled: List[Dict[str, Any]],
     dry_run: bool = False,
@@ -433,14 +488,15 @@ def _identify_speakers_by_embedding(
     Identify speakers by comparing voice embeddings against Qdrant profiles.
 
     Для каждого уникального SPEAKER_XX:
-      1. Вырезать до 30 секунд его аудио по таймингам из оригинального файла
+      1. Вырезать до 60 секунд его аудио через ffmpeg (pipe, без загрузки всего файла)
       2. Извлечь ECAPA-TDNN эмбеддинг
-      3. Найти ближайший profile в Qdrant (cosine similarity, threshold 0.6)
+      3. Найти ближайший profile в Qdrant (cosine similarity, threshold 0.5)
       4. Если найден — обновить все части транскрипции с этим спикером
 
     Если dry_run=True — только возвращает маппинг SPEAKER_XX → полное имя,
     не трогает БД.
     """
+    import subprocess
     from collections import defaultdict
 
     # Группируем тайминги по спикеру
@@ -455,16 +511,6 @@ def _identify_speakers_by_embedding(
     if not speaker_timestamps:
         return {}
 
-    # Загружаем оригинальное аудио через pydub (WebM/MP3 и т.д. — ffmpeg в контейнере есть)
-    try:
-        from pydub import AudioSegment
-        import io as io_module
-        with io_module.BytesIO(file_bytes) as buf:
-            full_audio = AudioSegment.from_file(buf)
-    except Exception as e:
-        logger.warning(f"Cannot load audio for speaker identification: {e}")
-        return {}
-
     # Импортируем voice-модули (могут отсутствовать в тестовом окружении)
     try:
         from app.voice.speaker_identification import extract_embedding_from_wav_bytes
@@ -473,48 +519,115 @@ def _identify_speakers_by_embedding(
         logger.warning(f"Voice modules not available: {e}")
         return {}
 
-    MAX_SECONDS = 30
+    MAX_SECONDS = 60
     label_to_name = {}
+    unique_tag = os.urandom(4).hex()
 
     for speaker_label, timestamps in speaker_timestamps.items():
-        # Склеиваем сегменты этого спикера, но не дольше MAX_SECONDS
-        speaker_audio = None
-        total_ms = 0
-        max_ms = MAX_SECONDS * 1000
-
+        # Берём до MAX_SECONDS аудио из сегментов этого спикера
+        cut_points = []
+        needed = 0.0
         for start_sec, end_sec in timestamps:
-            if total_ms >= max_ms:
+            dur = end_sec - start_sec
+            take = min(dur, MAX_SECONDS - needed)
+            if take <= 0:
                 break
-            start_ms = int(start_sec * 1000)
-            end_ms = int(end_sec * 1000)
-            seg = full_audio[start_ms:end_ms]
-            if speaker_audio is None:
-                speaker_audio = seg
+            cut_points.append((start_sec, take))
+            needed += take
+
+        if not cut_points:
+            continue
+
+        try:
+            wav_bytes: Optional[bytes] = None
+
+            if len(cut_points) == 1:
+                # Один сегмент — ffmpeg pipe без временных файлов
+                start_sec, dur = cut_points[0]
+                cmd = [
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-ss", f"{start_sec:.3f}",
+                    "-i", audio_path,
+                    "-t", f"{dur:.3f}",
+                    "-acodec", "pcm_s16le",
+                    "-ar", "16000",
+                    "-ac", "1",
+                    "-f", "wav",
+                    "pipe:1",
+                ]
+                proc = subprocess.run(cmd, capture_output=True, timeout=120)
+                proc.check_returncode()
+                wav_bytes = proc.stdout
             else:
-                speaker_audio = speaker_audio + seg
-            total_ms += len(seg)
+                # Несколько сегментов — вырезаем каждый и склеиваем через ffmpeg concat
+                part_paths = []
+                for idx, (ss, sd) in enumerate(cut_points):
+                    pp = f"/tmp/_spk_{speaker_label}_{unique_tag}_p{idx}.wav"
+                    subprocess.run([
+                        "ffmpeg", "-y", "-loglevel", "error",
+                        "-ss", f"{ss:.3f}",
+                        "-i", audio_path,
+                        "-t", f"{sd:.3f}",
+                        "-acodec", "pcm_s16le",
+                        "-ar", "16000",
+                        "-ac", "1",
+                        "-f", "wav",
+                        pp,
+                    ], capture_output=True, check=True, timeout=120)
+                    part_paths.append(pp)
 
-        if speaker_audio is None or len(speaker_audio) < 1000:
-            logger.debug(f"{speaker_label}: too short ({len(speaker_audio)//1000}s), skip")
+                # Concat demuxer
+                list_path = f"/tmp/_spk_{speaker_label}_{unique_tag}_list.txt"
+                with open(list_path, "w") as f:
+                    for pp in part_paths:
+                        f.write(f"file '{pp}'\n")
+
+                out_path = f"/tmp/_spk_{speaker_label}_{unique_tag}_merged.wav"
+                subprocess.run([
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-f", "concat",
+                    "-safe", "0",
+                    "-i", list_path,
+                    "-c", "copy",
+                    "-f", "wav",
+                    out_path,
+                ], capture_output=True, check=True, timeout=120)
+
+                with open(out_path, "rb") as f:
+                    wav_bytes = f.read()
+
+                # Cleanup temp files
+                for pp in part_paths:
+                    os.unlink(pp)
+                os.unlink(list_path)
+                os.unlink(out_path)
+
+            if wav_bytes is None or len(wav_bytes) < 16000:  # < 1 секунды
+                logger.debug(f"{speaker_label}: too short ({len(wav_bytes)} bytes), skip")
+                continue
+
+            # Извлекаем эмбеддинг
+            embedding = extract_embedding_from_wav_bytes(wav_bytes)
+            if embedding is None:
+                logger.debug(f"{speaker_label}: embedding extraction failed, skip")
+                continue
+
+            # Ищем в Qdrant
+            result = search_speaker(embedding=embedding, threshold=0.5)
+            if result:
+                user_id, full_name, score = result
+                label_to_name[speaker_label] = {"name": full_name, "user_id": user_id}
+                logger.info(f"{speaker_label} → {full_name} (score: {score:.4f})")
+
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"{speaker_label}: ffmpeg error: {e.stderr.decode(errors='replace')[:200]}")
             continue
-
-        # Экспортируем в WAV bytes
-        with io_module.BytesIO() as buf:
-            speaker_audio.export(buf, format="wav")
-            wav_bytes = buf.getvalue()
-
-        # Извлекаем эмбеддинг
-        embedding = extract_embedding_from_wav_bytes(wav_bytes)
-        if embedding is None:
-            logger.debug(f"{speaker_label}: embedding extraction failed, skip")
+        except subprocess.TimeoutExpired:
+            logger.warning(f"{speaker_label}: ffmpeg timeout")
             continue
-
-        # Ищем в Qdrant
-        result = search_speaker(embedding=embedding, threshold=0.6)
-        if result:
-            user_id, full_name, score = result
-            label_to_name[speaker_label] = {"name": full_name, "user_id": user_id}
-            logger.info(f"{speaker_label} → {full_name} (score: {score:.4f})")
+        except Exception as e:
+            logger.warning(f"{speaker_label}: processing error: {e}")
+            continue
 
     # Строим плоский маппинг SPEAKER_XX → полное имя
     name_map: Dict[str, str] = {}

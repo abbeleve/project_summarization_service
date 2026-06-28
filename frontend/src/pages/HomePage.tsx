@@ -6,6 +6,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { getSpeakerColor } from '@/utils/speakerColors';
 
 const RECENT_LIMIT = 9;
 
@@ -67,6 +68,16 @@ export const HomePage = () => {
     }
   });
 
+  // Множество ID транскрипций, которые пользователь уже открыл
+  const [viewedIds, setViewedIds] = useState<Set<string>>(() => {
+    try {
+      const raw = sessionStorage.getItem('viewedTranscriptIds');
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
   const { transcripts, isLoading, error, refetch } = useTranscripts({
     limit: RECENT_LIMIT,
     offset: 0,
@@ -90,8 +101,16 @@ export const HomePage = () => {
     const tid = latest.result!.transcript_id;
 
     if (tid !== freshTranscriptId) {
+      // Новая транскрипция — убираем её из просмотренных, чтобы показать бадж
       setFreshTranscriptId(tid);
       sessionStorage.setItem('freshTranscriptId', tid);
+      setViewedIds(prev => {
+        if (!prev.has(tid)) return prev;
+        const next = new Set(prev);
+        next.delete(tid);
+        sessionStorage.setItem('viewedTranscriptIds', JSON.stringify([...next]));
+        return next;
+      });
       refetch(); // перезапрашиваем список транскрипций
     }
   }, [completedWithResult, refetch]);
@@ -234,11 +253,21 @@ export const HomePage = () => {
 
           {/* Тайлы транскрипций */}
           {items.slice(0, regularLimit).map((tr) => {
-            const isFresh = tr.transcript_id === freshTranscriptId;
+            const isFresh = tr.transcript_id === freshTranscriptId && !viewedIds.has(tr.transcript_id);
             return (
               <button
                 key={tr.transcript_id}
-                onClick={() => navigate(`/analysis/${tr.transcript_id}`)}
+                onClick={() => {
+                  // Помечаем транскрипцию как просмотренную (убираем бадж "Только что")
+                  setViewedIds(prev => {
+                    if (prev.has(tr.transcript_id)) return prev;
+                    const next = new Set(prev);
+                    next.add(tr.transcript_id);
+                    sessionStorage.setItem('viewedTranscriptIds', JSON.stringify([...next]));
+                    return next;
+                  });
+                  navigate(`/analysis/${tr.transcript_id}`);
+                }}
                 className={`group relative rounded-2xl border-2 p-6 text-left hover:shadow-xl hover:-translate-y-1 transition-all duration-300 w-full flex flex-col min-h-[200px] ${
                   isFresh
                     ? 'bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-green-400 dark:border-green-600 shadow-lg shadow-green-200/50 dark:shadow-green-900/30'
@@ -285,9 +314,29 @@ export const HomePage = () => {
 
                 {/* Speakers row */}
                 {(tr.speakers?.length ?? 0) > 0 && (
-                  <div className="flex items-center gap-1.5 mt-4 pt-4 border-t border-gray-100 dark:border-dark-base-700 text-sm text-gray-400 dark:text-gray-500">
+                  <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100 dark:border-dark-base-700 text-sm text-gray-400 dark:text-gray-500">
                     <span>🗣️</span>
-                    <span>{tr.speakers?.length || 0} спикер{(tr.speakers?.length ?? 0) > 1 ? 'а' : ''}</span>
+                    <div className="flex items-center -space-x-2">
+                      {tr.speakers!.slice(0, 3).map((sp, idx) => {
+                        const palette = getSpeakerColor(sp);
+                        const initials = sp.replace('SPEAKER_', '').replace(/[^a-zA-Zа-яА-ЯёЁ0-9]/g, '').slice(0, 2).toUpperCase() || '?';
+                        return (
+                          <div
+                            key={`${sp}-${idx}`}
+                            className={`w-6 h-6 rounded-full ${palette.bg} ring-2 ring-white dark:ring-dark-base-800 flex items-center justify-center text-[10px] font-bold text-white shadow-sm`}
+                            title={sp}
+                          >
+                            {initials}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {(tr.speakers?.length ?? 0) > 3 && (
+                      <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-dark-base-700 ring-2 ring-white dark:ring-dark-base-800 flex items-center justify-center text-[10px] font-semibold text-gray-600 dark:text-gray-300 shadow-sm">
+                        +{tr.speakers!.length - 3}
+                      </div>
+                    )}
+                    <span className="ml-1">{tr.speakers?.length || 0} спикер{(tr.speakers?.length ?? 0) > 1 ? 'а' : ''}</span>
                   </div>
                 )}
 

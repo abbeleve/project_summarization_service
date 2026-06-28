@@ -5,12 +5,37 @@ from sqlalchemy import create_engine, String, Text, ForeignKey, CheckConstraint,
 from sqlalchemy.dialects.postgresql import UUID as UUIDType, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import bcrypt
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Шифрование чувствительных данных (API токены и т.п.)
+try:
+    from cryptography.fernet import Fernet
+    _CRYPTO_KEY = os.getenv("CRM_ENCRYPTION_KEY")
+    if _CRYPTO_KEY:
+        _CIPHER = Fernet(_CRYPTO_KEY.encode() if isinstance(_CRYPTO_KEY, str) else _CRYPTO_KEY)
+    else:
+        _CIPHER = None
+except ImportError:
+    _CIPHER = None
+
+
+def encrypt_token(plain_token: str) -> str:
+    """Шифрует API токен. Без ключа возвращает как есть (fallback)."""
+    if _CIPHER is None:
+        return plain_token
+    return _CIPHER.encrypt(plain_token.encode()).decode()
+
+
+def decrypt_token(encrypted_token: str) -> str:
+    """Расшифровывает API токен. Без ключа возвращает как есть."""
+    if _CIPHER is None:
+        return encrypted_token
+    return _CIPHER.decrypt(encrypted_token.encode()).decode()
 
 class Base(DeclarativeBase):
     __abstract__ = True
@@ -31,10 +56,21 @@ class Staff(Base):
     email: Mapped[str] = mapped_column(String(70), unique=True)
     login: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
     password: Mapped[str] = mapped_column(String(100), nullable=False)
+    role: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="user",
+        comment="Роль пользователя: user или admin"
+    )
     avatar_key: Mapped[Optional[str]] = mapped_column(
         String(255),
         nullable=True,
         comment="Ключ объекта в MinIO (avatars/{user_id})"
+    )
+    weeek_api_token: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Зашифрованный API токен Weeek для интеграции CRM"
     )
 
     celery_tasks: Mapped[List["CeleryTask"]] = relationship(
@@ -60,7 +96,9 @@ class Staff(Base):
             'patronymic': self.patronymic,
             'email': self.email,
             'login': self.login,
-            'avatar_key': self.avatar_key
+            'role': self.role,
+            'avatar_key': self.avatar_key,
+            # weeek_api_token НЕ включён — never expose via API
         }
 
 
@@ -305,13 +343,79 @@ class Summary(Base):
         "Transcript",
         back_populates="summaries"
     )
+    meeting_tasks: Mapped[List["MeetingTask"]] = relationship(
+        "MeetingTask",
+        back_populates="summary",
+        cascade="all, delete-orphan"
+    )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': str(self.id),
             'transcript_id': str(self.transcript_id),
             'text': self.text,
-            'key_points': self.key_points if self.key_points else []
+            'key_points': self.key_points if self.key_points else [],
+        }
+
+
+class MeetingTask(Base):
+    """
+    Индивидуальная задача (action item) из совещания.
+    Каждая задача имеет свой статус отправки в CRM.
+    """
+    __tablename__ = 'MeetingTasks'
+
+    summary_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Summaries.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    assignee: Mapped[str] = mapped_column(
+        Text, nullable=False, default="",
+        comment="Ответственный (может быть отредактирован пользователем)"
+    )
+    deadline: Mapped[str] = mapped_column(
+        Text, nullable=False, default="",
+        comment="Дедлайн (может быть отредактирован пользователем)"
+    )
+    sent_to_crm: Mapped[bool] = mapped_column(
+        nullable=False, default=False,
+        comment="Отправлено ли в CRM"
+    )
+    sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Время отправки в CRM"
+    )
+    crm_task_id: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="ID задачи в Weeek (ответ от CRM)"
+    )
+    created_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    summary: Mapped["Summary"] = relationship(
+        "Summary",
+        back_populates="meeting_tasks"
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'summary_id': str(self.summary_id),
+            'description': self.description,
+            'assignee': self.assignee,
+            'deadline': self.deadline,
+            'sent_to_crm': self.sent_to_crm,
+            'sent_at': self.sent_at.isoformat() if self.sent_at else None,
+            'crm_task_id': self.crm_task_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -377,7 +481,7 @@ class ScheduledMeeting(Base):
     transcribe_model: Mapped[Optional[str]] = mapped_column(
         String(50),
         nullable=True,
-        default="v3_ctc"
+        default="v3_e2e_rnnt"
     )
     diarization_model: Mapped[Optional[str]] = mapped_column(
         String(100),
@@ -402,6 +506,11 @@ class ScheduledMeeting(Base):
     noise_suppression: Mapped[Optional[bool]] = mapped_column(
         nullable=True,
         default=False
+    )
+    pipeline: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        default="whisperx"
     )
     error: Mapped[Optional[str]] = mapped_column(
         Text,
@@ -443,9 +552,97 @@ class ScheduledMeeting(Base):
             'transcribe_lib': self.transcribe_lib,
             'llm_model': self.llm_model,
             'noise_suppression': self.noise_suppression,
+            'pipeline': self.pipeline,
             'error': self.error,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat()
+        }
+
+
+class ProcessingMetrics(Base):
+    """
+    Модель для хранения метрик обработки аудиофайлов (аналитика).
+
+    Собирается после каждого вызова ASR (whisper или gigaam)
+    для последующей агрегации в админ-панели.
+    """
+    __tablename__ = 'ProcessingMetrics'
+
+    transcript_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Transcripts.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+        comment="ID транскрипции"
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey('Staff.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+        comment="ID пользователя, запустившего обработку"
+    )
+    audio_duration_sec: Mapped[float] = mapped_column(
+        nullable=False,
+        comment="Длительность аудиофайла в секундах"
+    )
+    transcribe_lib: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        comment="whisper или gigaam"
+    )
+    transcribe_model: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Модель ASR, например v3_e2e_rnnt, base, large-v3"
+    )
+    processing_duration_ms: Mapped[int] = mapped_column(
+        nullable=False,
+        comment="Время выполнения ASR в миллисекундах (ntp-скорректированное)"
+    )
+    diarize_lib: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Библиотека диаризации, например pyannote"
+    )
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(
+        nullable=True,
+        comment="Размер аудиофайла в байтах"
+    )
+    noise_suppression: Mapped[Optional[bool]] = mapped_column(
+        nullable=True,
+        comment="Было ли применено шумоподавление"
+    )
+    created_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+        comment="Время создания записи метрики"
+    )
+
+    transcript: Mapped["Transcript"] = relationship(
+        "Transcript",
+        foreign_keys=[transcript_id]
+    )
+    user: Mapped["Staff"] = relationship(
+        "Staff",
+        foreign_keys=[user_id]
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': str(self.id),
+            'transcript_id': str(self.transcript_id),
+            'user_id': str(self.user_id),
+            'audio_duration_sec': self.audio_duration_sec,
+            'transcribe_lib': self.transcribe_lib,
+            'transcribe_model': self.transcribe_model,
+            'processing_duration_ms': self.processing_duration_ms,
+            'diarize_lib': self.diarize_lib,
+            'file_size_bytes': self.file_size_bytes,
+            'noise_suppression': self.noise_suppression,
+            'created_at': self.created_at.isoformat()
         }
 
 
@@ -561,7 +758,8 @@ class DataBaseManager:
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
     def insert_staff(self, surname: str, name: str, patronymic: Optional[str],
-                     email: str, login: str, password: str) -> Optional[UUID]:
+                     email: str, login: str, password: str,
+                     role: str = "user") -> Optional[UUID]:
         with self.session_scope() as session:
             try:
                 hashed_password = self.hash_password(password)
@@ -571,7 +769,8 @@ class DataBaseManager:
                     patronymic=patronymic,
                     email=email,
                     login=login,
-                    password=hashed_password
+                    password=hashed_password,
+                    role=role
                 )
                 session.add(staff)
                 session.flush()
@@ -1009,7 +1208,7 @@ class DataBaseManager:
 
     def insert_summaries(self,
                         transcript_id: UUID,
-                        text: str, 
+                        text: str,
                         key_points: Optional[List[str]] = None,
                         meeting_type: Optional[str] = None) -> Optional[UUID]:
         with self.session_scope() as session:
@@ -1022,7 +1221,7 @@ class DataBaseManager:
                     transcript_id=transcript_id,
                     text=text,
                     key_points=key_points or [],
-                    meeting_type=meeting_type
+                    meeting_type=meeting_type,
                 )
                 session.add(summary)
                 session.flush()
@@ -1063,9 +1262,8 @@ class DataBaseManager:
                         'transcript_id': str(summary.transcript_id),
                         'text': summary.text,
                         'key_points': summary.key_points if summary.key_points else [],
-                        'meeting_type': summary.meeting_type
+                        'meeting_type': summary.meeting_type,
                     }
-                return None
             except SQLAlchemyError as e:
                 print(f"Ошибка при получении резюме: {e}")
                 return None
@@ -1098,7 +1296,153 @@ class DataBaseManager:
             except SQLAlchemyError as e:
                 print(f"Ошибка при удалении резюме: {e}")
                 return False
-            
+
+    # ===== MeetingTask (задачи для CRM) =====
+
+    def bulk_insert_meeting_tasks(
+        self,
+        summary_id: UUID,
+        tasks_data: List[Dict[str, str]],
+    ) -> int:
+        """
+        Массовая вставка задач в MeetingTasks.
+
+        Args:
+            summary_id: ID суммаризации
+            tasks_data: список {description, assignee, deadline}
+
+        Returns:
+            Количество вставленных задач
+        """
+        count = 0
+        with self.session_scope() as session:
+            try:
+                summary = session.get(Summary, summary_id)
+                if not summary:
+                    return 0
+
+                for task in tasks_data:
+                    mt = MeetingTask(
+                        summary_id=summary_id,
+                        description=task.get("description", ""),
+                        assignee=task.get("assignee", ""),
+                        deadline=task.get("deadline", ""),
+                    )
+                    session.add(mt)
+                    count += 1
+
+                session.flush()
+                return count
+            except SQLAlchemyError as e:
+                print(f"Ошибка при массовой вставке задач: {e}")
+                return 0
+
+    def select_meeting_tasks_by_summary_id(
+        self, summary_id: UUID
+    ) -> List[Dict[str, Any]]:
+        """Возвращает список задач для суммаризации."""
+        with self.session_scope() as session:
+            try:
+                tasks = (
+                    session.query(MeetingTask)
+                    .filter(MeetingTask.summary_id == summary_id)
+                    .order_by(MeetingTask.created_at)
+                    .all()
+                )
+                return [t.to_dict() for t in tasks]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении задач: {e}")
+                return []
+
+    def select_meeting_task_by_id(self, task_id: UUID) -> Optional[Dict[str, Any]]:
+        """Возвращает задачу по ID."""
+        with self.session_scope() as session:
+            try:
+                task = session.get(MeetingTask, task_id)
+                return task.to_dict() if task else None
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении задачи: {e}")
+                return None
+
+    def update_meeting_task(
+        self,
+        task_id: UUID,
+        description: Optional[str] = None,
+        assignee: Optional[str] = None,
+        deadline: Optional[str] = None,
+    ) -> bool:
+        """Обновляет поля задачи (без отправки в CRM)."""
+        with self.session_scope() as session:
+            try:
+                task = session.get(MeetingTask, task_id)
+                if not task:
+                    return False
+                if description is not None:
+                    task.description = description
+                if assignee is not None:
+                    task.assignee = assignee
+                if deadline is not None:
+                    task.deadline = deadline
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при обновлении задачи: {e}")
+                return False
+
+    def mark_meeting_task_sent(
+        self,
+        task_id: UUID,
+        crm_task_id: Optional[str] = None,
+    ) -> bool:
+        """Помечает задачу как отправленную в CRM."""
+        with self.session_scope() as session:
+            try:
+                task = session.get(MeetingTask, task_id)
+                if not task:
+                    return False
+                if task.sent_to_crm:
+                    return True  # уже отправлено
+                task.sent_to_crm = True
+                task.sent_at = datetime.now(timezone.utc)
+                if crm_task_id is not None:
+                    task.crm_task_id = crm_task_id
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при отметке задачи отправленной: {e}")
+                return False
+
+    def delete_meeting_task(self, task_id: UUID) -> bool:
+        """Удаляет задачу из БД."""
+        with self.session_scope() as session:
+            try:
+                task = session.get(MeetingTask, task_id)
+                if not task:
+                    return False
+                session.delete(task)
+                return True
+            except SQLAlchemyError as e:
+                print(f"Ошибка при удалении задачи: {e}")
+                return False
+
+    def select_unsent_meeting_tasks(
+        self, summary_id: UUID
+    ) -> List[Dict[str, Any]]:
+        """Возвращает неотправленные задачи для суммаризации."""
+        with self.session_scope() as session:
+            try:
+                tasks = (
+                    session.query(MeetingTask)
+                    .filter(
+                        MeetingTask.summary_id == summary_id,
+                        MeetingTask.sent_to_crm == False,
+                    )
+                    .order_by(MeetingTask.created_at)
+                    .all()
+                )
+                return [t.to_dict() for t in tasks]
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении неотправленных задач: {e}")
+                return []
+
     def insert_chat_message(self, transcript_id: UUID, employee_id: UUID, role: str, content: str) -> Optional[UUID]:
         with self.session_scope() as session:
             try:
@@ -1285,12 +1629,13 @@ class DataBaseManager:
         scheduled_at: datetime,
         title: Optional[str] = None,
         bot_name: Optional[str] = "Meeting Notetaker",
-        transcribe_model: Optional[str] = "v3_ctc",
+        transcribe_model: Optional[str] = "v3_e2e_rnnt",
         diarization_model: Optional[str] = "pyannote/speaker-diarization-community-1",
         diarize_lib: Optional[str] = "pyannote",
         transcribe_lib: Optional[str] = "gigaam",
         llm_model: Optional[str] = "deepseek/deepseek-v4-flash",
-        noise_suppression: Optional[bool] = False
+        noise_suppression: Optional[bool] = False,
+        pipeline: Optional[str] = "whisperx"
     ) -> Optional[UUID]:
         """
         Создаёт новую запись запланированного совещания.
@@ -1308,6 +1653,7 @@ class DataBaseManager:
             transcribe_lib: Библиотека транскрибации
             llm_model: Модель LLM для суммаризации
             noise_suppression: Использовать шумоподавление
+            pipeline: Пайплайн обработки (whisperx/standard)
 
         Returns:
             ID созданной записи или None
@@ -1327,7 +1673,8 @@ class DataBaseManager:
                     diarize_lib=diarize_lib,
                     transcribe_lib=transcribe_lib,
                     llm_model=llm_model,
-                    noise_suppression=noise_suppression
+                    noise_suppression=noise_suppression,
+                    pipeline=pipeline
                 )
                 session.add(scheduled)
                 session.flush()
@@ -1414,3 +1761,267 @@ class DataBaseManager:
             except SQLAlchemyError as e:
                 print(f"Ошибка при удалении запланированного совещания: {e}")
                 return False
+
+    # ── Processing Metrics ──────────────────────────────────────────
+
+    def insert_processing_metrics(
+        self,
+        transcript_id: UUID,
+        user_id: UUID,
+        audio_duration_sec: float,
+        transcribe_lib: str,
+        processing_duration_ms: int,
+        transcribe_model: Optional[str] = None,
+        diarize_lib: Optional[str] = None,
+        file_size_bytes: Optional[int] = None,
+        noise_suppression: Optional[bool] = None,
+    ) -> Optional[UUID]:
+        """Сохранить метрики обработки аудиофайла."""
+        with self.session_scope() as session:
+            try:
+                metric = ProcessingMetrics(
+                    transcript_id=transcript_id,
+                    user_id=user_id,
+                    audio_duration_sec=audio_duration_sec,
+                    transcribe_lib=transcribe_lib,
+                    transcribe_model=transcribe_model,
+                    processing_duration_ms=processing_duration_ms,
+                    diarize_lib=diarize_lib,
+                    file_size_bytes=file_size_bytes,
+                    noise_suppression=noise_suppression,
+                )
+                session.add(metric)
+                session.flush()
+                return metric.id
+            except SQLAlchemyError as e:
+                print(f"Ошибка при сохранении метрик обработки: {e}")
+                return None
+
+    def get_analytics(self) -> Dict[str, Any]:
+        """
+        Агрегированные данные для админ-панели (аналитика).
+
+        Возвращает:
+          - user_activity: общая/активная статистика по пользователям и транскриптам
+          - asr_performance: среднее время обработки на час аудио (whisper / gigaam)
+          - daily_breakdown: статистика по дням (за последние 30 дней)
+        """
+        with self.session_scope() as session:
+            try:
+                session.execute(text("SET TIME ZONE 'Asia/Irkutsk'"))
+                now = func.now()
+
+                # ── User activity ──
+                total_users = session.query(func.count(Staff.id)).scalar() or 0
+
+                # Активные пользователи (создавшие хотя бы один транскрипт за период)
+                def active_users_since(days: int) -> int:
+                    cutoff = func.now() - text(f"INTERVAL '{days} days'")
+                    return (
+                        session.query(func.count(func.distinct(TranscriptAccess.employee_id)))
+                        .join(Transcript, TranscriptAccess.transcript_id == Transcript.id)
+                        .filter(Transcript.created_at >= cutoff)
+                        .scalar()
+                    ) or 0
+
+                active_users_7d = active_users_since(7)
+                active_users_30d = active_users_since(30)
+
+                total_transcripts = session.query(func.count(Transcript.id)).scalar() or 0
+
+                def transcripts_since(days: int) -> int:
+                    cutoff = func.now() - text(f"INTERVAL '{days} days'")
+                    return (
+                        session.query(func.count(Transcript.id))
+                        .filter(Transcript.created_at >= cutoff)
+                        .scalar()
+                    ) or 0
+
+                transcripts_7d = transcripts_since(7)
+                transcripts_30d = transcripts_since(30)
+
+                # ── ASR performance (per model) ──
+                def asr_stats(lib: str) -> Dict[str, Any]:
+                    rows = (
+                        session.query(
+                            ProcessingMetrics.processing_duration_ms,
+                            ProcessingMetrics.audio_duration_sec,
+                        )
+                        .filter(ProcessingMetrics.transcribe_lib == lib)
+                        .all()
+                    )
+                    count = len(rows)
+                    total_audio_sec = sum(r.audio_duration_sec for r in rows)
+                    total_audio_hours = total_audio_sec / 3600.0 if total_audio_sec else 0.0
+                    # Per-file: processing_duration_ms / (audio_duration_sec / 3600)
+                    # = сколько мс заняла обработка часа этого файла
+                    normalized = [
+                        r.processing_duration_ms / (r.audio_duration_sec / 3600.0)
+                        for r in rows if r.audio_duration_sec > 0
+                    ]
+                    avg_per_hour_ms = sum(normalized) / len(normalized) if normalized else 0.0
+                    return {
+                        "total_processed": count,
+                        "total_audio_hours": round(total_audio_hours, 2),
+                        "avg_processing_time_per_hour_ms": round(avg_per_hour_ms, 2),
+                    }
+
+                whisper_stats = asr_stats("whisper")
+                gigaam_stats = asr_stats("gigaam")
+
+                # ── Daily breakdown (last 30 days) ──
+                cutoff_30d = func.now() - text("INTERVAL '30 days'")
+                daily_rows = (
+                    session.query(
+                        func.date(Transcript.created_at).label("date"),
+                        func.count(func.distinct(TranscriptAccess.employee_id)).label("active_users"),
+                        func.count(Transcript.id).label("transcripts"),
+                    )
+                    .outerjoin(TranscriptAccess, TranscriptAccess.transcript_id == Transcript.id)
+                    .filter(Transcript.created_at >= cutoff_30d)
+                    .group_by(func.date(Transcript.created_at))
+                    .order_by(func.date(Transcript.created_at))
+                    .all()
+                )
+
+                daily_breakdown = [
+                    {
+                        "date": str(row.date),
+                        "active_users": row.active_users,
+                        "transcripts": row.transcripts,
+                    }
+                    for row in daily_rows
+                ]
+
+                # ── Processing breakdowns (hour / day / month) ──
+                # Hourly: last 24 hours (padded to always show 24 slots)
+                cutoff_24h = func.now() - text("INTERVAL '24 hours'")
+                hourly_rows = (
+                    session.query(
+                        func.date_trunc('hour', ProcessingMetrics.created_at).label("bucket"),
+                        func.count(ProcessingMetrics.id).label("processing_count"),
+                    )
+                    .filter(ProcessingMetrics.created_at >= cutoff_24h)
+                    .group_by(func.date_trunc('hour', ProcessingMetrics.created_at))
+                    .order_by(func.date_trunc('hour', ProcessingMetrics.created_at))
+                    .all()
+                )
+                _hour_map = {}
+                for row in hourly_rows:
+                    key = row.bucket.strftime("%Y-%m-%d %H:00") if hasattr(row.bucket, 'strftime') else str(row.bucket)
+                    _hour_map[key] = row.processing_count
+                # Pad to 24 hours
+                _tz_irkt = timezone(timedelta(hours=8))
+                _now_irkt = datetime.now(_tz_irkt).replace(minute=0, second=0, microsecond=0)
+                hourly_processing = []
+                for _i in range(23, -1, -1):  # oldest first
+                    _slot = _now_irkt - timedelta(hours=_i)
+                    _key = _slot.strftime("%Y-%m-%d %H:00")
+                    hourly_processing.append({"hour": _key, "count": _hour_map.get(_key, 0)})
+
+                # Daily (ProcessingMetrics): last 30 days
+                daily_processing_rows = (
+                    session.query(
+                        func.date(ProcessingMetrics.created_at).label("date"),
+                        func.count(ProcessingMetrics.id).label("processing_count"),
+                    )
+                    .filter(ProcessingMetrics.created_at >= cutoff_30d)
+                    .group_by(func.date(ProcessingMetrics.created_at))
+                    .order_by(func.date(ProcessingMetrics.created_at))
+                    .all()
+                )
+                _day_map = {str(r.date): r.processing_count for r in daily_processing_rows}
+                daily_processing = []
+                for _i in range(29, -1, -1):  # oldest first
+                    _slot = (_now_irkt - timedelta(days=_i)).strftime("%Y-%m-%d")
+                    daily_processing.append({"date": _slot, "count": _day_map.get(_slot, 0)})
+
+                # Monthly: last 12 months
+                cutoff_12m = func.now() - text("INTERVAL '12 months'")
+                monthly_rows = (
+                    session.query(
+                        func.date_trunc('month', ProcessingMetrics.created_at).label("bucket"),
+                        func.count(ProcessingMetrics.id).label("processing_count"),
+                    )
+                    .filter(ProcessingMetrics.created_at >= cutoff_12m)
+                    .group_by(func.date_trunc('month', ProcessingMetrics.created_at))
+                    .order_by(func.date_trunc('month', ProcessingMetrics.created_at))
+                    .all()
+                )
+                monthly_processing = [
+                    {"month": row.bucket.strftime("%Y-%m") if hasattr(row.bucket, 'strftime') else str(row.bucket), "count": row.processing_count}
+                    for row in monthly_rows
+                ]
+
+                # ── Weekly: last 12 weeks (3 months) ──
+                cutoff_3m = func.now() - text("INTERVAL '3 months'")
+                weekly_rows = (
+                    session.query(
+                        func.date_trunc('week', ProcessingMetrics.created_at).label("bucket"),
+                        func.count(ProcessingMetrics.id).label("processing_count"),
+                    )
+                    .filter(ProcessingMetrics.created_at >= cutoff_3m)
+                    .group_by(func.date_trunc('week', ProcessingMetrics.created_at))
+                    .order_by(func.date_trunc('week', ProcessingMetrics.created_at))
+                    .all()
+                )
+                weekly_processing = [
+                    {"week": row.bucket.strftime("%Y-%m-%d") if hasattr(row.bucket, 'strftime') else str(row.bucket), "count": row.processing_count}
+                    for row in weekly_rows
+                ]
+
+                # ── Hourly load (0-23, last 7 days) ──
+                cutoff_7d = func.now() - text("INTERVAL '7 days'")
+                load_rows = (
+                    session.query(
+                        func.extract('hour', ProcessingMetrics.created_at).label("hour"),
+                        func.count(ProcessingMetrics.id).label("count"),
+                        func.coalesce(func.avg(ProcessingMetrics.processing_duration_ms), 0).label("avg_ms"),
+                    )
+                    .filter(ProcessingMetrics.created_at >= cutoff_7d)
+                    .group_by(func.extract('hour', ProcessingMetrics.created_at))
+                    .order_by(func.extract('hour', ProcessingMetrics.created_at))
+                    .all()
+                )
+                load_by_hour = {int(r.hour): {"count": r.count, "avg_ms": round(float(r.avg_ms))} for r in load_rows}
+                hourly_load = [
+                    {
+                        "hour": f"{h:02d}:00",
+                        "count": load_by_hour.get(h, {}).get("count", 0),
+                        "avg_ms": load_by_hour.get(h, {}).get("avg_ms", 0),
+                    }
+                    for h in range(24)
+                ]
+
+                return {
+                    "user_activity": {
+                        "total_users": total_users,
+                        "active_users_7d": active_users_7d,
+                        "active_users_30d": active_users_30d,
+                        "total_transcripts": total_transcripts,
+                        "transcripts_7d": transcripts_7d,
+                        "transcripts_30d": transcripts_30d,
+                    },
+                    "asr_performance": {
+                        "whisper": whisper_stats,
+                        "gigaam": gigaam_stats,
+                    },
+                    "daily_breakdown": daily_breakdown,
+                    "hourly_processing": hourly_processing,
+                    "daily_processing": daily_processing,
+                    "weekly_processing": weekly_processing,
+                    "monthly_processing": monthly_processing,
+                    "hourly_load": hourly_load,
+                }
+            except SQLAlchemyError as e:
+                print(f"Ошибка при получении аналитики: {e}")
+                return {
+                    "user_activity": {},
+                    "asr_performance": {},
+                    "daily_breakdown": [],
+                    "hourly_processing": [],
+                    "daily_processing": [],
+                    "weekly_processing": [],
+                    "monthly_processing": [],
+                    "hourly_load": [],
+                }

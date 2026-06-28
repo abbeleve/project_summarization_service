@@ -2,8 +2,9 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, R
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware import Middleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
+import io
 import time
 import os
 import json
@@ -20,7 +21,8 @@ from alembic import command
 
 from .models.models import (
     User, Token, TokenData, LoginRequest, TokenResponse, RegisterRequest,
-    JoinMeetingRequest, ScheduleMeetingRequest, MeetingBotWebhookPayload
+    JoinMeetingRequest, ScheduleMeetingRequest, MeetingBotWebhookPayload,
+    AdminCreateUserRequest, AdminUpdateRoleRequest
 )
 from .db_service.gen_fake_data import gen_fake_data
 from .db_service.database import DataBaseManager
@@ -28,6 +30,8 @@ from .db_service.minio_client import MinioClient
 from .auth_service.jwt import jwt_service
 from .auth_service.middleware import AuthMiddleware
 from .voice.router import router as voice_router
+from .crm.router import router as crm_router
+from .audio_utils import normalize_audio, guess_format
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -60,6 +64,7 @@ async def auth_middleware_wrapper(request: Request, call_next):
 
 # Include routers
 app.include_router(voice_router)
+app.include_router(crm_router)
 
 # Функция для получения БД
 def get_db():
@@ -101,14 +106,13 @@ async def get_current_active_user(current_user: Dict = Depends(get_current_user)
     return current_user
 
 def require_admin(current_user: Dict = Depends(get_current_user)):
-    # TODO: добавить проверку роли когда она будет в БД
+    """Проверка, что пользователь является администратором."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin privileges required."
+        )
     return current_user
-
-# Зависимость для админа (если понадобится)
-def require_admin(request: Request):
-    user = get_current_user(request)
-    # Здесь можно добавить проверку роли
-    return user
 
 # Эндпоинты аутентификации
 @app.post("/auth/login", response_model=TokenResponse)
@@ -136,21 +140,24 @@ async def login(
             )
         
         full_name = f"{user_data['surname']} {user_data['name']}"
-        
+        user_role = user_data.get('role', 'user')
+
         # Создаем access token
         access_token = jwt_service.create_access_token(
             data={
                 "sub": login_data.username,
                 "user_id": str(employee_id),
-                "full_name": full_name
+                "full_name": full_name,
+                "role": user_role
             }
         )
-        
+
         # Создаем refresh token (опционально)
         refresh_token = jwt_service.create_refresh_token(
             data={
                 "sub": login_data.username,
-                "user_id": str(employee_id)
+                "user_id": str(employee_id),
+                "role": user_role
             }
         )
         
@@ -214,7 +221,8 @@ async def register(
             data={
                 "sub": register_data.username,
                 "user_id": str(employee_id),
-                "full_name": f"{register_data.surname} {register_data.name}"
+                "full_name": f"{register_data.surname} {register_data.name}",
+                "role": "user"
             }
         )
 
@@ -222,7 +230,8 @@ async def register(
         refresh_token = jwt_service.create_refresh_token(
             data={
                 "sub": register_data.username,
-                "user_id": str(employee_id)
+                "user_id": str(employee_id),
+                "role": "user"
             }
         )
 
@@ -270,7 +279,8 @@ async def refresh_token(
             data={
                 "sub": payload.get("sub"),
                 "user_id": payload.get("user_id"),
-                "full_name": payload.get("full_name", "")
+                "full_name": payload.get("full_name", ""),
+                "role": payload.get("role", "user")
             }
         )
         
@@ -499,6 +509,8 @@ async def process_audio(
     transcribe_lib: Optional[str] = Form(None),
     llm_model: Optional[str] = Form(None),
     noise_sup_bool: str = Form("false"),
+    pipeline: str = Form("whisperx"),
+    meeting_title: Optional[str] = Form(None),
     current_user: Dict = Depends(get_current_user),
     db: DataBaseManager = Depends(get_db),
     minio: MinioClient = Depends(get_minio)
@@ -514,27 +526,57 @@ async def process_audio(
     print(f"transcribe_model: {transcribe_model}")
 
     try:
-        # Сохраняем аудиофайл в MinIO потоково (без загрузки всего в RAM)
         task_id_for_key = str(uuid4())
-        original_filename = file.filename or f"audio_{task_id_for_key[:8]}.webm"
-        audio_key = f"uploads/{current_user['user_id']}/{task_id_for_key}/{original_filename}"
-        minio.stream_upload_audio(audio_key, file)
+        file_bytes = await file.read()
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail="Empty audio file")
 
-        # Формируем публичный URL для плеера
-        recording_url = minio.get_audio_public_url(audio_key)
-        logger.info(f"Аудио сохранено в MinIO: {recording_url}")
+        original_filename = file.filename or f"audio_{task_id_for_key[:8]}.webm"
+        base = original_filename.rsplit(".", 1)[0] if "." in original_filename else original_filename
+
+        # === Шаг 1: MP3 для плеера на фронтенде ===
+        fmt = guess_format(file_bytes)
+        if fmt == 'mp3':
+            mp3_bytes = file_bytes  # уже MP3 — без перекодировки
+            logger.debug("MP3 original — сохранён как есть")
+        else:
+            # Конвертируем в MP3 16kHz через pydub
+            from pydub import AudioSegment
+            with io.BytesIO(file_bytes) as buf:
+                audio = AudioSegment.from_file(buf, format=fmt or 'webm')
+            audio = audio.set_frame_rate(16000).set_channels(1)
+            with io.BytesIO() as out:
+                audio.export(out, format='mp3', bitrate='64k')
+                mp3_bytes = out.getvalue()
+            del audio  # освободить RAM
+
+        mp3_key = f"uploads/{current_user['user_id']}/{task_id_for_key}/{base}.mp3"
+        minio.upload_audio(mp3_key, mp3_bytes, content_type="audio/mpeg")
+        recording_url = minio.get_audio_public_url(mp3_key)
+        del mp3_bytes  # освободить RAM
+
+        # === Шаг 2: WAV 16kHz для ML-пайплайна ===
+        wav_bytes = normalize_audio(file_bytes, original_filename)
+        wav_key = f"uploads/{current_user['user_id']}/{task_id_for_key}/{base}.wav"
+        minio.upload_audio(wav_key, wav_bytes, content_type="audio/wav")
+        del wav_bytes  # освободить RAM
+
+        logger.info(f"MP3 + WAV загружены в MinIO: {recording_url}")
+        logger.info(f"meeting_title received: {meeting_title!r}")
 
         # Подготовка опций для задачи
         options = {
-            "transcribe_model": transcribe_model or "v3_ctc",
+            "transcribe_model": transcribe_model or "v3_e2e_rnnt",
             "diarization_model": diarization_model or "pyannote/speaker-diarization-community-1",
             "diarize_lib": diarize_lib or "pyannote",
             "transcribe_lib": transcribe_lib or "gigaam",
             "llm_model": llm_model or "deepseek/deepseek-v4-flash",
             "noise_sup_bool": noise_sup_bool,
+            "pipeline": pipeline,
+            "meeting_title": meeting_title,
             "user_id": current_user["user_id"],
-            "recording_url": recording_url,  # Публичный URL для плеера
-            "audio_key": audio_key,         # Ключ в MinIO для скачивания внутри Docker
+            "recording_url": recording_url,  # MP3 URL для плеера
+            "audio_key": wav_key,            # WAV ключ для ML-пайплайна
         }
 
         # Отправка задачи в Celery
@@ -649,7 +691,10 @@ async def get_user_tasks(
         )
 
 def split_into_chunks(parts: List[Dict], transcript_meta: Dict) -> List[Dict]:
+    """Каждая часть → 1 чанк. Sentence-aware чанкинг делает RAG-сервис."""
     chunks = []
+    created_at = transcript_meta.get("created_at", "")
+
     for part in parts:
         # part['text'] имеет формат "SPEAKER_01: текст"
         if ":" in part["text"]:
@@ -665,11 +710,13 @@ def split_into_chunks(parts: List[Dict], transcript_meta: Dict) -> List[Dict]:
         chunks.append({
             "text": text,
             "transcript_id": str(transcript_meta["id"]),
+            "employee_id": str(transcript_meta.get("employee_id", "")),
             "speaker": speaker,
             "start_time": part["start_time"] / 1000.0,
             "end_time": part["end_time"] / 1000.0,
-            "meeting_type": transcript_meta.get("meeting_type"),
-            "title": transcript_meta.get("title")
+            "meeting_type": transcript_meta.get("meeting_type", ""),
+            "title": transcript_meta.get("title", ""),
+            "created_at": created_at,
         })
     return chunks
 
@@ -771,6 +818,77 @@ async def proxy_ask_question(
 
     # 6. Возвращаем ответ фронтенду
     return JSONResponse(content=response_data)
+
+
+class RAGSearchFilters(BaseModel):
+    meeting_type: Optional[str] = None
+    speaker: Optional[str] = None
+    title: Optional[str] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+
+
+class RAGSearchRequest(BaseModel):
+    query: str
+    exclude_transcript_id: Optional[str] = None
+    limit: int = 10
+    filters: Optional[RAGSearchFilters] = None
+
+
+@app.post("/rag/search")
+async def rag_search(
+    req: RAGSearchRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Поиск по всем прошлым совещаниям пользователя.
+    Гибридный поиск (semantic + BM25) с фильтрами.
+
+    Пример:
+    {
+      "query": "бюджет на Q3",
+      "limit": 10,
+      "filters": {
+        "meeting_type": "sprint-planning",
+        "date_from": "2026-06-01",
+        "date_to": "2026-06-30"
+      }
+    }
+    """
+    try:
+        if not req.query.strip():
+            raise HTTPException(status_code=400, detail="Запрос не может быть пустым")
+
+        rag_payload = {
+            "query": req.query.strip(),
+            "employee_id": current_user["user_id"],
+            "limit": min(req.limit, 50),
+        }
+        if req.exclude_transcript_id:
+            rag_payload["exclude_transcript_id"] = req.exclude_transcript_id
+        if req.filters:
+            filters_dict = req.filters.model_dump(exclude_none=True)
+            if filters_dict:
+                rag_payload["filters"] = filters_dict
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            rag_resp = await client.post(
+                "http://rag-service:8055/search",
+                json=rag_payload,
+            )
+            if rag_resp.status_code != 200:
+                raise HTTPException(
+                    status_code=rag_resp.status_code,
+                    detail=f"RAG service error: {rag_resp.text}",
+                )
+            return rag_resp.json()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"RAG search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/apply-noise-suppression")
 async def apply_noise_suppression(file: UploadFile = File(...)):
@@ -918,6 +1036,7 @@ async def search_transcripts(
                 "created_at": row[3].isoformat() if row[3] else None,
                 "summary": summary_data.get('text') if summary_data else None,
                 "key_points": summary_data.get('key_points') if summary_data else None,
+                "tasks": summary_data.get('tasks') if summary_data else None,
                 "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
                 "speakers": list(speakers),
                 "duration": duration,
@@ -1008,6 +1127,7 @@ async def get_user_transcripts(
                 "created_at": transcript_data.get('created_at'),
                 "summary": summary_data.get('text') if summary_data else None,
                 "key_points": summary_data.get('key_points') if summary_data else None,
+                "tasks": summary_data.get('tasks') if summary_data else None,
                 "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
                 "speakers": list(speakers),
                 "duration": duration,
@@ -1069,6 +1189,8 @@ async def get_transcript(
             "parts": parts,
             "summary": summary_data.get('text') if summary_data else None,
             "key_points": summary_data.get('key_points') if summary_data else None,
+            "summary_id": summary_data.get('id') if summary_data else None,
+            "tasks": summary_data.get('tasks') if summary_data else None,
             "meeting_type": summary_data.get('meeting_type') if summary_data else "Не определено",
             "audio_url": audio_url
         }
@@ -1286,24 +1408,303 @@ async def delete_annotation(
 
 @app.get("/admin/users")
 async def get_all_users(
-    current_user: Dict = Depends(get_current_user),
+    _admin: Dict = Depends(require_admin),
     db: DataBaseManager = Depends(get_db)
 ):
+    """Получить список всех пользователей (только для админа)"""
     try:
         users = db.select_staff()
         return [
             {
-                "user_id": user[0],
-                "surname": user[1],
-                "name": user[2],
-                "patronymic": user[3],
-                "email": user[4],
-                "login": user[5]
+                "user_id": user["id"],
+                "username": user["login"],
+                "surname": user["surname"],
+                "name": user["name"],
+                "patronymic": user.get("patronymic", ""),
+                "email": user["email"],
+                "login": user["login"],
+                "role": user.get("role", "user"),
+                "full_name": f"{user['surname']} {user['name']}".strip()
             }
             for user in users
         ]
     except Exception as e:
+        logger.error(f"Error fetching users: {str(e)}")
         raise HTTPException(500, f"Error fetching users: {str(e)}")
+
+
+@app.post("/admin/users")
+async def admin_create_user(
+    user_data: AdminCreateUserRequest,
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Создать пользователя (только для админа)"""
+    try:
+        existing_users = db.select_staff()
+        if any(u['login'] == user_data.username for u in existing_users):
+            raise HTTPException(400, "Пользователь с таким логином уже существует")
+        if any(u['email'] == user_data.email for u in existing_users):
+            raise HTTPException(400, "Пользователь с таким email уже существует")
+
+        employee_id = db.insert_staff(
+            surname=user_data.surname,
+            name=user_data.name,
+            patronymic=user_data.patronymic,
+            email=user_data.email,
+            login=user_data.username,
+            password=user_data.password,
+            role=user_data.role
+        )
+
+        if not employee_id:
+            raise HTTPException(500, "Ошибка при создании пользователя")
+
+        return {
+            "status": "success",
+            "message": "Пользователь создан",
+            "user_id": str(employee_id)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating user: {str(e)}")
+        raise HTTPException(500, f"Ошибка при создании пользователя: {str(e)}")
+
+
+@app.delete("/admin/users/{user_id}")
+async def admin_delete_user(
+    user_id: str,
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Удалить пользователя (только для админа)"""
+    try:
+        from uuid import UUID
+        try:
+            user_uuid = UUID(user_id)
+        except ValueError:
+            raise HTTPException(400, "Некорректный формат ID пользователя")
+
+        user_data = db.select_staff_by_id(user_uuid)
+        if not user_data:
+            raise HTTPException(404, "Пользователь не найден")
+
+        success = db.delete_staff(user_uuid)
+        if not success:
+            raise HTTPException(500, "Ошибка при удалении пользователя")
+
+        return {"status": "success", "message": "Пользователь удалён"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting user: {str(e)}")
+        raise HTTPException(500, f"Ошибка при удалении пользователя: {str(e)}")
+
+
+@app.patch("/admin/users/{user_id}/role")
+async def admin_update_user_role(
+    user_id: str,
+    role_data: AdminUpdateRoleRequest,
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Изменить роль пользователя (только для админа)"""
+    try:
+        from uuid import UUID
+        try:
+            user_uuid = UUID(user_id)
+        except ValueError:
+            raise HTTPException(400, "Некорректный формат ID пользователя")
+
+        user_data = db.select_staff_by_id(user_uuid)
+        if not user_data:
+            raise HTTPException(404, "Пользователь не найден")
+
+        success = db.update_staff(user_uuid, role=role_data.role)
+        if not success:
+            raise HTTPException(500, "Ошибка при обновлении роли")
+
+        return {"status": "success", "message": "Роль обновлена"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating user role: {str(e)}")
+        raise HTTPException(500, f"Ошибка при обновлении роли: {str(e)}")
+
+
+@app.get("/admin/stats")
+async def admin_get_stats(
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Получить статистику (только для админа)"""
+    try:
+        users = db.select_staff()
+        transcripts = db.select_transcripts()
+
+        total_duration = 0.0
+        for t in transcripts:
+            parts = db.select_parts_transcription_by_transcript_id(UUID(t['id']))
+            if parts:
+                min_start = min(p.get("start_time", 0) for p in parts)
+                max_end = max(p.get("end_time", 0) for p in parts)
+                total_duration += (max_end - min_start) / 1000.0
+
+        return {
+            "total_users": len(users),
+            "total_transcripts": len(transcripts),
+            "total_duration": round(total_duration, 2)
+        }
+    except Exception as e:
+        logger.error(f"Error fetching stats: {str(e)}")
+        raise HTTPException(500, f"Ошибка получения статистики: {str(e)}")
+
+
+@app.get("/admin/analytics")
+async def admin_get_analytics(
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Получить расширенную аналитику сервиса (только для админа)"""
+    try:
+        analytics = db.get_analytics()
+        return analytics
+    except Exception as e:
+        logger.error(f"Error fetching analytics: {str(e)}")
+        raise HTTPException(500, f"Ошибка получения аналитики: {str(e)}")
+
+
+@app.get("/admin/users/{user_id}/transcripts")
+async def admin_get_user_transcripts(
+    user_id: str,
+    limit: int = 10,
+    offset: int = 0,
+    search: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Получить транскрипции конкретного пользователя (только для админа)"""
+    try:
+        from uuid import UUID
+        from datetime import datetime
+
+        try:
+            user_uuid = UUID(user_id)
+        except ValueError:
+            raise HTTPException(400, "Некорректный формат ID пользователя")
+
+        user_data = db.select_staff_by_id(user_uuid)
+        if not user_data:
+            raise HTTPException(404, "Пользователь не найден")
+
+        # Парсим даты фильтрации если переданы
+        parsed_start_date = None
+        parsed_end_date = None
+        try:
+            if start_date:
+                parsed_start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            if end_date:
+                parsed_end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+
+        # Используем существующий метод получения транскрипций сотрудника
+        all_transcripts = db.select_transcripts_for_employee(
+            user_uuid,
+            start_date=parsed_start_date,
+            end_date=parsed_end_date
+        )
+
+        # Фильтр по поиску на стороне Python
+        if search:
+            search_lower = search.lower()
+            all_transcripts = [
+                t for t in all_transcripts
+                if (t.get('title') or '').lower().find(search_lower) != -1
+            ]
+
+        total = len(all_transcripts)
+        rows = all_transcripts[offset : offset + limit]
+
+        transcripts_list = []
+        for transcript_data in rows:
+            transcript_uuid = UUID(transcript_data['id'])
+            parts = db.select_parts_transcription_by_transcript_id(transcript_uuid)
+            summary_data = db.select_summaries_by_transcript_id(transcript_uuid)
+
+            speakers = set()
+            duration = 0
+            if parts:
+                for part in parts:
+                    text_part = part.get("text", "")
+                    if ":" in text_part:
+                        speaker = text_part.split(":")[0].strip()
+                        speakers.add(speaker)
+                min_start = min(p.get("start_time", 0) for p in parts)
+                max_end = max(p.get("end_time", 0) for p in parts)
+                duration = (max_end - min_start) / 1000.0 / 60.0
+
+            transcripts_list.append({
+                "transcript_id": str(transcript_uuid),
+                "title": transcript_data.get('title') or f'Запись от {str(transcript_uuid)[:8]}',
+                "original_text": transcript_data.get('text', ''),
+                "created_at": transcript_data.get('created_at'),
+                "summary": summary_data.get('text') if summary_data else None,
+                "speakers": list(speakers),
+                "duration": round(duration, 2),
+                "parts_count": len(parts) if parts else 0
+            })
+
+        return {
+            "items": transcripts_list,
+            "total": total,
+            "user": {
+                "user_id": user_id,
+                "full_name": f"{user_data['surname']} {user_data['name']}".strip(),
+                "login": user_data['login'],
+                "email": user_data['email']
+            },
+            "limit": limit,
+            "offset": offset
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching user transcripts: {str(e)}")
+        raise HTTPException(500, f"Ошибка получения транскрипций: {str(e)}")
+
+
+@app.delete("/admin/transcripts/{transcript_id}")
+async def admin_delete_transcript(
+    transcript_id: str,
+    _admin: Dict = Depends(require_admin),
+    db: DataBaseManager = Depends(get_db)
+):
+    """Жёстко удалить транскрипцию (только для админа)"""
+    try:
+        from uuid import UUID
+        try:
+            transcript_uuid = UUID(transcript_id)
+        except ValueError:
+            raise HTTPException(400, "Некорректный формат ID транскрипции")
+
+        transcript_data = db.select_transcripts_by_id(transcript_uuid)
+        if not transcript_data:
+            raise HTTPException(404, "Транскрипция не найдена")
+
+        success = db.delete_transcripts(transcript_uuid)
+        if not success:
+            raise HTTPException(500, "Ошибка при удалении транскрипции")
+
+        return {"status": "success", "message": "Транскрипция удалена"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting transcript: {str(e)}")
+        raise HTTPException(500, f"Ошибка при удалении транскрипции: {str(e)}")
 
 
 # ============================================================================
@@ -1344,7 +1745,8 @@ async def join_meeting_now(
         diarize_lib=request.diarize_lib,
         transcribe_lib=request.transcribe_lib,
         llm_model=request.llm_model,
-        noise_suppression=request.noise_suppression
+        noise_suppression=request.noise_suppression,
+        pipeline=request.pipeline
     )
 
     if not scheduled_id:
@@ -1419,7 +1821,8 @@ async def schedule_meeting(
         diarize_lib=request.diarize_lib,
         transcribe_lib=request.transcribe_lib,
         llm_model=request.llm_model,
-        noise_suppression=request.noise_suppression
+        noise_suppression=request.noise_suppression,
+        pipeline=request.pipeline
     )
 
     if not scheduled_id:
@@ -1660,15 +2063,36 @@ async def startup_event():
         alembic_cfg = Config("alembic.ini")
         command.upgrade(alembic_cfg, "head")
 
+    # Сначала применяем миграции (Alembic — единственный источник правды для схемы)
+    # Если БД недоступна, миграции упадут, и ретрай-луп ниже их перезапустит
     for attempt in range(max_retries):
         try:
-            print(f"🔄 Попытка инициализации БД {attempt + 1}/{max_retries}...")
+            print(f"🔄 Попытка применения миграций {attempt + 1}/{max_retries}...")
+            run_migrations()
+            print("✅ Миграции БД успешно применены")
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print(f"⚠️ Миграции не применились: {e}. Повтор через {retry_delay} сек...")
+                time.sleep(retry_delay)
+            else:
+                print(f"❌ Не удалось применить миграции после {max_retries} попыток: {e}")
+                # Не падаем — возможно БД поднимется позже
+    else:
+        # Цикл ни разу не выполнил break (все попытки миграций провалились)
+        print("⚠️ Пропускаем инициализацию БД — PostgreSQL недоступен")
+
+    # После миграций — инициализация данных (тестовые пользователи, create_all для таблиц
+    # не покрытых миграциями, если такие есть)
+    for attempt in range(max_retries):
+        try:
+            print(f"🔄 Попытка инициализации данных {attempt + 1}/{max_retries}...")
             db = DataBaseManager()
-            
+
             # Создаем тестового пользователя, если нет пользователей
             users = db.select_staff()
             print(f"📊 Найдено пользователей в БД: {len(users)}")
-            
+
             if not users:
                 print("👤 Создаем тестового пользователя...")
                 try:
@@ -1681,14 +2105,14 @@ async def startup_event():
                         password="test"
                     )
                     print("✅ Создан тестовый пользователь: test/test")
-                    
+
                     # Генерируем тестовые данные только если БД была пустой
                     try:
                         gen_fake_data(db)
                         print("✅ Тестовые данные сгенерированы")
                     except Exception as e:
                         print(f"⚠️ Не удалось сгенерировать тестовые данные: {e}")
-                        
+
                 except Exception as e:
                     # Ошибка уникальности - пользователь уже существует
                     if "duplicate key" in str(e).lower() or "unique" in str(e).lower():
@@ -1699,26 +2123,16 @@ async def startup_event():
                 print("ℹ️ В базе уже есть пользователи, пропускаем создание тестовых")
 
             print("✅ База данных инициализирована успешно")
-
-            # Применяем alembic миграции (добавление новых колонок и т.д.)
-            try:
-                run_migrations()
-                print("✅ Миграции БД успешно применены")
-            except Exception as e:
-                print(f"⚠️ Не удалось применить миграции: {e}")
-
             return
-            
+
         except Exception as e:
             if attempt < max_retries - 1:
                 print(f"⚠️ Попытка {attempt + 1}/{max_retries}: "
-                      f"Не удалось инициализировать БД: {e}. Повтор через {retry_delay} сек...")
+                      f"Не удалось инициализировать данные: {e}. Повтор через {retry_delay} сек...")
                 time.sleep(retry_delay)
             else:
-                print(f"❌ Не удалось инициализировать БД после {max_retries} попыток: {e}")
+                print(f"❌ Не удалось инициализировать данные после {max_retries} попыток: {e}")
                 # Не падаем, а продолжаем работу - БД может быть доступна позже
-
-    run_migrations()
 
 @app.get("/health")
 async def health_check():

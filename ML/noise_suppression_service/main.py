@@ -34,10 +34,12 @@ async def denoise(
     output_path = None
     
     try:
-        # Сохраняем входной файл
+        # Сохраняем входной файл чанками (без загрузки всего в RAM)
+        CHUNK_SIZE = 8_388_608  # 8 MB
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as inp:
             input_path = inp.name
-            inp.write(await file.read())
+            while chunk := await file.read(CHUNK_SIZE):
+                inp.write(chunk)
 
         output_path = tempfile.mktemp(suffix="_clean.wav")
         logger.info(f"Начало шумоподавления: {input_path} → {output_path}")

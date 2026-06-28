@@ -32,6 +32,7 @@ export interface Transcript {
   created_at: string;
   summary: string | null;
   key_points: string[] | null;
+  summary_id: string | null;
   meeting_type: string;
   parts: TranscriptPart[];
   segments?: TranscriptSegment[];
@@ -39,7 +40,32 @@ export interface Transcript {
   duration?: number;
   audio_blob?: Blob;
   audio_url?: string;
+  tasks?: TaskItem[] | null;
 }
+
+export interface TaskItem {
+  description: string;
+  assignee?: string;
+  deadline?: string;
+}
+
+export interface MeetingTask {
+  id: string;
+  summary_id: string;
+  description: string;
+  assignee: string;
+  deadline: string;
+  sent_to_crm: boolean;
+  sent_at: string | null;
+  crm_task_id: string | null;
+  created_at: string | null;
+}
+
+export interface TranscriptWithTasks extends Transcript {
+  tasks?: TaskItem[] | null;
+}
+
+export type PipelineType = 'whisperx' | 'standard';
 
 export interface ProcessingSettings {
   transcribeModel: string;
@@ -48,6 +74,8 @@ export interface ProcessingSettings {
   transcribeLib: string;
   llmModel: string;
   noiseSuppression: boolean;
+  meetingTitle?: string;
+  pipeline?: PipelineType;
 }
 
 export interface ProcessAudioResponse {
@@ -111,10 +139,20 @@ export interface RAGResult {
   payload: {
     text: string;
     transcript_id: string;
+    employee_id?: string;
     speaker: string;
     start_time: number;
     end_time: number;
     meeting_type: string;
     title: string;
+    created_at?: string;
   };
+}
+
+export interface RAGSearchFilters {
+  meeting_type?: string;
+  speaker?: string;
+  title?: string;
+  date_from?: string;
+  date_to?: string;
 }

@@ -14,6 +14,24 @@
   --color-dark-base-800: #2b2b2e;
   --color-dark-base-900: #232326;
   --color-dark-base-950: #1a1a1d;
+
+  /* Premium accent system */
+  --color-accent-50: #f3f0ff;
+  --color-accent-100: #e8e1ff;
+  --color-accent-200: #d4c6ff;
+  --color-accent-300: #b9a0ff;
+  --color-accent-400: #9b7eff;
+  --color-accent-500: #7c5cff;
+  --color-accent-600: #6342f4;
+  --color-accent-700: #4f31d6;
+  --color-accent-glow: rgba(124, 92, 255, 0.35);
+
+  /* Hairline borders */
+  --color-hairline: rgba(255, 255, 255, 0.06);
+  --color-hairline-strong: rgba(255, 255, 255, 0.10);
+
+  /* App canvas (works under both modes) */
+  --color-canvas: #232326;
 }
 
 /* Включаем dark mode через класс на html элементе */
@@ -27,8 +45,8 @@ body {
 }
 
 .dark body {
-  background: #232326;
-  color: #f9fafb;
+  background: var(--color-canvas);
+  color: #f5f5f7;
 }
 
 /* Тёмный календарь в тёмной теме */
@@ -49,12 +67,123 @@ body {
   50% { transform: translateY(-10px); }
 }
 
+@keyframes popup-enter {
+  from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.popup-enter {
+  animation: popup-enter 0.2s ease-out forwards;
+}
+
 .animation-delay-100 {
   animation-delay: 100ms;
 }
 
 .animation-delay-200 {
   animation-delay: 200ms;
+}
+
+/* Premium micro-motion */
+@keyframes cta-breathe {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.55), 0 16px 40px -10px rgba(37, 99, 235, 0.55); }
+  50%      { box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.85), 0 22px 50px -8px rgba(37, 99, 235, 0.70); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+@keyframes progress-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+@keyframes halo-rotate {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.cta-breathe {
+  animation: cta-breathe 6s ease-in-out infinite;
+}
+
+.shimmer {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.22) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+.progress-pulse {
+  animation: progress-pulse 2s ease-in-out infinite;
+}
+
+/* Premium surface utilities — light + dark aware */
+.surface-base {
+  background-color: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 14px;
+}
+.dark .surface-base {
+  background-color: #232326;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.surface-elevated {
+  background: linear-gradient(180deg, #f9fafb 0%, #fff 100%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 14px;
+}
+.dark .surface-elevated {
+  background: linear-gradient(180deg, #2b2b2f 0%, #252529 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.surface-glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 14px;
+}
+.dark .surface-glass {
+  background: rgba(35, 35, 38, 0.72);
+  backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.hairline {
+  border-color: var(--color-hairline);
+}
+
+.hairline-strong {
+  border-color: var(--color-hairline-strong);
+}
+
+/* Dashed border for dropzone — light + dark aware */
+.dropzone-idle {
+  border: 1.5px dashed rgba(0, 0, 0, 0.10);
+}
+.dark .dropzone-idle {
+  border: 1.5px dashed rgba(255, 255, 255, 0.07);
+}
+
+.accent-gradient-text {
+  background: linear-gradient(135deg, #9b7eff 0%, #7c5cff 60%, #6342f4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "ss01", "tnum";
 }
 
 /* Scrollbar styling */

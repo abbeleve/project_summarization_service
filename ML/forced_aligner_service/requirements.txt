@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+qwen-asr
+torch
+torchaudio
+librosa
+soundfile
+python-multipart
+silero-vad>=6.2
+onnxruntime
+torchcodec

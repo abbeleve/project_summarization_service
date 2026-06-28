@@ -37,12 +37,13 @@ class TokenResponse(Token):
 
 class MeetingModelSettings(BaseModel):
     """Настройки моделей для ML пайплайна."""
-    transcribe_model: Optional[str] = Field("v3_ctc", description="Модель транскрибации")
+    transcribe_model: Optional[str] = Field("v3_e2e_rnnt", description="Модель транскрибации")
     diarization_model: Optional[str] = Field("pyannote/speaker-diarization-community-1", description="Модель диаризации")
     diarize_lib: Optional[str] = Field("pyannote", description="Библиотека диаризации")
     transcribe_lib: Optional[str] = Field("gigaam", description="Библиотека транскрибации")
     llm_model: Optional[str] = Field("deepseek/deepseek-v4-flash", description="Модель LLM для суммаризации")
     noise_suppression: Optional[bool] = Field(False, description="Шумоподавление")
+    pipeline: Optional[str] = Field("whisperx", description="Пайплайн обработки: whisperx | standard")
 
 
 class JoinMeetingRequest(MeetingModelSettings):
@@ -70,3 +71,19 @@ class MeetingBotWebhookPayload(BaseModel):
     timestamp: str
     metadata: Optional[Dict[str, Any]] = None
     blobUrl: Optional[str] = None
+
+
+class AdminCreateUserRequest(BaseModel):
+    """Запрос на создание пользователя администратором."""
+    username: str = Field(..., min_length=3, description="Логин пользователя")
+    password: str = Field(..., min_length=6, description="Пароль пользователя")
+    surname: str = Field(..., description="Фамилия")
+    name: str = Field(..., description="Имя")
+    patronymic: Optional[str] = Field(None, description="Отчество")
+    email: str = Field(..., description="Email")
+    role: str = Field("user", description="Роль: user или admin")
+
+
+class AdminUpdateRoleRequest(BaseModel):
+    """Запрос на обновление роли пользователя."""
+    role: str = Field(..., pattern="^(user|admin)$", description="Новая роль")

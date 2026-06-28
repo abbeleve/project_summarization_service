@@ -2,8 +2,10 @@ FROM nvcr.io/nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3 python3-pip python3-venv git git-lfs \
-        ffmpeg libsndfile1 && \
+        python3 python3-pip python3-venv python3-dev git git-lfs \
+        ffmpeg libsndfile1 libgoogle-perftools-dev \
+        libavcodec-dev libavformat-dev libavutil-dev libswresample-dev && \
+    ldconfig && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m venv /opt/venv
@@ -12,9 +14,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Клонируем и устанавливаем GigaAM
-RUN git clone https://github.com/salute-developers/GigaAM.git /app/GigaAM && \
-    pip install -e /app/GigaAM
+# Клонирование GigaAM не требуется — ONNX-инференс в отдельном микросервисе
 
 RUN mkdir -p /app/models/pyannote
 

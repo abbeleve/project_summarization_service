@@ -167,7 +167,7 @@ def list_all_profiles() -> List[Dict[str, Any]]:
 
 def search_speaker(
     embedding: List[float],
-    threshold: float = 0.6,
+    threshold: float = 0.5,
     top_k: int = 1,
 ) -> Optional[Tuple[UUID, str, float]]:
     """

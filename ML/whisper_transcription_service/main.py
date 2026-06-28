@@ -9,13 +9,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from faster_whisper import WhisperModel
 from tqdm import tqdm
-from faster_whisper.audio import decode_audio
-import soundfile as sf
+import librosa
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
+WHISPER_MAX_SAMPLES = 28_800_000  # 1800 секунд при 16кГц
+WHISPER_OVERLAP = 32_000          # 2 секунды перекрытие
 
 model = None
 
@@ -29,15 +30,15 @@ async def startup_event():
     logger.info("Начало загрузки модели Whisper large-v3...")
     try:
         # Проверяем переменную окружения для пути к модели
-        model_path = os.getenv("WHISPER_MODEL_PATH", "/app/models/faster-whisper-large-v3")
-        
+        model_path = os.getenv("WHISPER_MODEL_PATH", "/app/models/faster-distil-whisper-large-v3-ru-int8")
+
         if os.path.exists(model_path):
             logger.info(f"Загрузка модели из локального пути: {model_path}")
-            model = WhisperModel(model_path, device="cuda", compute_type="float16")
+            model = WhisperModel(model_path, device="cuda")
         else:
             # Fallback: загрузка из кэша Hugging Face
             logger.warning(f"Локальная модель не найдена по пути {model_path}, загрузка из Hugging Face...")
-            model = WhisperModel("large-v3", device="cuda", compute_type="float16")
+            model = WhisperModel("large-v3", device="cuda")
         
         logger.info("Модель Whisper успешно загружена!")
     except Exception as e:
@@ -68,22 +69,26 @@ async def transcribe_endpoint(
     audio: UploadFile = File(...)
 ):
     global model
-    logger.info(f"Получен запрос на транскрибацию. Размер аудио: {len(await audio.read())} байт")
-    
-    # Перематываем файл обратно после чтения
-    await audio.seek(0)
-    
+
     if model is None:
         logger.error("Модель не загружена!")
         raise HTTPException(status_code=503, detail="Model not loaded yet")
-    
+
+    if audio.size:
+        logger.info(f"Получен запрос на транскрибацию. Размер аудио: {audio.size} байт")
+    else:
+        logger.info("Получен запрос на транскрибацию. Размер аудио: неизвестен")
+
+    # Стримим HTTP body в temp-файл чанками по 8MB — без загрузки всего в RAM
+    CHUNK_SIZE = 8_388_608  # 8 MB
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tmp.write(await audio.read())
         audio_path = tmp.name
+        while chunk := await audio.read(CHUNK_SIZE):
+            tmp.write(chunk)
 
     try:
-        logger.info(f"Аудио сохранено во временный файл: {audio_path}")
-        
+        logger.info(f"Аудио сохранено во временный файл: {audio_path} ({os.path.getsize(audio_path)} байт)")
+
         if not os.path.isfile(audio_path):
             logger.error(f"Файл не найден: {audio_path}")
             raise HTTPException(status_code=400, detail="Audio file not saved")
@@ -91,25 +96,50 @@ async def transcribe_endpoint(
             logger.error(f"Файл пустой: {audio_path}")
             raise HTTPException(status_code=400, detail="Audio file is empty")
 
-        logger.info("Декодирование аудио...")
-        audio_waveform = decode_audio(audio_path)
-        
         request_data = json.loads(request)
         diarization_results = request_data["diarization_results"]
         logger.info(f"Количество сегментов для транскрибации: {len(diarization_results)}")
 
+        # Транскрибация сегментов — каждый загружается отдельно через offset/duration.
+        # Сегменты длиннее WHISPER_MAX_SAMPLES дробятся на чанки с перекрытием.
+        # Загрузка в RAM — не более одного чанка за раз.
         for index, timings in tqdm(enumerate(diarization_results)):
-            start_sample = int(timings["start"] * SAMPLE_RATE)
-            stop_sample = int(timings["stop"] * SAMPLE_RATE)
-            audio_chunk = audio_waveform[start_sample:stop_sample]
+            start = timings["start"]
+            stop = timings["stop"]
+            duration = stop - start
+            if duration <= 0:
+                continue
 
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as chunk_file:
-                sf.write(chunk_file.name, audio_chunk, SAMPLE_RATE)
-                logger.debug(f"Обработка сегмента {index + 1}/{len(diarization_results)} [{timings['start']:.2f}s - {timings['stop']:.2f}s]")
-                segments, _ = model.transcribe(chunk_file.name, beam_size=5, language="ru")
+            chunk_duration = WHISPER_MAX_SAMPLES / SAMPLE_RATE  # 1800 с
+            overlap_duration = WHISPER_OVERLAP / SAMPLE_RATE    # 2 с
+
+            if duration <= chunk_duration:
+                # Короткий сегмент — загружаем целиком
+                audio_chunk, _ = librosa.load(
+                    audio_path, sr=SAMPLE_RATE, mono=True,
+                    offset=start, duration=duration,
+                )
+                segments, _ = model.transcribe(audio_chunk, beam_size=1, language="ru")
                 transcribed_text = "".join(segment.text for segment in segments)
-                diarization_results[index]["Text"] = transcribed_text
-                os.unlink(chunk_file.name)
+            else:
+                # Длинный сегмент — грузим чанками по chunk_duration с перекрытием
+                chunk_texts = []
+                chunk_start = start
+                while chunk_start < stop:
+                    chunk_end = min(chunk_start + chunk_duration, stop)
+                    chunk_len = chunk_end - chunk_start
+                    audio_chunk, _ = librosa.load(
+                        audio_path, sr=SAMPLE_RATE, mono=True,
+                        offset=chunk_start, duration=chunk_len,
+                    )
+                    segments, _ = model.transcribe(audio_chunk, beam_size=1, language="ru")
+                    chunk_texts.append("".join(seg.text for seg in segments))
+                    if chunk_end >= stop:
+                        break
+                    chunk_start += chunk_duration - overlap_duration
+                transcribed_text = " ".join(chunk_texts).strip()
+
+            diarization_results[index]["Text"] = transcribed_text
 
         logger.info(f"Транскрибация завершена успешно. Обработано сегментов: {len(diarization_results)}")
         return JSONResponse(content=diarization_results)
@@ -123,3 +153,86 @@ async def transcribe_endpoint(
         if os.path.exists(audio_path):
             os.unlink(audio_path)
             logger.debug(f"Временный файл удалён: {audio_path}")
+
+
+@app.post("/transcribe_full")
+async def transcribe_full_endpoint(
+    audio: UploadFile = File(...),
+):
+    """
+    Transcribe the ENTIRE audio file in one pass.
+
+    Reads the audio in offset-based chunks via librosa.load(offset=, duration=)
+    — never loads the full file into RAM. Each chunk is transcribed by Whisper
+    and the results are concatenated.
+
+    Returns: {"text": "full transcription text"}
+    """
+    global model
+
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded yet")
+
+    logger.info(f"Full transcription request: {audio.filename}, size: {audio.size} bytes")
+
+    # Stream upload to temp file
+    CHUNK_SIZE = 8_388_608
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        audio_path = tmp.name
+        while chunk := await audio.read(CHUNK_SIZE):
+            tmp.write(chunk)
+
+    try:
+        if os.path.getsize(audio_path) == 0:
+            raise HTTPException(status_code=400, detail="Audio file is empty")
+
+        # Get total duration without loading full audio
+        import soundfile
+        sf = soundfile.SoundFile(audio_path)
+        total_duration = sf.frames / sf.samplerate
+        sf.close()
+        logger.info(f"Audio duration: {total_duration:.1f}s")
+
+        chunk_duration = WHISPER_MAX_SAMPLES / SAMPLE_RATE  # 1800 s
+        overlap_duration = WHISPER_OVERLAP / SAMPLE_RATE     # 2 s
+
+        chunk_texts = []
+        offset = 0.0
+        chunk_idx = 0
+
+        while offset < total_duration:
+            seg_duration = min(chunk_duration, total_duration - offset)
+
+            # Load only this chunk via offset/duration
+            audio_chunk, _ = librosa.load(
+                audio_path, sr=SAMPLE_RATE, mono=True,
+                offset=offset, duration=seg_duration,
+            )
+
+            if len(audio_chunk) == 0:
+                break
+
+            segments, _ = model.transcribe(audio_chunk, beam_size=1, language="ru")
+            chunk_text = "".join(seg.text for seg in segments)
+            chunk_texts.append(chunk_text)
+
+            if offset + seg_duration >= total_duration:
+                break
+            offset += chunk_duration - overlap_duration
+            chunk_idx += 1
+
+            if chunk_idx % 5 == 0:
+                logger.info(f"Full transcribe progress: {chunk_idx} chunks")
+
+        full_text = " ".join(chunk_texts).strip()
+        logger.info(f"Full transcription complete: {len(full_text)} chars")
+        return {"text": full_text}
+
+    except Exception as e:
+        logger.error(f"Full transcription error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if os.path.exists(audio_path):
+            os.unlink(audio_path)

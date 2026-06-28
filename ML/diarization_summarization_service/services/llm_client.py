@@ -4,12 +4,17 @@
 """
 import logging
 import json
+import os
+import re
 from typing import Optional, Dict, Any, List
 from openai import OpenAI
 from config import settings
 from prompts.prompt_loader import PromptLoader
 
 logger = logging.getLogger(__name__)
+
+# Корневая директория сервиса — для резолва путей относительно этого файла
+_SERVICE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class LLMClient:
@@ -38,21 +43,32 @@ class LLMClient:
         self.base_url = base_url or settings.openai_base_url
         self._client: Optional[OpenAI] = None
         self.prompts = PromptLoader(prompts_path)
-        
-        # Загрузка системных промптов
-        self.system_summarization_prompt = self.prompts.get("summarization.system")
-        self.summarization_prompt = self.prompts.get("summarization.user")
-        self.system_keypoints_prompt = self.prompts.get("keypoints.system")
-        self.keypoints_prompt = self.prompts.get("keypoints.user")
-        self.system_questions_prompt = self.prompts.get("questions.system")
-        self.questions_prompt = self.prompts.get("questions.user")
-        self.system_summarization_json_prompt = self.prompts.get("summarization_json.system")
-        self.classification_system_template = self.prompts.get("classification.system_template")
-        
-        # Загрузка онтологии
-        with open("ontology.txt", "r", encoding="utf-8") as f:
-            self.ontology_text = f.read()
-        
+
+        # Загрузка системных промптов с проверкой
+        prompt_keys = {
+            "system_summarization_prompt": "summarization.system",
+            "summarization_prompt": "summarization.user",
+            "system_keypoints_prompt": "keypoints.system",
+            "keypoints_prompt": "keypoints.user",
+            "system_questions_prompt": "questions.system",
+            "questions_prompt": "questions.user",
+            "system_summarization_json_prompt": "summarization_json.system",
+            "classification_system_template": "classification.system_template",
+        }
+        for attr, key in prompt_keys.items():
+            value = self.prompts.get(key)
+            if value is None:
+                raise RuntimeError(f"Prompt '{key}' not found in {prompts_path}")
+            setattr(self, attr, value)
+
+        # Загрузка онтологии (путь относительно расположения этого файла)
+        ontology_path = os.path.join(_SERVICE_DIR, "..", "ontology.txt")
+        try:
+            with open(ontology_path, "r", encoding="utf-8") as f:
+                self.ontology_text = f.read()
+        except FileNotFoundError:
+            raise RuntimeError(f"Ontology file not found: {ontology_path}")
+
         # Разрешённые типы совещаний
         self.allowed_meeting_types = {
             "Оперативное совещание",
@@ -62,6 +78,9 @@ class LLMClient:
             "Обзор проекта",
             "Экстренное совещание"
         }
+
+        # HTTP-таймаут для LLM запросов (берётся из конфига, с fallback на 120 с)
+        self.llm_timeout = settings.llm_timeout_sec or 120
     
     @property
     def client(self) -> OpenAI:
@@ -85,20 +104,28 @@ class LLMClient:
     def _parse_json_response(self, response: Any) -> Dict:
         """
         Парсинг JSON ответа от LLM.
-        
+
         Args:
             response: Ответ от OpenAI API
-            
+
         Returns:
             Распарсенный JSON
-            
+
         Raises:
             RuntimeError: Если ответ не валидный JSON
         """
         raw = response.choices[0].message.content.strip()
-        
+
+        # Удаляем markdown-обёртку ```json ... ``` или ``` ... ```, если модель её добавила
+        json_str = re.sub(
+            r"^```(?:json)?\s*\n?|```$",
+            "",
+            raw,
+            flags=re.MULTILINE,
+        ).strip()
+
         try:
-            result = json.loads(raw)
+            result = json.loads(json_str)
             return result
         except json.JSONDecodeError as e:
             logger.error(f"Модель вернула невалидный JSON:\n{raw}")
@@ -146,10 +173,12 @@ class LLMClient:
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
+                timeout=self.llm_timeout,
             )
 
             # DeepSeek и некоторые другие провайдеры не поддерживают json_schema response_format
-            if "deepseek" not in model.lower():
+            use_response_format = "deepseek" not in model.lower()
+            if use_response_format:
                 kwargs["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {
@@ -163,23 +192,60 @@ class LLMClient:
                                     "type": "array",
                                     "items": {"type": "string"}
                                 },
+                                "tasks": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "description": {"type": "string"},
+                                            "assignee": {"type": "string"},
+                                            "deadline": {"type": "string"}
+                                        },
+                                        "required": ["description", "assignee", "deadline"]
+                                    }
+                                }
                             },
-                            "required": ["title", "summary", "key_points"]
+                            "required": ["title", "summary", "key_points", "tasks"]
                         }
                     },
                 }
 
             response = self.client.chat.completions.create(**kwargs)
-            
-            result = self._parse_json_response(response)
+
+            try:
+                result = self._parse_json_response(response)
+            except RuntimeError:
+                # Если response_format не использовался и модель вернула кривой JSON — пробуем ещё раз
+                # с явной просьбой вернуть только JSON
+                if not use_response_format:
+                    logger.warning("DeepSeek вернул невалидный JSON, пробуем с explicit prompt")
+                    kwargs["messages"] = [
+                        {"role": "system", "content": self.system_summarization_json_prompt},
+                        {"role": "user", "content": (
+                            f"Анализируй следующий текст совещания и верни ТОЛЬКО JSON, "
+                            f"без markdown-форматирования:\n\n{text}"
+                        )}
+                    ]
+                    response = self.client.chat.completions.create(**kwargs)
+                    result = self._parse_json_response(response)
+                else:
+                    raise
             
             # Валидация результата
-            for key in ["title", "summary", "key_points"]:
+            for key in ["title", "summary", "key_points", "tasks"]:
                 if key not in result:
                     raise ValueError(f"Отсутствует поле: {key}")
-            
+
             if not isinstance(result["key_points"], list):
                 raise ValueError("key_points должен быть списком")
+            if not isinstance(result["tasks"], list):
+                raise ValueError("tasks должен быть списком")
+            for t in result["tasks"]:
+                if not isinstance(t, dict):
+                    raise ValueError("Каждый элемент tasks должен быть объектом")
+                for field in ("description", "assignee", "deadline"):
+                    if field not in t:
+                        raise ValueError(f"В задаче отсутствует поле: {field}")
             
             logger.info(f"Суммаризация завершена: {result.get('title', 'no title')}")
             return result
@@ -233,11 +299,19 @@ class LLMClient:
                     {"role": "user", "content": f"Текст совещания:\n{text}"}
                 ],
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                timeout=self.llm_timeout,
             )
-            
+
+            # Очищаем ответ: убираем кавычки, лишние пробелы, точки, пояснения в скобках
             raw = response.choices[0].message.content.strip()
-            
+            raw = raw.strip('"').strip("'").strip("«").strip("»").strip()
+            raw = raw.removesuffix(".").removesuffix(",").strip()
+            # Если модель написала "Тип: Оперативное совещание" — берём последнюю часть
+            for sep in (":", "—", "-", "–"):
+                if sep in raw:
+                    raw = raw.split(sep)[-1].strip()
+
             # Проверка на допустимый тип
             if raw in self.allowed_meeting_types:
                 logger.info(f"Классификация завершена: {raw}")
@@ -349,7 +423,8 @@ class LLMClient:
                     )}
                 ],
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                timeout=self.llm_timeout,
             )
             
             answer = response.choices[0].message.content.strip()

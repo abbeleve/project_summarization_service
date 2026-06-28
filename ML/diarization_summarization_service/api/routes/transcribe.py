@@ -55,7 +55,7 @@ def _extract_audio_with_ffmpeg(input_path: Path, output_path: Path, sample_rate:
 async def transcribe(
     file: Optional[UploadFile] = File(None, description="Аудиофайл для транскрибации"),
     file_url: Optional[str] = Form(None, description="URL аудиофайла в MinIO (альтернатива file)"),
-    transcribe_model: str = Form("v3_ctc", description="Модель транскрибации"),
+    transcribe_model: str = Form("v3_e2e_rnnt", description="Модель транскрибации"),
     diarization_model: str = Form(
         "pyannote/speaker-diarization-community-1",
         description="Модель диаризации"
@@ -106,11 +106,12 @@ async def transcribe(
             file_size = input_path.stat().st_size
             logger.info(f"Файл скачан: {input_path} ({file_size} байт)")
         else:
-            # Прямая загрузка файла
+            # Прямая загрузка файла (чанками, без await file.read())
             audio_converter.validate_extension(file.filename)
             input_path = Path(temp_dir) / f"input{Path(file.filename).suffix}"
             with open(input_path, "wb") as f:
-                f.write(await file.read())
+                while chunk := await file.read(8_388_608):
+                    f.write(chunk)
             logger.info(f"Загружен файл: {input_path}")
 
         # Для видеофайлов — извлекаем только аудиодорожку через ffmpeg
@@ -123,7 +124,26 @@ async def transcribe(
             audio_converter.convert_to_wav(str(input_path), str(wav_path))
             audio_path = str(wav_path)
         else:
-            audio_path = str(input_path)
+            # WAV-файл — проверим sample rate, при необходимости ресемплим
+            import wave
+            try:
+                with wave.open(str(input_path), 'rb') as wf:
+                    wav_sr = wf.getframerate()
+                if wav_sr != audio_converter.sample_rate:
+                    logger.info(
+                        "WAV sample rate %dHz != target %dHz — resampling",
+                        wav_sr, audio_converter.sample_rate
+                    )
+                    wav_path = Path(temp_dir) / "input_resampled.wav"
+                    audio_converter.convert_to_wav(str(input_path), str(wav_path))
+                    audio_path = str(wav_path)
+                else:
+                    audio_path = str(input_path)
+            except Exception as e:
+                logger.warning("Could not read WAV header, will try conversion: %s", e)
+                wav_path = Path(temp_dir) / "input_resampled.wav"
+                audio_converter.convert_to_wav(str(input_path), str(wav_path))
+                audio_path = str(wav_path)
 
         # Диаризация (используем singleton экземпляр)
         logger.info("Запуск диаризации...")
@@ -165,7 +185,8 @@ async def transcribe(
         return {
             "transcript": segments_dicts,
             "duration": duration,
-            "speakers_count": len(speakers)
+            "speakers_count": len(speakers),
+            "pipeline": "diarization_segments_transcription",
         }
         
     except FileNotFoundError as e:
@@ -207,7 +228,8 @@ async def diarize_only(
         input_path = Path(temp_dir) / f"input{Path(file.filename).suffix}"
 
         with open(input_path, "wb") as f:
-            f.write(await file.read())
+            while chunk := await file.read(8_388_608):
+                f.write(chunk)
 
         # Конвертация в WAV
         if input_path.suffix.lower() != '.wav':
@@ -215,7 +237,26 @@ async def diarize_only(
             audio_converter.convert_to_wav(str(input_path), str(wav_path))
             audio_path = str(wav_path)
         else:
-            audio_path = str(input_path)
+            # WAV — проверим sample rate
+            import wave
+            try:
+                with wave.open(str(input_path), 'rb') as wf:
+                    wav_sr = wf.getframerate()
+                if wav_sr != audio_converter.sample_rate:
+                    logger.info(
+                        "WAV sample rate %dHz != target %dHz — resampling",
+                        wav_sr, audio_converter.sample_rate
+                    )
+                    wav_path = Path(temp_dir) / "input_resampled.wav"
+                    audio_converter.convert_to_wav(str(input_path), str(wav_path))
+                    audio_path = str(wav_path)
+                else:
+                    audio_path = str(input_path)
+            except Exception as e:
+                logger.warning("Could not read WAV header, will try conversion: %s", e)
+                wav_path = Path(temp_dir) / "input_resampled.wav"
+                audio_converter.convert_to_wav(str(input_path), str(wav_path))
+                audio_path = str(wav_path)
 
         # Диаризация (используем singleton экземпляр)
         segments = diarizer.diarize(audio_path)
