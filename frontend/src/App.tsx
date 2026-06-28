@@ -16,6 +16,7 @@ import { AdminPage } from '@/pages/AdminPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AllMeetingsPage } from '@/pages/AllMeetingsPage';
+import { SearchPage } from '@/pages/SearchPage';
 import MeetingBotPage from '@/pages/MeetingBotPage';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
@@ -179,6 +180,14 @@ function AppContent() {
         <ProtectedRoute>
           <AppLayout>
             <AllMeetingsPage />
+          </AppLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/search" element={
+        <ProtectedRoute>
+          <AppLayout>
+            <SearchPage />
           </AppLayout>
         </ProtectedRoute>
       } />

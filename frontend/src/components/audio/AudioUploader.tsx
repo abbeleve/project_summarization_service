@@ -1,19 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import {
-  SUPPORTED_FORMATS,
-  TRANSCRIBE_CONFIG,
-  DIARIZATION_CONFIG,
-  LLM_MODELS,
-  DEFAULT_SETTINGS,
-  getTranscribeModelsByLib,
-  getDiarizationModelsByLib,
-  TRANSCRIBE_MODEL_DESCRIPTIONS,
-  DIARIZATION_MODEL_DESCRIPTIONS,
-  LLM_MODEL_DESCRIPTIONS
-} from '@/config/settings';
+import { SUPPORTED_FORMATS, DEFAULT_SETTINGS } from '@/config/settings';
 import { type ProcessingSettings } from '@/types/transcript';
-import { Button } from '@/components/ui/Button';
 import { NoiseSuppressionToggle } from './NoiseSuprressionToggle';
 
 interface AudioUploaderProps {
@@ -22,30 +10,6 @@ interface AudioUploaderProps {
   onNoiseSuppression?: (file: File) => Promise<Blob | null>;
   initialFile?: File | null;
 }
-
-/** Тип для идентификатора тултипа */
-type TooltipId = 'transcribeLib' | 'transcribeModel' | 'diarizeLib' | 'diarizationModel' | 'llmModel' | null;
-
-/** Компонент тултипа с информацией о модели */
-const ModelTooltip = ({
-  content,
-  isVisible
-}: {
-  content: React.ReactNode;
-  isVisible: boolean;
-}) => {
-  if (!isVisible) return null;
-
-  return (
-    <div className="absolute top-full left-0 mt-2 z-50 min-w-[280px] max-w-[320px]">
-      <div className="bg-gray-900 text-white text-sm rounded-xl p-4 shadow-2xl border border-gray-700">
-        {content}
-        {/* Стрелочка вверх */}
-        <div className="absolute -top-1 left-4 w-3 h-3 bg-gray-900 border-l border-t border-gray-700 transform rotate-45"></div>
-      </div>
-    </div>
-  );
-};
 
 export const AudioUploader = ({
   onProcess,
@@ -56,7 +20,6 @@ export const AudioUploader = ({
   const [file, setFile] = useState<File | null>(null);
   const [denoisedFile, setDenoisedFile] = useState<Blob | null>(null);
   const [isDenoising, setIsDenoising] = useState(false);
-  const [activeTooltip, setActiveTooltip] = useState<TooltipId>(null);
   const [title, setTitle] = useState('');
 
   // Предзагрузка файла из внешнего источника (drag-n-drop на тайл)
@@ -124,78 +87,101 @@ export const AudioUploader = ({
   const canProcess = file && (!settings.noiseSuppression || denoisedFile);
   const needsDenoising = settings.noiseSuppression && !denoisedFile;
 
+  const formatSize = (bytes: number) => {
+    const mb = bytes / 1024 / 1024;
+    return `${mb.toFixed(2)} MB`;
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {!file ? (
-        /* Dropzone — only when no file */
+        /* ── Dropzone ── */
         <div
           {...getRootProps()}
-          className={`relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-300
+          className={`
+            relative rounded-[14px] p-14 text-center cursor-pointer
+            transition-all duration-300 select-none
+            ${!isDragActive ? 'dropzone-idle' : ''}
             ${isDragActive
-              ? 'border-blue-500 bg-gradient-to-br from-blue-50 to-blue-50 dark:from-blue-900/20 dark:to-blue-900/20 scale-[1.02]'
-              : 'border-gray-300 dark:border-dark-base-600 hover:border-blue-400 hover:bg-gray-50 dark:hover:bg-dark-base-800'}
-            ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
-            bg-gradient-to-br from-gray-50 to-white dark:from-dark-base-800 dark:to-dark-base-900
+              ? 'bg-gradient-to-b from-blue-500/10 to-transparent border-[1.5px] border-dashed border-blue-500/50 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.15),0_0_50px_rgba(59,130,246,0.05)]'
+              : 'surface-base hover:bg-gray-50 dark:hover:bg-[#28282c]'}
+            ${isProcessing ? 'opacity-40 cursor-not-allowed' : ''}
           `}
         >
           <input {...getInputProps()} />
 
+          {/* Внутренний halo-круг (только в idle) */}
+          {!isDragActive && (
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[200px] h-[200px] rounded-full bg-blue-500/5 pointer-events-none" />
+          )}
+
           {/* Иконка */}
-          <div className="flex justify-center mb-4">
-            <div className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${
-              isDragActive
-                ? 'bg-blue-500 scale-110'
-                : 'bg-gradient-to-br from-blue-400 to-blue-500'
-            }`}>
-              <span className="text-3xl">🎤</span>
+          <div className="flex justify-center mb-5">
+            <div className={`
+              w-[60px] h-[60px] rounded-[16px] flex items-center justify-center
+              transition-all duration-300
+              ${isDragActive
+                ? 'bg-blue-500 scale-105 shadow-[0_0_30px_-4px_rgba(59,130,246,0.4)]'
+                : 'bg-gradient-to-br from-blue-500 to-blue-700 shadow-[0_8px_24px_-8px_rgba(59,130,246,0.4)]'}
+            `}>
+              <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
             </div>
           </div>
 
-          <p className={`text-lg font-medium mb-2 ${
-            isDragActive ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'
-          }`}>
-            {isDragActive ? 'Отпустите файл здесь...' : 'Перетащите аудиофайл или кликните для выбора'}
+          <p className="text-base font-medium text-gray-900 dark:text-[#f5f5f7] mb-1.5">
+            {isDragActive ? 'Отпустите файл для загрузки' : 'Перетащите аудиофайл или нажмите для выбора'}
           </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Поддерживаемые форматы: <span className="font-medium text-gray-700 dark:text-gray-300">{SUPPORTED_FORMATS.join(', ')}</span>
+          <p className="text-xs text-gray-400 dark:text-[#6b6b75] tracking-[0.01em]">
+            Поддерживаемые форматы: <span className="text-gray-500 dark:text-[#a0a0a8] font-medium">{SUPPORTED_FORMATS.join(', ')}</span>
           </p>
         </div>
       ) : (
-        /* File info + player — replaces dropzone when file loaded */
-        <div className="bg-gradient-to-br from-gray-50 to-white dark:from-dark-base-800 dark:to-dark-base-900 rounded-2xl p-5 border border-gray-200 dark:border-dark-base-700">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center gap-3 flex-1">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
-                <span className="text-2xl">🎤</span>
+        /* ── File info + player — replaces dropzone when file loaded ── */
+        <div className="surface-base p-5">
+          <div className="flex items-start justify-between mb-5">
+            <div className="flex items-center gap-3.5 flex-1 min-w-0">
+              {/* Document thumbnail */}
+              <div className="relative w-11 h-11 rounded-[10px] bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shrink-0 shadow-[0_4px_16px_-4px_rgba(59,130,246,0.4)]">
+                <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-gray-900 dark:text-white truncate">{file.name}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-[#f5f5f7] truncate">{file.name}</p>
+                <p className="tabular text-xs text-gray-400 dark:text-[#6b6b75] mt-0.5">{formatSize(file.size)}</p>
               </div>
             </div>
             <button
               onClick={() => { setFile(null); setDenoisedFile(null); setTitle(''); }}
-              className="w-8 h-8 rounded-full bg-white dark:bg-dark-base-800 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center justify-center transition-colors text-gray-400 hover:text-red-500 shadow-sm"
+              className="w-7 h-7 rounded-[8px] surface-base flex items-center justify-center text-gray-400 dark:text-[#6b6b75] hover:text-red-400 hover:bg-red-500/10 transition-colors"
               disabled={isProcessing}
+              aria-label="Удалить файл"
             >
-              <span className="text-lg">×</span>
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
             </button>
           </div>
 
-          {/* Аудио превью */}
-          <div className="space-y-4">
-            <div className="bg-white dark:bg-dark-base-800 rounded-xl p-4 border border-gray-200 dark:border-dark-base-700">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
-                <span>🎧</span> Оригинал
-              </p>
+          {/* Audio previews */}
+          <div className="space-y-3">
+            <div className="surface-base p-3.5">
+              <p className="text-[11px] font-medium text-gray-400 dark:text-[#6b6b75] uppercase tracking-[0.08em] mb-3">Оригинал</p>
               <audio controls className="w-full" src={URL.createObjectURL(file)} />
             </div>
 
             {denoisedFile && (
-              <div className="bg-white dark:bg-dark-base-800 rounded-xl p-4 border border-green-200 dark:border-green-800">
-                <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-2 flex items-center gap-2">
-                  <span>✨</span> С шумоподавлением
-                </p>
+              <div className="surface-base p-3.5">
+                <p className="text-[11px] font-medium text-blue-400 uppercase tracking-[0.08em] mb-3">С шумоподавлением</p>
                 <audio controls className="w-full" src={URL.createObjectURL(denoisedFile)} />
               </div>
             )}
@@ -203,35 +189,43 @@ export const AudioUploader = ({
         </div>
       )}
 
-      {/* Meeting title input */}
+      {/* ── Meeting title input ── */}
       {file && (
-        <div className="bg-gradient-to-br from-gray-50 to-white dark:from-dark-base-800 dark:to-dark-base-900 rounded-2xl p-5 border border-gray-200 dark:border-dark-base-700">
-          <label className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-md shrink-0">
-              <span className="text-lg">📋</span>
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Название совещания</p>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Не указано (будет определено автоматически)"
-                disabled={isProcessing}
-                className="w-full bg-white dark:bg-dark-base-800 border border-gray-300 dark:border-dark-base-600 rounded-xl px-4 py-2.5 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-dark-base-400 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent transition-all disabled:opacity-50"
-              />
-            </div>
+        <div className="surface-base p-5">
+          <label className="block">
+            <p className="text-[11px] font-medium text-gray-400 dark:text-[#6b6b75] uppercase tracking-[0.08em] mb-2">Название совещания</p>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Не указано (будет определено автоматически)"
+              disabled={isProcessing}
+              className="
+                w-full bg-transparent px-0 py-2
+                text-sm text-gray-900 dark:text-[#f5f5f7] placeholder-gray-400 dark:placeholder-[#6b6b75]/60
+                border-b border-gray-200 dark:border-[rgba(255,255,255,0.06)]
+                focus:border-blue-500 focus:outline-none
+                transition-colors duration-200
+                disabled:opacity-40
+              "
+            />
           </label>
         </div>
       )}
 
-      {/* Noise suppression */}
+      {/* ── Noise suppression ── */}
       {file && onNoiseSuppression && (
-        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-2xl p-5 border border-emerald-200 dark:border-emerald-800">
-          <div className="flex items-center justify-between mb-3">
+        <div className="surface-base p-5">
+          <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-md">
-                <span className="text-xl">🔇</span>
+              <div className="w-9 h-9 rounded-[10px] bg-gradient-to-br from-blue-500/20 to-blue-700/20 flex items-center justify-center shrink-0 border border-[rgba(59,130,246,0.15)]">
+                <svg className="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
+                  <line x1="2" y1="2" x2="22" y2="22" />
+                </svg>
               </div>
               <NoiseSuppressionToggle
                 enabled={settings.noiseSuppression}
@@ -241,25 +235,48 @@ export const AudioUploader = ({
             </div>
 
             {!denoisedFile && (
-              <Button
-                size="sm"
+              <button
                 onClick={handleDenoise}
-                isLoading={isDenoising}
-                disabled={isProcessing}
-                className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
+                disabled={isProcessing || isDenoising}
+                className={`
+                  inline-flex items-center gap-1.5 px-4 py-2 rounded-[8px] text-xs font-medium
+                  transition-all duration-200 shrink-0
+                  ${isDenoising || isProcessing
+                    ? 'bg-[rgba(255,255,255,0.04)] text-[#6b6b75] cursor-not-allowed'
+                    : 'bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20'}
+                `}
               >
-                🎧 Обработать от шума
-              </Button>
+                {isDenoising ? (
+                  <>
+                    <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Обработка...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 18V5l12-2v13" />
+                      <circle cx="6" cy="18" r="3" />
+                      <circle cx="18" cy="16" r="3" />
+                    </svg>
+                    Обработать
+                  </>
+                )}
+              </button>
             )}
           </div>
 
           {denoisedFile && (
-            <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400 bg-white/70 dark:bg-dark-base-800/70 backdrop-blur p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
-              <span className="text-lg">✅</span>
-              <span className="font-medium">Файл обработан</span>
+            <div className="mt-3 flex items-center gap-2.5 px-3.5 py-2.5 rounded-[10px] bg-blue-500/10 border border-blue-500/20">
+              <svg className="w-4 h-4 text-blue-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <span className="text-xs text-gray-500 dark:text-[#a0a0a8]">Файл обработан — шумоподавление применено</span>
               <button
                 onClick={() => setDenoisedFile(null)}
-                className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 ml-auto font-medium"
+                className="ml-auto text-xs text-gray-400 dark:text-[#6b6b75] hover:text-red-400 transition-colors"
               >
                 Сбросить
               </button>
@@ -268,33 +285,59 @@ export const AudioUploader = ({
         </div>
       )}
 
-      {/* Кнопка анализа */}
+      {/* ── Кнопка анализа ── */}
       <button
         onClick={handleSubmit}
         disabled={!canProcess || isProcessing}
-        className={`w-full py-4 px-6 rounded-2xl font-semibold text-lg transition-all duration-300 shadow-lg hover:shadow-xl ${
-          canProcess && !isProcessing
-            ? 'bg-gradient-to-r from-blue-600 to-blue-600 text-white hover:from-blue-700 hover:to-blue-700 hover:scale-[1.02]'
-            : 'bg-gray-200 dark:bg-dark-base-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
-        }`}
+        className={`
+          relative w-full py-[15px] px-6 rounded-[12px]
+          font-semibold text-[13px] tracking-[0.04em] uppercase
+          transition-all duration-300 select-none
+          ${canProcess && !isProcessing
+            ? 'text-white cta-breathe cursor-pointer'
+            : 'bg-gray-50 dark:bg-[rgba(255,255,255,0.03)] text-gray-400 dark:text-[#6b6b75] cursor-not-allowed'}
+        `}
+        style={canProcess && !isProcessing ? {
+          background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+        } : undefined}
       >
-        {isProcessing ? (
-          <span className="flex items-center justify-center gap-3">
-            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-            Обработка...
-          </span>
-        ) : needsDenoising ? (
-          <span className="flex items-center justify-center gap-2">
-            ⚠️ Сначала обработайте файл от шума
-          </span>
-        ) : (
-          <span className="flex items-center justify-center gap-2">
-            🚀 Начать анализ
-          </span>
+        {/* Внутренний highlight (только active) */}
+        {canProcess && !isProcessing && (
+          <span
+            className="absolute inset-0 rounded-[12px] pointer-events-none"
+            style={{
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.12) 0%, transparent 55%)',
+            }}
+          />
         )}
+
+        <span className="relative z-[1] flex items-center justify-center gap-2.5">
+          {isProcessing ? (
+            <>
+              <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Обработка...
+            </>
+          ) : needsDenoising ? (
+            <>
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              Требуется обработка шума
+            </>
+          ) : (
+            <>
+              <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+              Начать анализ
+            </>
+          )}
+        </span>
       </button>
     </div>
   );

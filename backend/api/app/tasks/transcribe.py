@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timezone
 import requests
 from uuid import UUID
 from typing import Dict, Any, Optional, List
@@ -277,7 +278,8 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
                 "id": transcript_id,
                 "title": title,
                 "meeting_type": meeting_type,
-                "employee_id": user_id  # Добавляем employee_id для RAG фильтрации
+                "employee_id": user_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
             
             # Функция split_into_chunks (нужно импортировать или скопировать)
@@ -287,7 +289,7 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
                 requests.post(
                     "http://rag-service:8055/index",
                     json={"chunks": chunks},
-                    timeout=30
+                    timeout=120  # sentence-aware chunking + embedding может быть долгим
                 )
                 logger.info(f"[{task_id}] RAG индексирование завершено")
         except Exception as e:
@@ -388,69 +390,37 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
         raise self.retry(exc=exc, countdown=60 * (2 ** (self.request.retries or 0)))
 
 
-def split_into_chunks(parts: list, transcript_meta: dict, max_length: int = 500) -> list:
+def split_into_chunks(parts: list, transcript_meta: dict) -> list:
     """
     Разбивает транскрипцию на чанки для RAG индексирования.
+    Каждый PartTranscription — 1 чанк. Sentence-aware чанкинг делает RAG-сервис.
 
     Args:
         parts: Список частей транскрипции из БД
-        transcript_meta: Метаданные транскрипции (включая employee_id)
-        max_length: Максимальная длина чанка
+        transcript_meta: Метаданные транскрипции (включая employee_id, created_at)
 
     Returns:
         Список чанков
     """
     chunks = []
+    created_at = transcript_meta.get("created_at", "")
 
     for part in parts:
         text = part.get("text", "")
+        if not text or not text.strip():
+            continue
 
-        # Разбиваем текст на чанки если он слишком длинный
-        if len(text) > max_length:
-            words = text.split()
-            current_chunk = []
-            current_length = 0
-
-            for word in words:
-                current_chunk.append(word)
-                current_length += len(word) + 1
-
-                if current_length >= max_length:
-                    chunks.append({
-                        "text": " ".join(current_chunk),
-                        "transcript_id": str(transcript_meta["id"]),
-                        "employee_id": str(transcript_meta["employee_id"]),
-                        "speaker": part.get("speaker", "UNKNOWN"),
-                        "start_time": part.get("start_time", 0) / 1000.0,
-                        "end_time": part.get("end_time", 0) / 1000.0,
-                        "meeting_type": transcript_meta.get("meeting_type"),
-                        "title": transcript_meta.get("title")
-                    })
-                    current_chunk = []
-                    current_length = 0
-
-            if current_chunk:
-                chunks.append({
-                    "text": " ".join(current_chunk),
-                    "transcript_id": str(transcript_meta["id"]),
-                    "employee_id": str(transcript_meta["employee_id"]),
-                    "speaker": part.get("speaker", "UNKNOWN"),
-                    "start_time": part.get("start_time", 0) / 1000.0,
-                    "end_time": part.get("end_time", 0) / 1000.0,
-                    "meeting_type": transcript_meta.get("meeting_type"),
-                    "title": transcript_meta.get("title")
-                })
-        else:
-            chunks.append({
-                "text": text,
-                "transcript_id": str(transcript_meta["id"]),
-                "employee_id": str(transcript_meta["employee_id"]),
-                "speaker": part.get("speaker", "UNKNOWN"),
-                "start_time": part.get("start_time", 0) / 1000.0,
-                "end_time": part.get("end_time", 0) / 1000.0,
-                "meeting_type": transcript_meta.get("meeting_type"),
-                "title": transcript_meta.get("title")
-            })
+        chunks.append({
+            "text": text.strip(),
+            "transcript_id": str(transcript_meta["id"]),
+            "employee_id": str(transcript_meta["employee_id"]),
+            "speaker": part.get("speaker", "UNKNOWN"),
+            "start_time": part.get("start_time", 0) / 1000.0,
+            "end_time": part.get("end_time", 0) / 1000.0,
+            "meeting_type": transcript_meta.get("meeting_type", ""),
+            "title": transcript_meta.get("title", ""),
+            "created_at": created_at,
+        })
 
     return chunks
 

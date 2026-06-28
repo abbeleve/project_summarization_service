@@ -691,7 +691,10 @@ async def get_user_tasks(
         )
 
 def split_into_chunks(parts: List[Dict], transcript_meta: Dict) -> List[Dict]:
+    """Каждая часть → 1 чанк. Sentence-aware чанкинг делает RAG-сервис."""
     chunks = []
+    created_at = transcript_meta.get("created_at", "")
+
     for part in parts:
         # part['text'] имеет формат "SPEAKER_01: текст"
         if ":" in part["text"]:
@@ -707,11 +710,13 @@ def split_into_chunks(parts: List[Dict], transcript_meta: Dict) -> List[Dict]:
         chunks.append({
             "text": text,
             "transcript_id": str(transcript_meta["id"]),
+            "employee_id": str(transcript_meta.get("employee_id", "")),
             "speaker": speaker,
             "start_time": part["start_time"] / 1000.0,
             "end_time": part["end_time"] / 1000.0,
-            "meeting_type": transcript_meta.get("meeting_type"),
-            "title": transcript_meta.get("title")
+            "meeting_type": transcript_meta.get("meeting_type", ""),
+            "title": transcript_meta.get("title", ""),
+            "created_at": created_at,
         })
     return chunks
 
@@ -813,6 +818,77 @@ async def proxy_ask_question(
 
     # 6. Возвращаем ответ фронтенду
     return JSONResponse(content=response_data)
+
+
+class RAGSearchFilters(BaseModel):
+    meeting_type: Optional[str] = None
+    speaker: Optional[str] = None
+    title: Optional[str] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+
+
+class RAGSearchRequest(BaseModel):
+    query: str
+    exclude_transcript_id: Optional[str] = None
+    limit: int = 10
+    filters: Optional[RAGSearchFilters] = None
+
+
+@app.post("/rag/search")
+async def rag_search(
+    req: RAGSearchRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Поиск по всем прошлым совещаниям пользователя.
+    Гибридный поиск (semantic + BM25) с фильтрами.
+
+    Пример:
+    {
+      "query": "бюджет на Q3",
+      "limit": 10,
+      "filters": {
+        "meeting_type": "sprint-planning",
+        "date_from": "2026-06-01",
+        "date_to": "2026-06-30"
+      }
+    }
+    """
+    try:
+        if not req.query.strip():
+            raise HTTPException(status_code=400, detail="Запрос не может быть пустым")
+
+        rag_payload = {
+            "query": req.query.strip(),
+            "employee_id": current_user["user_id"],
+            "limit": min(req.limit, 50),
+        }
+        if req.exclude_transcript_id:
+            rag_payload["exclude_transcript_id"] = req.exclude_transcript_id
+        if req.filters:
+            filters_dict = req.filters.model_dump(exclude_none=True)
+            if filters_dict:
+                rag_payload["filters"] = filters_dict
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            rag_resp = await client.post(
+                "http://rag-service:8055/search",
+                json=rag_payload,
+            )
+            if rag_resp.status_code != 200:
+                raise HTTPException(
+                    status_code=rag_resp.status_code,
+                    detail=f"RAG service error: {rag_resp.text}",
+                )
+            return rag_resp.json()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"RAG search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/apply-noise-suppression")
 async def apply_noise_suppression(file: UploadFile = File(...)):

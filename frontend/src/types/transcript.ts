@@ -139,10 +139,20 @@ export interface RAGResult {
   payload: {
     text: string;
     transcript_id: string;
+    employee_id?: string;
     speaker: string;
     start_time: number;
     end_time: number;
     meeting_type: string;
     title: string;
+    created_at?: string;
   };
+}
+
+export interface RAGSearchFilters {
+  meeting_type?: string;
+  speaker?: string;
+  title?: string;
+  date_from?: string;
+  date_to?: string;
 }
