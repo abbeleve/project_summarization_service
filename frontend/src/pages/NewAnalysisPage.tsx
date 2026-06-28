@@ -48,7 +48,7 @@ export const NewAnalysisPage = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-[#0e0e10]">
+    <div className="min-h-screen bg-gray-50 dark:bg-[#232326]">
       <div className="mx-auto max-w-5xl px-6 pt-16 pb-20">
         {/* Hero header */}
         <div className="flex items-start justify-between gap-8">

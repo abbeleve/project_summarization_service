@@ -22,3 +22,7 @@ soundfile
 speechbrain
 torch
 torchaudio
+
+# Testing
+pytest
+pytest-mock

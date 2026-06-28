@@ -31,7 +31,7 @@
   --color-hairline-strong: rgba(255, 255, 255, 0.10);
 
   /* App canvas (works under both modes) */
-  --color-canvas: #0e0e10;
+  --color-canvas: #232326;
 }
 
 /* Включаем dark mode через класс на html элементе */
