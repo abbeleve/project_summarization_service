@@ -192,10 +192,25 @@ class QdrantVectorDB(VectorDB):
     def init_collection(self, collection_name: str, vector_dim: int):
         self.collection_name = collection_name
 
-        # Always recreate to ensure correct config (dense + sparse).
-        # Existing data is incompatible with the new schema anyway.
         if self.client.collection_exists(collection_name):
-            print(f"🗑️ Удаление старой коллекции '{collection_name}' для пересоздания...")
+            # Check if existing collection already has both dense + sparse
+            # Qdrant v1.13: sparse_vectors лежит в config.params.sparse_vectors
+            info = self.client.get_collection(collection_name)
+            try:
+                sparse_config = info.sparse_vectors_config
+            except AttributeError:
+                sparse_config = None
+            if sparse_config is None:
+                try:
+                    sparse_config = info.config.params.sparse_vectors
+                except (AttributeError, KeyError):
+                    pass
+            if sparse_config:
+                print(f"✅ Qdrant коллекция '{collection_name}' уже существует (dense + sparse)")
+                return
+
+            # Old collection without sparse — recreate
+            print(f"🔄 Коллекция '{collection_name}' без sparse-векторов. Удаляем и создаём заново...")
             self.client.delete_collection(collection_name)
 
         self.client.create_collection(

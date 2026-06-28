@@ -296,7 +296,7 @@ export const TranscriptionHistoryPanel = () => {
                 }`
               }
             >
-              <span>🔍 Поиск</span>
+              <span>Поиск</span>
             </NavLink>
           </nav>
         </div>
