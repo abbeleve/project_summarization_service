@@ -52,7 +52,7 @@ class Settings(BaseSettings):
         description="Длительность чанка для транскрибации (сек)"
     )
     min_segment_duration_sec: float = Field(
-        default=0.5,
+        default=0.52,
         description="Минимальная длительность сегмента для диаризации (сек)"
     )
 
@@ -60,23 +60,23 @@ class Settings(BaseSettings):
     # Порог VAD/сегментации: ниже 0.5 = больше речи, выше = строже.
     # Для шумных записей повышать до 0.6–0.7, для чистых можно 0.4–0.5.
     pyannote_segmentation_threshold: float = Field(
-        default=0.5,
+        default=0.63,
         description="Порог VAD/сегментации Pyannote (0-1)"
     )
     # Минимальная длительность речевого сегмента внутри VAD (отсекает короткие всплески)
     pyannote_min_duration_on: float = Field(
-        default=0.1,
+        default=0.05,
         description="Минимальная длительность speech-сегмента VAD (сек)"
     )
     # Минимальная пауза — если тишина короче, соседние speech-отрезки сливаются
     pyannote_min_duration_off: float = Field(
-        default=0.1,
+        default=0.04,
         description="Минимальная длительность паузы для разрыва сегментов VAD (сек)"
     )
     # Порог кластеризации: ниже → меньше спикеров (склеивает),
     # выше → больше спикеров (дробит). Для встреч 2–5 чел: пробовать 0.5–0.7.
     pyannote_clustering_threshold: float = Field(
-        default=0.5,
+        default=0.51,
         description="Порог кластеризации спикеров Pyannote (0-1)"
     )
     # Явное ограничение количества спикеров (None = автоопределение)
