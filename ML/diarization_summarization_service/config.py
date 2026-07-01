@@ -125,7 +125,7 @@ class Settings(BaseSettings):
         description="Температура для LLM"
     )
     llm_max_tokens: int = Field(
-        default=3000,
+        default=8192,
         description="Максимум токенов для LLM"
     )
     llm_timeout_sec: int = Field(

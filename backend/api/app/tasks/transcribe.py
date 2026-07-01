@@ -205,7 +205,8 @@ def transcribe_and_summarize_task(self, options: Dict[str, Any]):
 
         summary_text = summary_json.get("summary", "")
         key_points = summary_json.get("key_points", [])
-        meeting_type = summary_json.get("meeting_type", "Не определено")
+        # meeting_type приходит на верхнем уровне /llm_pipeline ответа, не внутри summary
+        meeting_type = summary_result.get("meeting_type", "Не определено")
         tasks = summary_json.get("tasks", [])
 
         # Вставляем транскрипцию
